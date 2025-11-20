@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
+
+    <!-- Массы звеньев -->
+    <xacro:property name="mass_base" value="30.2763517543289"/>
+    <xacro:property name="mass_link1" value="21.1627406257303"/>
+    <xacro:property name="mass_link2" value="25.1403147192251"/>
+    <xacro:property name="mass_link3" value="21.1627874292289"/>
+    <xacro:property name="mass_link4" value="25.140328983289"/>
+    <xacro:property name="mass_link5" value="9.53466992761605"/>
+    <xacro:property name="mass_link6" value="14.2007599322815"/>
+    <xacro:property name="mass_link7" value="2.47156969383589"/>
+
+    <!-- Общие цвета / материал -->
+    <xacro:property name="color_r" value="0.647058823529412"/>
+    <xacro:property name="color_g" value="0.619607843137255"/>
+    <xacro:property name="color_b" value="0.588235294117647"/>
+    <xacro:property name="color_a" value="1"/>
+
+    <xacro:include filename="$(find iiwa_description)/urdf/meshes.xacro" />
+
+
+</robot>

@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
+
+    <!-- Макрос для описания link-а с использованием переменных путей к мешам и массы -->
+    <xacro:macro name="iiwa_link" params="name xyz_iner mass ixx ixy ixz iyy iyz izz mesh_vision mesh_collision">
+        <link name="${name}">
+            <inertial>
+                <origin xyz="${xyz_iner}" rpy="0 0 0"/>
+                <mass value="${mass}"/>
+                <inertia ixx="${ixx}" ixy="${ixy}" ixz="${ixz}" iyy="${iyy}" iyz="${iyz}" izz="${izz}"/>
+            </inertial>
+
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <mesh filename="${mesh_vision}"/>
+                </geometry>
+                <material name="iiwa_material">
+                    <color rgba="${color_r} ${color_g} ${color_b} ${color_a}"/>
+                </material>
+            </visual>
+
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <mesh filename="${mesh_collision}"/>
+                </geometry>
+            </collision>
+        </link>
+    </xacro:macro>
+
+    <!-- Макрос для описания соединений -->
+    <xacro:macro name="revolute_joint" params="jname parent child xyz rpy axis lower upper effort velocity">
+        <joint name="${jname}" type="revolute">
+            <origin xyz="${xyz}" rpy="${rpy}"/>
+            <parent link="${parent}"/>
+            <child link="${child}"/>
+            <axis xyz="${axis}"/>
+            <limit lower="${lower}" upper="${upper}" effort="${effort}" velocity="${velocity}"/>
+        </joint>
+    </xacro:macro>
+
+</robot>

@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="iiwa7">
+    
+    <xacro:include filename="$(find iiwa_description)/urdf/params.xacro"/>
+    <xacro:include filename="$(find iiwa_description)/urdf/macros.xacro"/>
+    <xacro:include filename="$(find iiwa_description)/urdf/links.xacro"/>
+    <xacro:include filename="$(find iiwa_description)/urdf/joints.xacro"/>
+
+
+</robot>
