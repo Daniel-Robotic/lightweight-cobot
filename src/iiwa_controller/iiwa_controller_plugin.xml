@@ -1,0 +1,6 @@
+<library path="iiwa_controller">
+    <class name="iiwa_controller/IIWAHardwareInterface"
+           type="iiwa_controller::IIWAHardwareInterface"
+           base_class_type="hardware_interface::SystemInterface"/>
+  </library>
+  
