@@ -6,5 +6,51 @@
     <xacro:include filename="$(find iiwa_description)/urdf/links.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/joints.xacro"/>
 
+    <webots>
+        <plugin type="webots_ros2_control::Ros2Control"/>
+    </webots>
+
+    <ros2_control name="iiwaWebotsControl" type="system">
+        <hardware>
+            <plugin>webots_ros2_control::Ros2ControlSystem</plugin>
+        </hardware>
+
+        <joint name="joint1">
+            <state_interface name="position"/>
+            <command_interface name="position"/>
+        </joint>
+
+        <joint name="joint2">
+            <state_interface name="position"/>
+            <command_interface name="position"/>
+        </joint>
+
+        <joint name="joint3">
+            <state_interface name="position"/>
+            <command_interface name="position"/>
+        </joint>
+
+        <joint name="joint4">
+            <state_interface name="position"/>
+            <command_interface name="position"/>
+        </joint>
+
+        <joint name="joint5">
+            <state_interface name="position"/>
+            <command_interface name="position"/>
+        </joint>
+
+        <joint name="joint6">
+            <state_interface name="position"/>
+            <command_interface name="position"/>
+        </joint>
+
+        <joint name="joint7">
+            <state_interface name="position"/>
+            <command_interface name="position"/>
+        </joint>
+
+    </ros2_control>
+
 
 </robot>

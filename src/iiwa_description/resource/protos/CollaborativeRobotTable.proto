@@ -1,0 +1,152 @@
+#VRML_SIM R2025a utf8
+# license: Apache License 2.0
+# license url: https://www.apache.org/licenses/LICENSE-2.0
+# keywords: industrial/other
+# A table for placing collaborative work and working with it
+# It is possible to add a network cabinet on the back of the table
+# template language: javascript
+
+
+PROTO CollaborativeRobotTable [
+  field SFVec3f translation 0 0 0
+  field SFRotation rotation 0 0 1 0
+  field SFString name "CollaborativeRobotTable"
+  field SFString contactMaterial "TableMaterial"
+  field SFBool locked FALSE
+  field SFBool showCabinet FALSE # Defines the display of the network cabinet
+]
+{
+
+  %<
+    let showCabinet = fields.showCabinet.value;
+  >%
+
+  Solid {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    locked IS locked
+    contactMaterial IS contactMaterial
+
+    children [
+      %< if (showCabinet) { >%
+      Group {
+        children [
+          Solid {
+            translation -0.66 4.26e-06 0.099998
+            rotation 0.5773509358560258 -0.577349935856137 -0.577349935856137 2.09439
+            children [
+              Pose {
+                translation -0.3135 0.19 0
+                children [
+                  Shape {
+                    appearance PBRAppearance {
+                      baseColor 0.57 0.57 0.57
+                      roughness 1
+                    }
+                    geometry Mesh {
+                      url [
+                        "./meshes/iiwaTable/ElectricCabinet.obj"
+                      ]
+                    }
+                  }
+                ]
+                translationStep 0.001
+              }
+              Shape {
+                appearance PBRAppearance {
+                  baseColor 0.57 0.57 0.57
+                  roughness 1
+                }
+                geometry Mesh {
+                  url [
+                    "./meshes/iiwaTable/CabinetFrame.obj"
+                  ]
+                }
+              }
+            ]
+            name "Cabinet"
+          }
+        ]
+      }
+      %< } >%
+      Group {
+        children [
+          Solid {
+            children [
+              Pose {
+                translation 0 0 0.79
+                children [
+                  Shape {
+                    appearance PBRAppearance {
+                      roughness 1
+                      metalness 0
+                    }
+                    geometry Box {
+                      size 1.28 1.08 0.02
+                    }
+                  }
+                ]
+              }
+              Shape {
+                appearance PBRAppearance {
+                  baseColor 0.57 0.57 0.57
+                  roughness 1
+                }
+                geometry Mesh {
+                  url [
+                    "./meshes/iiwaTable/TableFrame.obj"
+                  ]
+                }
+              }
+              Pose {
+                translation -0.263 0 0.8
+                children [
+                  Shape {
+                    appearance PBRAppearance {
+                      baseColor 0.517647 0.513726 0.568627
+                      roughness 1
+                    }
+                    geometry Mesh {
+                      url [
+                        "./meshes/iiwaTable/PlateUnderRobot.obj"
+                      ]
+                    }
+                  }
+                ]
+                translationStep 0.001
+              }
+            ]
+            name "Table"
+          }
+        ]
+      }
+    ]
+    boundingObject Group {
+      children [
+        %< if (showCabinet) { >%
+        Pose {
+          translation -0.78 4.97601e-06 0.609998
+          rotation 0.5773509358560258 -0.577349935856137 -0.577349935856137 2.09439
+          children [
+            Box {
+              size 0.66 0.96 0.28
+            }
+          ]
+        }
+        %< } >%
+        Pose {
+          translation 0 0 0.4035
+          children [
+            Box {
+              size 1.28 1.08 0.7926
+            }
+          ]
+        }
+      ]
+    }
+  }
+
+}
+
+

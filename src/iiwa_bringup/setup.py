@@ -27,6 +27,7 @@ def data_files_from_tree(src_dir: str, dst_root: str) -> list:
 
 package_name = 'iiwa_bringup'
 
+resource_intsall_root = f"share/{package_name}/resource"
 launch_intsall_root = f"share/{package_name}/launch"
 config_intsall_root = f"share/{package_name}/config"
 
@@ -35,6 +36,7 @@ data_files = [
     ('share/' + package_name, ['package.xml']),
 ]
 
+data_files += data_files_from_tree('resource', resource_intsall_root)
 data_files += data_files_from_tree('launch', launch_intsall_root)
 data_files += data_files_from_tree('config', config_intsall_root)
 

@@ -1,0 +1,83 @@
+#VRML_SIM R2025a utf8
+# license: Apache License 2.0
+# license url: https://www.apache.org/licenses/LICENSE-2.0
+# keywords: industrial/other
+# Workspace limiter in the form of square blocks that can be increased in size
+# template language: javascript
+
+
+PROTO WorkspaceLimiter [
+  field SFVec3f translation 0 0 0
+  field SFRotation rotation 0 0 1 0
+  field SFString name "WorkspaceLimiter"
+  field SFBool locked FALSE
+  field SFVec2f countLimiter 1 1 # Defines the number of blocks by X and Y
+  field SFVec3f scale 1 1 1 # Defines the size of the blocks
+  field SFFloat spacing 0.02 # Defines the distance between blocks
+]
+{
+
+  %<
+    let countLimiter = fields.countLimiter.value;
+    let scale = fields.scale.value;
+    let spacing = fields.spacing.value;
+
+    let widthCount = countLimiter.x;
+    let heightCount = countLimiter.y;
+
+    let boxWidth = 1.25;
+    let boxHeight = 1;
+    let boxDepth = 0.01;
+
+    if (spacing <= 0) {
+      console.error("The indentation between the blocks cannot be negative")
+      spacing = 0.02
+    }
+
+  >%
+
+  Solid {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    locked IS locked
+    children [
+      %<
+        for (let i = 0; i < widthCount; i++) {
+          for (let j = 0; j < heightCount; j++) {
+            let x = (i * (boxWidth + spacing) - (widthCount - 1) * (boxWidth + spacing) / 2) * scale.x;
+            let y = (j * (boxHeight + spacing) - (heightCount - 1) * (boxHeight + spacing) / 2) * scale.y;
+      >%
+        Transform {
+          translation %<= x >% 0 %<= y >%
+          scale %<= scale.x >% %<= scale.y >% %<= scale.z >%
+          children [
+            Shape {
+              appearance PBRAppearance {
+                roughness 1
+                metalness 0
+                IBLStrength 5
+              }
+              geometry Box {
+                size %<= boxWidth >% %<= boxDepth >% %<= boxHeight >%
+              }
+            }
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.57 0.57 0.57
+                roughness 1
+                metalness 0
+              }
+              geometry Mesh {
+                url ["./meshes/WorkspaceLimiter/fence.obj"]
+              }
+            }
+          ]
+        }
+      %<
+          }
+        }
+      >%
+    ]
+  }
+}

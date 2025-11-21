@@ -12,48 +12,48 @@
     <!-- joint1 -->
     <xacro:revolute_joint jname="joint1" parent="base_link" child="link1"
                         xyz="0 0 0.3375" rpy="0 0 0" axis="0 0 -1"
-                        lower="-2.97" upper="2.97" effort="176" velocity="1.71"/>
+                        lower="-2.97" upper="2.97" effort="500" velocity="1.71"/>
 
 
     <!-- joint2 -->
     <xacro:revolute_joint jname="joint2" parent="link1" child="link2"
                         xyz="0 0 0" rpy="-1.5708 0 0" axis="0 0 1"
-                        lower="-2.09" upper="2.09" effort="176" velocity="1.71"/>
+                        lower="-2.09" upper="2.09" effort="500" velocity="1.71"/>
 
 
     <!-- joint3 -->
     <xacro:revolute_joint jname="joint3" parent="link2" child="link3"
                         xyz="0 -0.3993 0" rpy="1.5708 0 0" axis="0 0 -1"
-                        lower="-2.97" upper="2.97" effort="110" velocity="1.75"/>
+                        lower="-2.97" upper="2.97" effort="500" velocity="1.75"/>
 
 
     <!-- joint4 -->
     <xacro:revolute_joint jname="joint4" parent="link3" child="link4"
                         xyz="0 0 0" rpy="-1.5708 0 0" axis="0 0 -1"
-                        lower="-2.09" upper="2.09" effort="110" velocity="2.27"/>
+                        lower="-2.09" upper="2.09" effort="500" velocity="2.27"/>
 
 
     <!-- joint5 -->
     <xacro:revolute_joint jname="joint5" parent="link4" child="link5"
                         xyz="0 -0.3993 0" rpy="1.5708 0 0" axis="0 0 -1"
-                        lower="-2.97" upper="2.97" effort="110" velocity="2.44"/>
+                        lower="-2.97" upper="2.97" effort="500" velocity="2.44"/>
 
 
     <!-- joint6 -->
     <xacro:revolute_joint jname="joint6" parent="link5" child="link6"
                         xyz="0 0 0" rpy="-1.5708 0 0" axis="0 0 1"
-                        lower="-2.09" upper="2.09" effort="40" velocity="3.14"/>
+                        lower="-2.09" upper="2.09" effort="500" velocity="3.14"/>
 
 
     <!-- joint7 -->
     <xacro:revolute_joint jname="joint7" parent="link6" child="link7"
                         xyz="0 -0.126 0" rpy="1.5708 0 0" axis="0 0 1"
-                        lower="-3.05" upper="3.05" effort="40" velocity="3.14"/>
+                        lower="-3.05" upper="3.05" effort="500" velocity="3.14"/>
 
     <joint name="tools_joint" type="fixed">
         <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
         <parent link="link7"/>
-        <child link="link7_ee"/>
+        <child link="link_ee"/>
     </joint>
 
 </robot>

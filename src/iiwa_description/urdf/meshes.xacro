@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
 
-    <xacro:property name="pkg" value="package://iiwa_description/meshes"/>
+    <xacro:property name="pkg" value="package://iiwa_description/resource/meshes"/>
 
     <!-- Меши отображения -->
     <xacro:property name="mesh_base_v" value="${pkg}/visual/base_link.DAE"/>
