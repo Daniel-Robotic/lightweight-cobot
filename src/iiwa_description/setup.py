@@ -27,15 +27,23 @@ def data_files_from_tree(src_dir: str, dst_root: str) -> list:
 
 package_name = 'iiwa_description'
 
+resource_intsall_root = f"share/{package_name}/resource"
 meshes_intsall_root = f"share/{package_name}/meshes"
 urdf_intsall_root = f"share/{package_name}/urdf"
+worlds_intsall_root = f"share/{package_name}/worlds"
+protos_intsall_root = f"share/{package_name}/protos"
+
+
 
 data_files = [
     ('share/' + package_name, ['package.xml']),
 ]
 
+data_files += data_files_from_tree('resource', resource_intsall_root)
 data_files += data_files_from_tree('meshes', meshes_intsall_root)
 data_files += data_files_from_tree('urdf', urdf_intsall_root)
+data_files += data_files_from_tree('worlds', worlds_intsall_root)
+data_files += data_files_from_tree('protos', protos_intsall_root)
 
 
 setup(

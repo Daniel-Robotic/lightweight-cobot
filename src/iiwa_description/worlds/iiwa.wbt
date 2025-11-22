@@ -1,0 +1,67 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "../resource/protos/CollaborativeRobotTable.proto"
+EXTERNPROTO "../resource/protos/WorkspaceLimiter.proto"
+
+WorldInfo {
+  title "iiwa robotics"
+  contactProperties [
+    ContactProperties {
+      material1 "TableMaterial"
+      coulombFriction [
+        0
+      ]
+      bounce 0
+      bounceVelocity 0
+      softERP 1
+      softCFM 0.0001
+    }
+  ]
+}
+Viewpoint {
+  orientation 0.19675345789351045 -0.08356742903703787 -0.976885132249993 3.928186370440618
+  position 5.324715157515194 -4.7927780008585446 4.166958679133935
+  followType "Mounted Shot"
+  ambientOcclusionRadius 3
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+  texture "noon_sunny_empty"
+  luminosity 2
+}
+RectangleArena {
+  name "Room"
+  floorSize 12 12
+  wallHeight 2
+}
+CollaborativeRobotTable {
+  translation 0 0 -0.007
+  locked TRUE
+  showCabinet TRUE
+}
+
+Group {
+  children [
+    WorkspaceLimiter {
+      translation -1.56 -0.219999 1.01
+      rotation 0 0 1 1.5708
+      name "WorkspaceLimiter_back"
+      locked TRUE
+      scale 2.32 1 2
+    }
+    WorkspaceLimiter {
+      translation -0.04 1.18 1.01
+      name "WorkspaceLimiter_right"
+      locked TRUE
+      scale 2.43 1 2
+    }
+  ]
+}
+DirectionalLight {
+  direction -0.1 0.1 0
+  intensity 2
+}

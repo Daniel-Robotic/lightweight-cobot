@@ -101,6 +101,6 @@
                      mesh_vision="${mesh_link7_v}" 
                      mesh_collision="${mesh_link7_c}"/>
 
-    <link name="link7_ee" />
+    <link name="link_ee" />
 
 </robot>

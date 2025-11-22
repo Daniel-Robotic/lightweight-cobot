@@ -1,8 +1,10 @@
 from launch_ros.actions import Node
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
 from launch_ros.substitutions import FindPackageShare
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
+from launch.events import Shutdown
+from launch.event_handlers import OnProcessExit
 
 
 def generate_launch_description():
@@ -62,10 +64,18 @@ def generate_launch_description():
         output='log'
     )
 
+    shutdown_on_rviz_exit = RegisterEventHandler(
+        OnProcessExit(
+            target_action=rviz,
+            on_exit=[EmitEvent(event=Shutdown())]
+        )
+    )
+
     return LaunchDescription([
         declare_model_arg,
         declare_robot_name_arg,
         robot_state_publisher,
         joint_state_publisher_gui,
-        rviz
+        rviz,
+        shutdown_on_rviz_exit
     ])
