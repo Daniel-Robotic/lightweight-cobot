@@ -22,10 +22,25 @@ sudo apt install -y build-essential \
                     python3-vcstool \
                     wget
 
+# Not Using
 git clone https://github.com/moveit/moveit2.git
 vcs import --recursive < moveit2/moveit2.repos
 sudo apt remove ros-$ROS_DISTRO-moveit*
 rosdep install -r --from-paths ./src/ --ignore-src --rosdistro $ROS_DISTRO --os=ubuntu:noble -y
 
 colcon build --mixin release
+
+sudo pip3 install transforms3d --break-system-packages
 ```
+
+Спавн объекта:
+```bash
+{
+    "data": "Solid { name \"test_box2\" translation 0 1 0.5 children [ Shape { appearance PBRAppearance { baseColor 0.901961 0.380392 0 } geometry Box { size 0.1 0.1 0.1 } } ] boundingObject Box { size 0.1 0.1 0.1 } physics Physics { } }"
+}
+```
+
+Спавн `.proto`:
+
+
+Можно заготовить готовые `.proto` файлы, и потом случайно спавнить объект по такому принципу + создать Node который будет вызываться и спавнить этот объекты. Может быть шаблон куда потом подставятся данные через `.format()`. По такому же принципу спавн человека. Остается понять, только задать область спавна относительно робта

@@ -33,7 +33,7 @@ def _spawn_setup(context, *args, **kwargs):
         parameters=[
             {
                 "robot_description": model_path,
-                "use_sim_time": False,
+                "use_sim_time": True,
                 "set_robot_state_publisher": False
             },
             LaunchConfiguration('controller').perform(context)
