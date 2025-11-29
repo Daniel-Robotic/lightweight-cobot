@@ -1,8 +1,10 @@
 import os
+
 from setuptools import find_packages, setup
 
-EXCLUDES = {'.DS_Store', 'Thumbs.db'}
-EXCLUDE_DIRS = {'__pycache__', '.pytest_cache', '.git', '.idea'}
+EXCLUDES = {".DS_Store", "Thumbs.db"}
+EXCLUDE_DIRS = {"__pycache__", ".pytest_cache", ".git", ".idea"}
+
 
 def data_files_from_tree(src_dir: str, dst_root: str) -> list:
     """
@@ -20,12 +22,13 @@ def data_files_from_tree(src_dir: str, dst_root: str) -> list:
             continue
 
         rel = os.path.relpath(root, src_dir)
-        dst_dir = os.path.join(dst_root, rel) if rel != '.' else dst_root
+        dst_dir = os.path.join(dst_root, rel) if rel != "." else dst_root
         entries.append((dst_dir, file_list))
 
     return entries
 
-package_name = 'iiwa_description'
+
+package_name = "iiwa_description"
 
 resource_intsall_root = f"share/{package_name}/resource"
 meshes_intsall_root = f"share/{package_name}/meshes"
@@ -34,36 +37,34 @@ worlds_intsall_root = f"share/{package_name}/worlds"
 protos_intsall_root = f"share/{package_name}/protos"
 
 
-
 data_files = [
-    ('share/' + package_name, ['package.xml']),
+    ("share/" + package_name, ["package.xml"]),
 ]
 
-data_files += data_files_from_tree('resource', resource_intsall_root)
-data_files += data_files_from_tree('meshes', meshes_intsall_root)
-data_files += data_files_from_tree('urdf', urdf_intsall_root)
-data_files += data_files_from_tree('worlds', worlds_intsall_root)
-data_files += data_files_from_tree('protos', protos_intsall_root)
+data_files += data_files_from_tree("resource", resource_intsall_root)
+data_files += data_files_from_tree("meshes", meshes_intsall_root)
+data_files += data_files_from_tree("urdf", urdf_intsall_root)
+data_files += data_files_from_tree("worlds", worlds_intsall_root)
+data_files += data_files_from_tree("protos", protos_intsall_root)
 
 
 setup(
     name=package_name,
-    version='0.0.1',
-    packages=find_packages(exclude=['test']),
+    version="0.0.1",
+    packages=find_packages(exclude=["test"]),
     data_files=data_files,
-    install_requires=['setuptools'],
+    install_requires=["setuptools"],
     zip_safe=True,
-    maintainer='Grabar Daniil',
-    maintainer_email='grabardm@ml-dev.ru',
-    description='TODO: Package description',
-    license='Apache-2.0',
+    maintainer="Grabar Daniil",
+    maintainer_email="grabardm@ml-dev.ru",
+    description="TODO: Package description",
+    license="Apache-2.0",
     extras_require={
-        'test': [
-            'pytest',
+        "test": [
+            "pytest",
         ],
     },
     entry_points={
-        'console_scripts': [
-        ],
+        "console_scripts": [],
     },
 )
