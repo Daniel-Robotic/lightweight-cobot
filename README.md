@@ -7,7 +7,7 @@
 sudo apt install -y ros-${ROS_DISTRO}-webots-ros2 \
                     ros-${ROS_DISTRO}-ros2-control \ 
                     ros-${ROS_DISTRO}-ros2-controllers \
-                    ros-${ROS_DISTRO}-moveit-* \
+                    ros-${ROS_DISTRO}-moveit \
 ```
 
 Установка moveit2 (внимательно проверяй)
@@ -23,12 +23,7 @@ sudo apt install -y build-essential \
                     wget
 
 # Not Using
-git clone https://github.com/moveit/moveit2.git
-vcs import --recursive < moveit2/moveit2.repos
-sudo apt remove ros-$ROS_DISTRO-moveit*
-rosdep install -r --from-paths ./src/ --ignore-src --rosdistro $ROS_DISTRO --os=ubuntu:noble -y
-
-colcon build --mixin release
+LC_ALL=C ros2 launch iiwa_moveit demo...
 
 sudo pip3 install transforms3d --break-system-packages
 ```

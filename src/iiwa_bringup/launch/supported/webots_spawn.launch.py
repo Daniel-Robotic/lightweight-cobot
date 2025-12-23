@@ -35,7 +35,7 @@ def _spawn_setup(context, *args, **kwargs):
             },
             LaunchConfiguration("controller").perform(context),
         ],
-        respawn=True,
+        respawn=False,
     )
 
     controllers_launch = IncludeLaunchDescription(

@@ -14,10 +14,16 @@ from webots_ros2_msgs.srv import SpawnNodeFromString
 class ObjectSpawner(Node):
     def __init__(self):
         super().__init__("object_spawner")
+
+        # параметры передаваемые
+        self.declare_parameter('objects_path', '')
+
+        # переменные
         self._object_count: int = randint(1, 5)
         self._spawned_count: int = 0
         self._call_in_progress: bool = False
 
+        # Реализация
         self.cli = self.create_client(
             SpawnNodeFromString, "/Ros2Supervisor/spawn_node_from_string"
         )
@@ -29,7 +35,9 @@ class ObjectSpawner(Node):
 
         self._timer = self.create_timer(0.1, self.timer_callback)
 
+    # TODO: переделать процесс спавна, должен сформировать все proto файлы, после чего заспавнить все объекты
     def timer_callback(self):
+        # TODO: здесь должен получать объекты
         if self._spawned_count >= self._object_count:
             self.get_logger().info(f"All {self._object_count} objects spawned")
             self._timer.cancel()
@@ -39,6 +47,7 @@ class ObjectSpawner(Node):
             return
 
         data = 'Solid { name "test_box2" translation 0 1 0.5 children [ Shape { appearance PBRAppearance { baseColor 0.901961 0.380392 0 } geometry Box { size 0.1 0.1 0.1 } } ] boundingObject Box { size 0.1 0.1 0.1 } physics Physics { } }'
+        data = self._create_group(children=[data])
 
         req = SpawnNodeFromString.Request(data=data, check_fields=True)
         self.get_logger().info(
@@ -57,6 +66,10 @@ class ObjectSpawner(Node):
         finally:
             self._call_in_progress = False
             self._spawned_count += 1
+
+    # Вспомогательные методы формирования кода для спавна объектов
+    def _create_group(self, children: list[str]) -> str:
+        return f"DEF OBJECTS Group {{children [{" ".join(children)}]}}"
 
 
 def main(args=None):

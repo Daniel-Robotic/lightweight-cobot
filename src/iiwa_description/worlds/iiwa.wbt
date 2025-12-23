@@ -5,9 +5,13 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
 EXTERNPROTO "../resource/protos/CollaborativeRobotTable.proto"
 EXTERNPROTO "../resource/protos/WorkspaceLimiter.proto"
+EXTERNPROTO "../resource/protos/Object.proto"
+
 
 WorldInfo {
   title "iiwa robotics"
+  basicTimeStep 10
+  optimalThreadCount 4
   contactProperties [
     ContactProperties {
       material1 "TableMaterial"
@@ -19,11 +23,18 @@ WorldInfo {
       softERP 1
       softCFM 0.0001
     }
+    ContactProperties {
+      material1 "tool"
+      material2 "TableMaterial"
+      bounce 0
+      softCFM 0.002
+      maxContactJoints 100
+    }
   ]
 }
 Viewpoint {
-  orientation 0.19675345789351045 -0.08356742903703787 -0.976885132249993 3.928186370440618
-  position 5.324715157515194 -4.7927780008585446 4.166958679133935
+  orientation 0.19663259328507318 -0.09057124279298501 -0.9762850368805829 3.9867817928674034
+  position 5.0239232195737245 -5.039192619765231 4.166958679133935
   followType "Mounted Shot"
   ambientOcclusionRadius 3
 }
@@ -34,7 +45,7 @@ TexturedBackgroundLight {
   luminosity 2
 }
 RectangleArena {
-  name "Room"
+  name "Arena"
   floorSize 12 12
   wallHeight 2
 }
@@ -43,8 +54,7 @@ CollaborativeRobotTable {
   locked TRUE
   showCabinet TRUE
 }
-
-Group {
+DEF limiter Group {
   children [
     WorkspaceLimiter {
       translation -1.56 -0.219999 1.01

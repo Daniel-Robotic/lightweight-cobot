@@ -1,0 +1,39 @@
+#VRML_SIM R2025a utf8
+# Describe the functionality of your PROTO here.
+# template language: javascript
+
+
+PROTO Object [
+  field SFVec3f translation 0 0 0
+  field SFRotation rotation 0 0 1 0
+  field SFString name "my_object"
+  field MFString object_path []
+  field SFNode physics Physics{  }
+]
+{
+  Solid {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    contactMaterial "tool"
+    
+    children [
+      Shape {
+        appearance PBRAppearance {
+          roughness 1
+          metalness 0
+        }
+        geometry Mesh {
+          url IS object_path
+        }
+      }
+    ]
+    
+    boundingObject Mesh {
+      url IS object_path
+    }
+    
+    physics IS physics
+    
+  }
+}

@@ -21,11 +21,7 @@ def _runtime_setup(context, *args, **kwatgs):
     model_path = LaunchConfiguration("model").perform(context)
     robot_name = LaunchConfiguration("robot_name").perform(context)
     world_path = LaunchConfiguration("world").perform(context)
-    rviz_status = LaunchConfiguration("rviz").perform(context).lower() in [
-        "true",
-        "1",
-        "yes",
-    ]
+    rviz_status = LaunchConfiguration("rviz").perform(context).lower() in ["true", "1", "yes",]
 
     transform = LaunchConfiguration("transform").perform(context)
     rotation = LaunchConfiguration("rotation").perform(context)
@@ -40,7 +36,7 @@ def _runtime_setup(context, *args, **kwatgs):
         executable="robot_state_publisher",
         name="robot_state_publisher",
         output="screen",
-        parameters=[{"robot_description": robot_description, "use_sim_time": False}],
+        parameters=[{"robot_description": robot_description, "use_sim_time": True}],
     )
 
     webots_launch = IncludeLaunchDescription(
