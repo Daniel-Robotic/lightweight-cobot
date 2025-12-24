@@ -16,7 +16,7 @@ from webots_ros2_driver.webots_launcher import WebotsLauncher
 
 
 def _spawn_setup(context, *args, **kwargs):
-    model_path = LaunchConfiguration("model").perform(context)
+    xacro_file = LaunchConfiguration("xacro_file").perform(context)
     robot_name = LaunchConfiguration("robot_name").perform(context)
     world_path = LaunchConfiguration("world").perform(context)
     transform = LaunchConfiguration("transform").perform(context)
@@ -29,13 +29,13 @@ def _spawn_setup(context, *args, **kwargs):
         robot_name=robot_name,
         parameters=[
             {
-                "robot_description": model_path,
-                "use_sim_time": True,
+                "robot_description": xacro_file,
+                "use_sim_time": False,
                 "set_robot_state_publisher": False,
             },
             LaunchConfiguration("controller").perform(context),
         ],
-        respawn=False,
+        respawn=True,
     )
 
     controllers_launch = IncludeLaunchDescription(
@@ -51,7 +51,7 @@ def _spawn_setup(context, *args, **kwargs):
         ),
         launch_arguments={
             "robot_name": robot_name,
-            "model": model_path,
+            "xacro_file": xacro_file,
             "transform": transform,
             "rotation": rotation,
             "controller_timer": timer,

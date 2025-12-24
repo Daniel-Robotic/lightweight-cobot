@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
-
+    
     <!-- Массы звеньев -->
     <xacro:property name="mass_base" value="30.2763517543289"/>
     <xacro:property name="mass_link1" value="21.1627406257303"/>
