@@ -8,6 +8,8 @@ sudo apt install -y ros-${ROS_DISTRO}-webots-ros2 \
                     ros-${ROS_DISTRO}-ros2-control \ 
                     ros-${ROS_DISTRO}-ros2-controllers \
                     ros-${ROS_DISTRO}-moveit \
+                    ros-${ROS_DISTRO}-moveit-py
+
 ```
 
 Установка moveit2 (внимательно проверяй)

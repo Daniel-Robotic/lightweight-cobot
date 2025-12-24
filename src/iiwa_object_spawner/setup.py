@@ -19,7 +19,8 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            'object_spawner = iiwa_object_spawner.object_spawner:main'
+            'object_spawner = iiwa_object_spawner.object_spawner:main',
+            "motion_planning_test = iiwa_object_spawner.motion_planing_test:main"
         ],
     },
 )

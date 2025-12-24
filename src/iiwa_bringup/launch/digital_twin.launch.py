@@ -96,10 +96,7 @@ def _runtime_setup(context, *args, **kwatgs):
         .joint_limits(file_path=joint_limits_yaml)
         .pilz_cartesian_limits(file_path=pilz_limits_yaml)
         .trajectory_execution(file_path=moveit_controllers_yaml)
-        .planning_pipelines(
-            pipelines=["ompl", "stomp", "pilz_industrial_motion_planner"],
-            default_planning_pipeline="pilz_industrial_motion_planner",
-        )
+        .moveit_cpp(file_path="/home/daniel/dev/ros2_iiwa7/src/iiwa_bringup/config/motion_planing.yaml") # TODO: сделать подстановочным значением
         .to_moveit_configs()
     )
 
@@ -111,6 +108,15 @@ def _runtime_setup(context, *args, **kwatgs):
             moveit_configs.to_dict(),
             robot_description,
         ],
+    )
+
+    # TODO: не забудь поменять правильное название и имя пакета
+    moveit_py_node = Node(
+        name="moveit_py",
+        package="iiwa_object_spawner",
+        executable="motion_planning_test",
+        output="both",
+        parameters=[moveit_configs.to_dict()],
     )
 
     rviz_config = PathJoinSubstitution(
@@ -140,7 +146,8 @@ def _runtime_setup(context, *args, **kwatgs):
 
     setup += [rsp_node, 
               webots_launch, 
-              move_group, 
+              move_group,
+              moveit_py_node, 
               rviz_launch, 
               shutdown_on_rviz_exit
             ]
