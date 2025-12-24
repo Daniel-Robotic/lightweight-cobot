@@ -74,9 +74,9 @@ class ObjectSpawner(Node):
 
 def main(args=None):
     try:
-        with rclpy.init(args=args):
-            node = ObjectSpawner()
-            rclpy.spin(node=node)
+        rclpy.init(args=args)
+        node = ObjectSpawner()
+        rclpy.spin(node=node)
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
 

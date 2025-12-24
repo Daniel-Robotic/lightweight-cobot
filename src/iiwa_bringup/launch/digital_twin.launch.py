@@ -17,6 +17,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 from iiwa_bringup.utils import converter
 
+
 PACKAGE = "iiwa_bringup"
 DESCRIPTION_PKG = "iiwa_description"
 
@@ -95,6 +96,10 @@ def _runtime_setup(context, *args, **kwatgs):
         .joint_limits(file_path=joint_limits_yaml)
         .pilz_cartesian_limits(file_path=pilz_limits_yaml)
         .trajectory_execution(file_path=moveit_controllers_yaml)
+        .planning_pipelines(
+            pipelines=["ompl", "stomp", "pilz_industrial_motion_planner"],
+            default_planning_pipeline="pilz_industrial_motion_planner",
+        )
         .to_moveit_configs()
     )
 
