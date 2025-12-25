@@ -3,11 +3,10 @@
 
     <!-- Аргукменты -->
     <xacro:arg name="initial_positions_file"
-           default="$(find iiwa_bringup)/config/initial_positions.yaml"/>
+               default="$(find iiwa_config)/config/moveit/initial_positions.yaml"/>
 
     <xacro:property name="initial_positions"
-                value="${xacro.load_yaml('$(arg initial_positions_file)')['initial_positions']}"/>
-
+                    value="${xacro.load_yaml('$(arg initial_positions_file)')['initial_positions']}"/>
 
     <xacro:include filename="$(find iiwa_description)/urdf/params.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/macros.xacro"/>

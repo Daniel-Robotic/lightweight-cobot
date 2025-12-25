@@ -1,0 +1,29 @@
+robot:
+  name: "iiwa7"
+  ip: "192.168.21.144"
+  port: 3000
+
+digital_twin:
+  webots:
+    world: pkg://iiwa_description/worlds/iiwa.wbt
+    transform: "-0.25 0 0.79"
+    rotation: "0 0 1 0"
+    controller_timer: "50"
+
+  rviz:
+    config: pkg://iiwa_config/config/rviz/rviz_moveit.rviz
+
+  description: pkg://iiwa_description/urdf/iiwa7.urdf.xacro
+
+controller:
+  controller_path: pkg://iiwa_config/config/moveit/iiwa_controller.yaml
+
+  moveit:
+    srdf: pkg://iiwa_config/config/moveit/iiwa7.srdf
+    kinematics: pkg://iiwa_config/config/moveit/kinematics.yaml
+    joint_limits: pkg://iiwa_config/config/moveit/joint_limits.yaml
+    pilz_limits: pkg://iiwa_config/config/moveit/pilz_cartesian_limits.yaml
+    initial_positions: pkg://iiwa_config/config/moveit/initial_positions.yaml
+    moveit_controllers: pkg://iiwa_config/config/moveit/moveit_controllers.yaml
+    moveit_cpp: pkg://iiwa_config/config/moveit/moveit_cpp.yaml
+

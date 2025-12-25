@@ -16,24 +16,28 @@ from webots_ros2_driver.webots_launcher import WebotsLauncher
 
 
 def _spawn_setup(context, *args, **kwargs):
-    xacro_file = LaunchConfiguration("xacro_file").perform(context)
     robot_name = LaunchConfiguration("robot_name").perform(context)
-    world_path = LaunchConfiguration("world").perform(context)
+    description = LaunchConfiguration("description").perform(context)
+    world = LaunchConfiguration("world").perform(context)
     transform = LaunchConfiguration("transform").perform(context)
     rotation = LaunchConfiguration("rotation").perform(context)
-    timer = LaunchConfiguration("controller_timer").perform(context)
+    controller_timer = LaunchConfiguration("controller_timer").perform(context)
+    controller = LaunchConfiguration("controller").perform(context)
+    initial_positions_file = LaunchConfiguration("initial_positions_file").perform(
+        context
+    )
 
-    webots = WebotsLauncher(world=world_path, ros2_supervisor=True)
+    webots = WebotsLauncher(world=world, ros2_supervisor=True)
 
     driver = WebotsController(
         robot_name=robot_name,
         parameters=[
             {
-                "robot_description": xacro_file,
+                "robot_description": description,
                 "use_sim_time": False,
                 "set_robot_state_publisher": False,
             },
-            LaunchConfiguration("controller").perform(context),
+            controller,
         ],
         respawn=True,
     )
@@ -51,10 +55,11 @@ def _spawn_setup(context, *args, **kwargs):
         ),
         launch_arguments={
             "robot_name": robot_name,
-            "xacro_file": xacro_file,
+            "description": description,
             "transform": transform,
             "rotation": rotation,
-            "controller_timer": timer,
+            "controller_timer": controller_timer,
+            "initial_positions_file": initial_positions_file,
         }.items(),
     )
 

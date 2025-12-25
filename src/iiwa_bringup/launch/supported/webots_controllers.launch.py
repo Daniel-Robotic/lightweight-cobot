@@ -4,23 +4,26 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from webots_ros2_driver.urdf_spawner import URDFSpawner
 
-
-from iiwa_bringup.utils import converter
+from iiwa_utils import converter
 
 
 def _setup_controllers(context, *args, **kwargs):
-    xacro_file = LaunchConfiguration("xacro_file").perform(context)
     robot_name = LaunchConfiguration("robot_name").perform(context)
+    description = LaunchConfiguration("description").perform(context)
     transform = LaunchConfiguration("transform").perform(context)
     rotation = LaunchConfiguration("rotation").perform(context)
-    timer = LaunchConfiguration("controller_timer").perform(context)
-
-    robot_description = converter.load_robot_description(
-        model_path=xacro_file, robot_name=robot_name
+    controller_timer = LaunchConfiguration("controller_timer").perform(context)
+    initial_positions_file = LaunchConfiguration("initial_positions_file").perform(
+        context
     )
 
-    tmo = ["--controller-manager-timeout", str(timer)]
-    
+    robot_description = converter.load_robot_description(
+        model_path=description,
+        robot_name=robot_name,
+        xacro_args={"initial_positions_file": initial_positions_file},
+    )
+
+    tmo = ["--controller-manager-timeout", str(controller_timer)]
 
     jsb = Node(
         package="controller_manager",
