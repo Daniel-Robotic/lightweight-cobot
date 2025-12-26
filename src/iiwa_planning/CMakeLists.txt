@@ -16,9 +16,10 @@ include_directories(include)
 ament_python_install_package(${PROJECT_NAME})
 
 install(PROGRAMS
-  scripts/motion_planning_test.py
+  # scripts/motion_planning_test.py
+  scripts/motion_planning.py
   DESTINATION lib/${PROJECT_NAME}
-  RENAME motion_planning_test
+  RENAME motion_planning
 )
 
 
