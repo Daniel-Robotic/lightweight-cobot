@@ -94,7 +94,7 @@ def _runtime_setup(context, *args, **kwatgs):
     # TODO: не забудь поменять правильное название и имя пакета
     moveit_py_node = Node(
         name="moveit_py",
-        package="iiwa_utils",
+        package="iiwa_planning",
         executable="motion_planning_test",
         output="both",
         parameters=[moveit_configs.to_dict()],
