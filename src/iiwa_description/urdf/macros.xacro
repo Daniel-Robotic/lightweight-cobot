@@ -30,13 +30,14 @@
     </xacro:macro>
 
     <!-- Макрос для описания соединений -->
-    <xacro:macro name="revolute_joint" params="jname parent child xyz rpy axis lower upper effort velocity">
+    <xacro:macro name="revolute_joint" params="jname parent child xyz rpy axis lower upper effort velocity damping">
         <joint name="${jname}" type="revolute">
             <origin xyz="${xyz}" rpy="${rpy}"/>
             <parent link="${parent}"/>
             <child link="${child}"/>
             <axis xyz="${axis}"/>
             <limit lower="${lower}" upper="${upper}" effort="${effort}" velocity="${velocity}"/>
+            <dynamics damping="${damping}"/>
         </joint>
     </xacro:macro>
 

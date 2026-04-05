@@ -10,10 +10,31 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclpy REQUIRED)
+find_package(moveit_ros_planning_interface REQUIRED)
+find_package(moveit_core REQUIRED)
+find_package(moveit_ros_planning REQUIRED)
+find_package(moveit_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
-include_directories(include)
+add_executable(motion_planning_cpp src/motion_planning_cpp.cpp)
+target_include_directories(motion_planning_cpp PUBLIC include)
+
+ament_target_dependencies(motion_planning_cpp
+  rclcpp
+  moveit_ros_planning_interface
+  moveit_core
+  moveit_ros_planning
+  moveit_msgs
+  geometry_msgs
+)
+
 
 ament_python_install_package(${PROJECT_NAME})
+
+install(TARGETS
+  motion_planning_cpp
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 install(PROGRAMS
   # scripts/motion_planning_test.py

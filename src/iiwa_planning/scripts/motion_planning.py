@@ -14,9 +14,10 @@ class MotionPlaning(Node):
         super().__init__("motion_planning_node")
 
         self.moveit = MoveItPy(node_name="motion_planning_node")
-        self.robot_arm = self.moveit.get_planning_component("iiwa_arm")
+        self.robot_arm: PlanningComponent = self.moveit.get_planning_component("iiwa_arm")
         self.planning_scene_monitor = self.moveit.get_planning_scene_monitor()
 
+        
         self.get_logger().warn("***********************************************************")
         self.get_logger().info("MotionPlanning node is ready...")
         self.get_logger().warn("***********************************************************")
