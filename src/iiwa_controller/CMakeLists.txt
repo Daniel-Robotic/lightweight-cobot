@@ -1,104 +1,90 @@
 cmake_minimum_required(VERSION 3.8)
 project(iiwa_controller)
 
-# Default to C++14
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 14)
-endif()
-
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(ament_cmake REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
-find_package(Eigen3 REQUIRED)
 
-# FRI headers / sources
-set(FRI_HEADER
-    external/libFRI/include
-    external/libFRI/src/protobuf_gen
-    external/libFRI/src/nanopb-0.2.8
-    external/libFRI/src/protobuf
-    external/libFRI/src/connection
-    external/libFRI/src/client_lbr
-    external/libFRI/src/base
-  )
+# FRI SDK
+set(FRI_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/libFRI)
 
-set(FRI_SRC
-    external/libFRI/src/base/friClientApplication.cpp
-    external/libFRI/src/client_lbr/friLBRClient.cpp
-    external/libFRI/src/client_lbr/friLBRCommand.cpp
-    external/libFRI/src/client_lbr/friLBRState.cpp
-    external/libFRI/src/connection/friUdpConnection.cpp
-    external/libFRI/src/protobuf/friCommandMessageEncoder.cpp
-    external/libFRI/src/protobuf/friMonitoringMessageDecoder.cpp
-    external/libFRI/src/protobuf/pb_frimessages_callbacks.c
-    external/libFRI/src/protobuf_gen/FRIMessages.pb.c
-    external/libFRI/src/nanopb-0.2.8/pb_decode.c
-    external/libFRI/src/nanopb-0.2.8/pb_encode.c
-    external/libFRI/src/client_trafo/friTransformationClient.cpp
-  )
 
-add_library(${PROJECT_NAME}
-  SHARED
-  src/IIWAHardwareInterface.cpp
-  ${FRI_SRC}
+file(GLOB_RECURSE FRI_SOURCES
+  "${FRI_SDK_DIR}/src/base/*.cpp"
+  "${FRI_SDK_DIR}/src/client_lbr/*.cpp"
+  "${FRI_SDK_DIR}/src/client_trafo/*.cpp"
+  "${FRI_SDK_DIR}/src/connection/*.cpp"
+  "${FRI_SDK_DIR}/src/nanopb-0.2.8/*.c"
+  "${FRI_SDK_DIR}/src/protobuf/*.c"
+  "${FRI_SDK_DIR}/src/protobuf/*.cpp"
+  "${FRI_SDK_DIR}/src/protobuf_gen/*.c"
+)
+
+add_library(fri_client_sdk STATIC ${FRI_SOURCES})
+
+target_include_directories(fri_client_sdk PUBLIC
+  ${FRI_SDK_DIR}/include
+  ${FRI_SDK_DIR}/src/nanopb-0.2.8
+  ${FRI_SDK_DIR}/src/protobuf
+  ${FRI_SDK_DIR}/src/protobuf_gen
+  ${FRI_SDK_DIR}/src/base
+  ${FRI_SDK_DIR}/src/client_lbr
+  ${FRI_SDK_DIR}/src/connection
+)
+
+target_compile_definitions(fri_client_sdk PUBLIC PB_FIELD_16BIT)
+target_compile_options(fri_client_sdk PRIVATE -fpermissive -w)
+set_target_properties(fri_client_sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(fri_client_sdk PUBLIC pthread)
+
+# Плагин hardware interface
+add_library(${PROJECT_NAME} SHARED
   src/FRIClient.cpp
+  src/IIWAHardwareInterface.cpp
 )
 
-target_include_directories(${PROJECT_NAME}
-  PRIVATE
-    include
-    ${FRI_HEADER}
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 
-target_compile_definitions(${PROJECT_NAME}
-  PRIVATE
-    PB_FIELD_16BIT
-    HAVE_SOCKLEN_T
-    PB_FIELD_16BIT 
-    PB_NO_ERRMSG
+target_link_libraries(${PROJECT_NAME} PRIVATE
+  fri_client_sdk
+  hardware_interface::hardware_interface
+  pluginlib::pluginlib
+  rclcpp::rclcpp
+  rclcpp_lifecycle::rclcpp_lifecycle
 )
 
-target_link_libraries(${PROJECT_NAME}
-  PUBLIC
-    hardware_interface::hardware_interface
-    pluginlib::pluginlib
-    rclcpp::rclcpp
-    rclcpp_lifecycle::rclcpp_lifecycle
-    Eigen3::Eigen
+pluginlib_export_plugin_description_file(
+  hardware_interface
+  iiwa_hardware_interface_plugin.xml
 )
 
-# Export plugin description for pluginlib
-pluginlib_export_plugin_description_file(hardware_interface iiwa_controller_plugin.xml)
-
-# Installation
+# Установка — только библиотека и заголовки, без config/launch/urdf
 install(TARGETS ${PROJECT_NAME}
-  DESTINATION lib
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
-install(
-  DIRECTORY include/
+install(DIRECTORY include/
   DESTINATION include
 )
 
-ament_export_include_directories(
-  include
-)
-ament_export_libraries(
-  ${PROJECT_NAME}
-)
-
+ament_export_include_directories(include)
+ament_export_libraries(${PROJECT_NAME})
+ament_export_targets(export_${PROJECT_NAME})
 ament_export_dependencies(
-  hardware_interface
-  pluginlib
-  rclcpp
-  rclcpp_lifecycle
-  Eigen3
-)
+  hardware_interface pluginlib rclcpp rclcpp_lifecycle)
 
 ament_package()

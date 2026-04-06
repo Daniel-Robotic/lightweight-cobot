@@ -13,6 +13,8 @@ class RobotCfg:
     name: str
     ip: str
     port: int
+    command_mode: str
+    description: str
 
 
 @dataclass(frozen=True)
@@ -153,6 +155,8 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         name=str(require(robot_raw, "name")),
         ip=str(require(robot_raw, "ip")),
         port=int(require(robot_raw, "port")),
+        command_mode=str(require(robot_raw, "command_mode")),
+        description=resolve_path(str(require(robot_raw, "description")), settings_dir),
     )
 
     # digital_twin
@@ -205,6 +209,7 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
     s = Settings(robot=robot, digital_twin=digital_twin, controller=controller)
 
     if check_files:
+        assert_file(s.robot.description, "robot.description")
         assert_file(s.digital_twin.webots.world, "digital_twin.webots.world")
         assert_file(s.digital_twin.rviz.config, "digital_twin.rviz.config")
         assert_file(s.digital_twin.description, "digital_twin.description")

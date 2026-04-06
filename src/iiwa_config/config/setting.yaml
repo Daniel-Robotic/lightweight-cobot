@@ -1,7 +1,10 @@
 robot:
   name: "iiwa7"
-  ip: "192.168.21.144"
-  port: 3000
+  ip: "192.170.10.2"
+  port: 30200
+  command_mode: "position" # torque, position
+  description: pkg://iiwa_description/urdf/iiwa7_fri.urdf.xacro
+
 
 digital_twin:
   webots:

@@ -41,6 +41,15 @@ def _setup_controllers(context, *args, **kwargs):
         parameters=[{"use_sim_time": False}],
     )
 
+    torque_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        output="screen",
+        arguments=["forward_torque_controller",
+                   "--inactive"] + tmo,
+        parameters=[{"use_sim_time": False}]
+    )
+
     spawner_urdf = URDFSpawner(
         name=robot_name,
         robot_description=robot_description,
@@ -48,7 +57,7 @@ def _setup_controllers(context, *args, **kwargs):
         rotation=rotation,
     )
 
-    return [jsb, jtc, spawner_urdf]
+    return [jsb, jtc, torque_controller_spawner, spawner_urdf]
 
 
 def generate_launch_description():

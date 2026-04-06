@@ -1,6 +1,6 @@
 controller_manager:
   ros__parameters:
-    update_rate: 100
+    update_rate: 200
 
     joint_state_broadcaster:
       type: "joint_state_broadcaster/JointStateBroadcaster"
@@ -8,6 +8,10 @@ controller_manager:
     iiwa_arm_controller:
       type: "joint_trajectory_controller/JointTrajectoryController"
 
+    forward_torque_controller:
+      type: "forward_command_controller/ForwardCommandController"
+
+# Основной контроллер - плавное движение по траектории
 iiwa_arm_controller:
   ros__parameters:
     joints:
@@ -17,14 +21,51 @@ iiwa_arm_controller:
       - joint4
       - joint5
       - joint6
-      - joint7  
+      - joint7
 
     command_interfaces:
       - position
 
     state_interfaces:
       - position
+      - velocity
 
-    allow_partial_joints_goal: false
+    # Интерполяция между точками траектории
     interpolate_from_desired_state: true
+
+    # Разрешить неполные goals
+    allow_partial_joints_goal: false
+
+    # Разрешить ненулевую скорость в конечной точке траектории
+    # true = плавные составные движения
+    # false = полная остановка в каждой точке (безопаснее)
     allow_nonzero_velocity_at_trajectory_end: true
+
+    state_publish_rate: 100.0 # Гц публикации /joint_states
+    action_monitor_rate: 20.0 # Гц мониторинга action goal
+
+    # Допуски — насколько точно робот должен попасть в цель
+    # constraints:
+    #   stopped_velocity_tolerance: 0.01  # рад/с — считаем остановившимся
+    #   goal_time: 1.0 # сек — доп. время на достижение цели
+    #   joint1: { trajectory: 0, goal: 0.01 }
+    #   joint2: { trajectory: 0, goal: 0.01 }
+    #   joint3: { trajectory: 0, goal: 0.01 }
+    #   joint4: { trajectory: 0, goal: 0.01 }
+    #   joint5: { trajectory: 0, goal: 0.01 }
+    #   joint6: { trajectory: 0, goal: 0.01 }
+    #   joint7: { trajectory: 0, goal: 0.01 }
+
+# Torque контроллер - прямое управление моментом
+# Активировать только при command_mode:=torque в launch файле
+forward_torque_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - joint7
+    interface_name: effort

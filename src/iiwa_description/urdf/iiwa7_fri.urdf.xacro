@@ -1,9 +1,14 @@
 <?xml version="1.0"?>
+
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="iiwa7">
 
-    <!-- Аргукменты -->
     <xacro:arg name="initial_positions_file"
                default="$(find iiwa_config)/config/moveit/initial_positions.yaml"/>
+
+    <xacro:arg name="robot_ip" default="192.170.10.2"/>
+    <xacro:arg name="fri_port" default="30200"/>
+    <xacro:arg name="simulate" default="false"/>
+    <xacro:arg name="command_mode" default="position"/>
 
     <xacro:property name="initial_positions"
                     value="${xacro.load_yaml('$(arg initial_positions_file)')['initial_positions']}"/>
@@ -13,16 +18,19 @@
     <xacro:include filename="$(find iiwa_description)/urdf/links.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/joints.xacro"/>
 
-    <webots>
-        <plugin type="webots_ros2_control::Ros2Control"/>
-    </webots>
+    <ros2_control name="iiwaFRIControl" type="system">
 
-    <ros2_control name="iiwaWebotsControl" type="system">
         <hardware>
-            <plugin>webots_ros2_control::Ros2ControlSystem</plugin>
+            <plugin>iiwa_controller/IIWAHardwareInterface</plugin>
+
+            <param name="robot_ip">$(arg robot_ip)</param>
+            <param name="fri_port">$(arg fri_port)</param>
+            <param name="simulate">$(arg simulate)</param>
+            <param name="command_mode">$(arg command_mode)</param>
+
         </hardware>
 
-       <joint name="joint1">
+        <joint name="joint1">
             <command_interface name="position">
                 <param name="min">-2.97</param>
                 <param name="max"> 2.97</param>
@@ -135,6 +143,5 @@
         </joint>
 
     </ros2_control>
-
 
 </robot>
