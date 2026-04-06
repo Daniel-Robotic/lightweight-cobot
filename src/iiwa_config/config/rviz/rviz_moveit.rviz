@@ -135,7 +135,7 @@ Visualization Manager:
         State Display Time: 3x
         Trail Step Size: 1
         Trajectory Topic: /display_planned_path
-        Use Sim Time: false
+        Use Sim Time: True
       Planning Metrics:
         Payload: 1
         Show Joint Torques: false

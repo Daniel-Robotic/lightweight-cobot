@@ -30,7 +30,7 @@ def _setup_controllers(context, *args, **kwargs):
         executable="spawner",
         output="screen",
         arguments=["joint_state_broadcaster"] + tmo,
-        parameters=[{"use_sim_time": False}],
+        parameters=[{"use_sim_time": True}],
     )
 
     jtc = Node(
@@ -38,7 +38,7 @@ def _setup_controllers(context, *args, **kwargs):
         executable="spawner",
         output="screen",
         arguments=["iiwa_arm_controller"] + tmo,
-        parameters=[{"use_sim_time": False}],
+        parameters=[{"use_sim_time": True}],
     )
 
     torque_controller_spawner = Node(
@@ -47,7 +47,7 @@ def _setup_controllers(context, *args, **kwargs):
         output="screen",
         arguments=["forward_torque_controller",
                    "--inactive"] + tmo,
-        parameters=[{"use_sim_time": False}]
+        parameters=[{"use_sim_time": True}]
     )
 
     spawner_urdf = URDFSpawner(

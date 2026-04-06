@@ -38,7 +38,7 @@ def _runtime_setup(context, *args, **kwatgs):
         executable="robot_state_publisher",
         name="robot_state_publisher",
         output="screen",
-        parameters=[{"robot_description": robot_description, "use_sim_time": False}],
+        parameters=[{"robot_description": robot_description, "use_sim_time": True}],
     )
 
     webots_launch = IncludeLaunchDescription(
@@ -88,17 +88,19 @@ def _runtime_setup(context, *args, **kwatgs):
         parameters=[
             moveit_configs.to_dict(),
             {"robot_description": robot_description},
+            {"use_sim_time": True},
         ],
     )
 
     # TODO: не забудь поменять правильное название и имя пакета
-    moveit_py_node = Node(
-        # name="motion_planning_node",
-        package="iiwa_planning",
-        executable="motion_planning",
-        output="both",
-        parameters=[moveit_configs.to_dict()],
-    )
+    # moveit_py_node = Node(
+    #     # name="motion_planning_node",
+    #     package="iiwa_planning",
+    #     executable="motion_planning",
+    #     output="both",
+    #     parameters=[moveit_configs.to_dict()],
+    # )
+
 
     rviz_launch = Node(
         condition=IfCondition(LaunchConfiguration("rviz")),
@@ -110,9 +112,9 @@ def _runtime_setup(context, *args, **kwatgs):
         parameters=[
             moveit_configs.robot_description,
             moveit_configs.robot_description_semantic,
-            moveit_configs.robot_description_kinematics,
             moveit_configs.planning_pipelines,
-            moveit_configs.joint_limits,
+            moveit_configs.planning_scene_monitor,
+            {"use_sim_time": True},
         ],
     )
 
@@ -124,7 +126,7 @@ def _runtime_setup(context, *args, **kwatgs):
         rsp_node,
         webots_launch,
         move_group,
-        moveit_py_node,
+        # moveit_py_node,
         rviz_launch,
         shutdown_on_rviz_exit,
     ]
