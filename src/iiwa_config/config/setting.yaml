@@ -16,7 +16,7 @@ digital_twin:
   rviz:
     config: pkg://iiwa_config/config/rviz/rviz_moveit.rviz
 
-  description: pkg://iiwa_description/urdf/iiwa7.urdf.xacro
+  description: pkg://iiwa_description/urdf/iiwa7_digital.urdf.xacro
 
 controller:
   controller_path: pkg://iiwa_config/config/moveit/iiwa_controller.yaml

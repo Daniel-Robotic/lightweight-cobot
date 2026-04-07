@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
+
+
+    <xacro:macro name="gripper_link"
+                 params="name mass
+                         ixx ixy ixz iyy iyz izz xyz_iner
+                         mesh
+                         visual_xyz visual_rpy
+                         r g b a
+                         box_x box_y box_z box_xyz">
+        <link name="${name}">
+            <inertial>
+                <origin xyz="${xyz_iner}" rpy="0 0 0"/>
+                <mass value="${mass}"/>
+                <inertia ixx="${ixx}" ixy="${ixy}" ixz="${ixz}"
+                         iyy="${iyy}" iyz="${iyz}" izz="${izz}"/>
+            </inertial>
+            <visual>
+                <origin xyz="${visual_xyz}" rpy="${visual_rpy}"/>
+                <geometry>
+                    <mesh filename="${mesh}" scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="${name}_material">
+                    <color rgba="${r} ${g} ${b} ${a}"/>
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="${box_xyz}" rpy="0 0 0"/>
+                <geometry>
+                    <box size="${box_x} ${box_y} ${box_z}"/>
+                </geometry>
+            </collision>
+        </link>
+    </xacro:macro>
+
+
+    <xacro:macro name="prismatic_joint"
+                 params="jname parent child xyz rpy axis lower upper effort velocity">
+        <joint name="${jname}" type="prismatic">
+            <origin xyz="${xyz}" rpy="${rpy}"/>
+            <parent link="${parent}"/>
+            <child link="${child}"/>
+            <axis xyz="${axis}"/>
+            <limit lower="${lower}" upper="${upper}"
+                   effort="${effort}" velocity="${velocity}"/>
+            <dynamics damping="0.5" friction="0.1"/>
+        </joint>
+    </xacro:macro>
+
+    <xacro:macro name="mimic_revolute_joint"
+                 params="jname parent child xyz rpy axis
+                         lower upper effort velocity damping
+                         mimic_joint multiplier mimic_offset">
+        <joint name="${jname}" type="revolute">
+            <origin xyz="${xyz}" rpy="${rpy}"/>
+            <parent link="${parent}"/>
+            <child link="${child}"/>
+            <axis xyz="${axis}"/>
+            <limit lower="${lower}" upper="${upper}"
+                   effort="${effort}" velocity="${velocity}"/>
+            <dynamics damping="${damping}" friction="0.05"/>
+            <mimic joint="${mimic_joint}"
+                   multiplier="${multiplier}"
+                   offset="${mimic_offset}"/>
+        </joint>
+    </xacro:macro>
+
+</robot>

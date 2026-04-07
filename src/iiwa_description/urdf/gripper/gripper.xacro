@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- Захват для Webots digital twin: все суставы fixed, без физики суставов.
+     Для реального робота используй gripper.xacro. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
+
+    <!-- Digital: box collision вместо mesh, все суставы с правильной физикой -->
+    <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper_links.xacro"/>
+    <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper_joints.xacro"/>
+
+    <joint name="gripper_attach_joint" type="fixed">
+        <origin xyz="0.0 0.0 0" rpy="0.0 0.0 0.0"/>
+        <parent link="link_ee"/>
+        <child link="base_frame"/>
+    </joint>
+
+</robot>

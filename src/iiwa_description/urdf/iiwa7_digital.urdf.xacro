@@ -13,6 +13,8 @@
     <xacro:include filename="$(find iiwa_description)/urdf/links.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/joints.xacro"/>
 
+    <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper.xacro"/>
+
     <webots>
         <plugin type="webots_ros2_control::Ros2Control"/>
     </webots>
@@ -133,6 +135,15 @@
             <state_interface name="velocity"/>
             <state_interface name="effort"/>
         </joint>
+
+        <!-- Захват -->
+        <!-- <joint name="base_screw">
+            <command_interface name="position"/>
+            <state_interface name="position">
+                <param name="initial_value">0.0</param>
+            </state_interface>
+            <state_interface name="velocity"/>
+        </joint> -->
 
     </ros2_control>
 
