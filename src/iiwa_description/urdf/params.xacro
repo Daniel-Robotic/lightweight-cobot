@@ -20,5 +20,4 @@
     <xacro:include filename="$(find iiwa_description)/urdf/meshes.xacro" />
 
 
-
 </robot>
