@@ -93,7 +93,7 @@ def _runtime_setup(context, *args, **kwargs):
             # TODO: добавить аргументы для transform и rotation и передать их из setting.yaml а также мир
             launch_arguments={
                 "robot_name": settings.robot.name,
-                "world": "empty.sdf",
+                "world": str(get_package_share_directory("iiwa_description") + "/worlds/iiwa_world.sdf"),
                 "gazebo_config": str(get_package_share_directory("iiwa_config") + "/config/gazebo/gz_bridge.yaml"),
                 "simulate": "true",
             }.items(),

@@ -1,3 +1,4 @@
+from ament_index_python import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     IncludeLaunchDescription,
@@ -32,6 +33,25 @@ def _spawn_setup(context, *args, **kwargs):
             }.items(),
     )
 
+    # Table Spawner
+    spawn_table = Node(
+        package="ros_gz_sim",
+        executable="create",
+        name="spawn_table",
+        output="screen",
+        arguments=[
+            "-file", str(
+                get_package_share_directory("iiwa_description")
+                + "/urdf/table/table.urdf"
+            ),
+            "-name",  "iiwa_table",
+            "-x", "0.0",
+            "-y", "0.0",
+            "-z", "0.0",
+        ],
+    )
+
+    # Robot Spawner
     # TODO: добавить аргументы для transform и rotation
     spawn_robot = Node(
         package="ros_gz_sim",
@@ -41,7 +61,9 @@ def _spawn_setup(context, *args, **kwargs):
         arguments=[
             "-topic", "/robot_description",
             "-name", robot_name,
-            "-z", "0.0"
+            "-x", "-0.25",
+            "-y", "0.0",
+            "-z", "0.81"
         ],
     )
 
@@ -56,7 +78,12 @@ def _spawn_setup(context, *args, **kwargs):
         }],
     )
 
-    return [gazebo, spawn_robot, gz_bridge]
+    return [
+        gazebo,
+        spawn_table,
+        spawn_robot, 
+        gz_bridge
+    ]
 
 
 def generate_launch_description():
