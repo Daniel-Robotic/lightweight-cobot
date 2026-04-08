@@ -27,7 +27,7 @@ def _spawn_setup(context, *args, **kwargs):
             )
         ),
         launch_arguments={
-            "gz_args": f"-r {world}",
+            "gz_args": f"-r {world} --render-engine ogre",
             "on_exit_shutdown": "true",
             }.items(),
     )
