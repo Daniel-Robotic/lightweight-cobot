@@ -229,3 +229,5 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         assert_file(s.controller.moveit.moveit_cpp, "controller.moveit.moveit_cpp")
 
     return s
+
+

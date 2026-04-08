@@ -1,15 +1,11 @@
 <?xml version="1.0"?>
-
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
-
 
     <xacro:macro name="gripper_link"
                  params="name mass
                          ixx ixy ixz iyy iyz izz xyz_iner
-                         mesh
-                         visual_xyz visual_rpy
-                         r g b a
-                         box_x box_y box_z box_xyz">
+                         mesh visual_xyz visual_rpy
+                         r g b a">
         <link name="${name}">
             <inertial>
                 <origin xyz="${xyz_iner}" rpy="0 0 0"/>
@@ -27,14 +23,33 @@
                 </material>
             </visual>
             <collision>
-                <origin xyz="${box_xyz}" rpy="0 0 0"/>
+                <origin xyz="${visual_xyz}" rpy="${visual_rpy}"/>
                 <geometry>
-                    <box size="${box_x} ${box_y} ${box_z}"/>
+                    <mesh filename="${mesh}" scale="0.001 0.001 0.001"/>
                 </geometry>
             </collision>
         </link>
-    </xacro:macro>
 
+        <gazebo reference="${name}">
+            <visual>
+                <material>
+                    <ambient>${r} ${g} ${b} ${a}</ambient>
+                    <diffuse>${r} ${g} ${b} ${a}</diffuse>
+                    <specular>0.3 0.3 0.3 1.0</specular>
+                </material>
+            </visual>
+            <collision>
+                <surface>
+                    <friction>
+                        <ode><mu>1.0</mu><mu2>1.0</mu2></ode>
+                    </friction>
+                    <contact>
+                        <ode><kp>1000000.0</kp><kd>100.0</kd></ode>
+                    </contact>
+                </surface>
+            </collision>
+        </gazebo>
+    </xacro:macro>
 
     <xacro:macro name="prismatic_joint"
                  params="jname parent child xyz rpy axis lower upper effort velocity">

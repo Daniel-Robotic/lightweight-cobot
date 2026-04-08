@@ -43,9 +43,6 @@
     <!--PASSIVE JOINTS: MoveIt не ожидает их в /joint_states и не планирует ими.
         Геометрия захвата всё равно учитывается при проверке коллизий.-->
     <passive_joint name="base_screw"/>
-    <passive_joint name="craving1_joint"/>
-    <passive_joint name="craving2_joint"/>
-    <passive_joint name="craving3_joint"/>
     <passive_joint name="finger1_joint"/>
     <passive_joint name="finger2_joint"/>
     <passive_joint name="finger3_joint"/>

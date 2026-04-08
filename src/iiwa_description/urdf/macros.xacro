@@ -27,6 +27,17 @@
                 </geometry>
             </collision>
         </link>
+
+        <gazebo reference="${name}">
+            <visual>
+                <material>
+                    <ambient>${color_r * 0.7} ${color_g * 0.7} ${color_b * 0.7} ${color_a}</ambient>
+                    <diffuse>${color_r} ${color_g} ${color_b} ${color_a}</diffuse>
+                    <specular>0.3 0.3 0.3 1.0</specular>
+                    <emissive>0 0 0 1</emissive>
+                </material>
+            </visual>
+        </gazebo>
     </xacro:macro>
 
     <!-- Макрос для описания соединений -->

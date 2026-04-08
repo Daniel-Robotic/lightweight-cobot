@@ -33,7 +33,6 @@ def _setup_controllers(context, *args, **kwargs):
         ],
     )
 
-    
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",

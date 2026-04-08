@@ -4,6 +4,13 @@
     <!-- Аргукменты -->
     <xacro:arg name="initial_positions_file"
                default="$(find iiwa_config)/config/moveit/initial_positions.yaml"/>
+    <xacro:arg name="simulate" default="false"/>
+
+    <!-- Аргументы только для реального робота -->
+    <xacro:arg name="robot_ip" default="192.170.10.2"/>
+    <xacro:arg name="fri_port" default="30200"/>
+    <xacro:arg name="command_mode" default="position"/>
+
 
     <xacro:property name="initial_positions"
                     value="${xacro.load_yaml('$(arg initial_positions_file)')['initial_positions']}"/>
@@ -15,23 +22,48 @@
 
     <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper.xacro"/>
 
-    <webots>
-        <plugin type="webots_ros2_control::Ros2Control"/>
-    </webots>
+    <xacro:if value="$(arg simulate)">
+        <gazebo>
+            <plugin filename="gz_ros2_control-system"
+                    name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+                <parameters>$(find iiwa_config)/config/moveit/iiwa_controller.yaml</parameters>
+                <ros>
+                    <remapping>~/robot_description:=/robot_description</remapping>
+                </ros>
+            </plugin>
+        </gazebo>
+    </xacro:if>
 
-    <ros2_control name="iiwaWebotsControl" type="system">
+    <!-- <webots>
+        <plugin type="webots_ros2_control::Ros2Control"/>
+    </webots> -->
+
+    <ros2_control name="iiwaControl" type="system">
+
+        <xacro:if value="$(arg simulate)">
+            <hardware>
+                <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+            </hardware>
+        </xacro:if>
+
         <hardware>
-            <plugin>webots_ros2_control::Ros2ControlSystem</plugin>
+            <plugin>iiwa_controller/IIWAHardwareInterface</plugin>
+
+            <param name="robot_ip">$(arg robot_ip)</param>
+            <param name="fri_port">$(arg fri_port)</param>
+            <param name="simulate">$(arg simulate)</param>
+            <param name="command_mode">$(arg command_mode)</param>
+
         </hardware>
 
-       <joint name="joint1">
+         <!-- <hardware>
+            <plugin>webots_ros2_control::Ros2ControlSystem</plugin>
+        </hardware> -->
+
+        <joint name="joint1">
             <command_interface name="position">
                 <param name="min">-2.97</param>
                 <param name="max"> 2.97</param>
-            </command_interface>
-            <command_interface name="effort">
-                <param name="min">-320</param>
-                <param name="max"> 320</param>
             </command_interface>
             <state_interface name="position">
                 <param name="initial_value">${initial_positions['joint1']}</param>
@@ -45,10 +77,6 @@
                 <param name="min">-2.09</param>
                 <param name="max"> 2.09</param>
             </command_interface>
-            <command_interface name="effort">
-                <param name="min">-320</param>
-                <param name="max"> 320</param>
-            </command_interface>
             <state_interface name="position">
                 <param name="initial_value">${initial_positions['joint2']}</param>
             </state_interface>
@@ -60,10 +88,6 @@
             <command_interface name="position">
                 <param name="min">-2.97</param>
                 <param name="max"> 2.97</param>
-            </command_interface>
-            <command_interface name="effort">
-                <param name="min">-320</param>
-                <param name="max"> 320</param>
             </command_interface>
             <state_interface name="position">
                 <param name="initial_value">${initial_positions['joint3']}</param>
@@ -77,10 +101,6 @@
                 <param name="min">-2.09</param>
                 <param name="max"> 2.09</param>
             </command_interface>
-            <command_interface name="effort">
-                <param name="min">-320</param>
-                <param name="max"> 320</param>
-            </command_interface>
             <state_interface name="position">
                 <param name="initial_value">${initial_positions['joint4']}</param>
             </state_interface>
@@ -92,10 +112,6 @@
             <command_interface name="position">
                 <param name="min">-2.97</param>
                 <param name="max"> 2.97</param>
-            </command_interface>
-            <command_interface name="effort">
-                <param name="min">-320</param>
-                <param name="max"> 320</param>
             </command_interface>
             <state_interface name="position">
                 <param name="initial_value">${initial_positions['joint5']}</param>
@@ -109,10 +125,6 @@
                 <param name="min">-2.09</param>
                 <param name="max"> 2.09</param>
             </command_interface>
-            <command_interface name="effort">
-                <param name="min">-320</param>
-                <param name="max"> 320</param>
-            </command_interface>
             <state_interface name="position">
                 <param name="initial_value">${initial_positions['joint6']}</param>
             </state_interface>
@@ -125,10 +137,6 @@
                 <param name="min">-3.05</param>
                 <param name="max"> 3.05</param>
             </command_interface>
-            <command_interface name="effort">
-                <param name="min">-320</param>
-                <param name="max"> 320</param>
-            </command_interface>
             <state_interface name="position">
                 <param name="initial_value">${initial_positions['joint7']}</param>
             </state_interface>
@@ -136,16 +144,14 @@
             <state_interface name="effort"/>
         </joint>
 
-        <!-- Захват -->
-        <!-- <joint name="base_screw">
+        <joint name="base_screw">
             <command_interface name="position"/>
             <state_interface name="position">
                 <param name="initial_value">0.0</param>
             </state_interface>
             <state_interface name="velocity"/>
-        </joint> -->
+        </joint>
 
     </ros2_control>
-
 
 </robot>

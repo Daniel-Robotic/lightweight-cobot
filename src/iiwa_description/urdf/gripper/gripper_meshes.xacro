@@ -7,7 +7,6 @@
     <xacro:property name="mesh_gripper_base_frame" value="${gripper_pkg}/base_frame.stl"/>
     <xacro:property name="mesh_gripper_plate" value="${gripper_pkg}/plate.stl"/>
     <xacro:property name="mesh_gripper_screw" value="${gripper_pkg}/screw.stl"/>
-    <xacro:property name="mesh_gripper_craving" value="${gripper_pkg}/craving.stl"/>
     <xacro:property name="mesh_gripper_finger" value="${gripper_pkg}/finger_plates.stl"/>
 
 </robot>

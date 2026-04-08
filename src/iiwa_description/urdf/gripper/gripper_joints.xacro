@@ -2,9 +2,10 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
 
     <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper_macros.xacro"/>
+    <xacro:arg name="simulate" default="false"/>
 
     <joint name="base_joint" type="fixed">
-        <origin xyz="0.0 0.0 0.061" rpy="0.0 0.0 0.0"/>
+        <origin xyz="0.0 0.0 0.0613" rpy="0.0 0.0 0.0"/>
         <parent link="base_frame"/>
         <child link="plate"/>
     </joint>
@@ -16,47 +17,25 @@
         lower="-0.007" upper="0.0"
         effort="50.0" velocity="0.05"/>
 
-    <xacro:mimic_revolute_joint jname="craving1_joint"
-        parent="screw" child="craving1"
-        xyz="0.0155 -0.0095 0.004" rpy="0.0 0 -0.55"
-        axis="0.0 1 0.0"
-        lower="-0.25" upper="-0.2" effort="5.0" velocity="1.0" damping="0.05"
-        mimic_joint="base_screw" multiplier="0.1" mimic_offset="-0.25"/>
-
-    <xacro:mimic_revolute_joint jname="craving2_joint"
-        parent="screw" child="craving2"
-        xyz="-0.0155 -0.0095 0.004" rpy="0.0 0 0.55"
-        axis="0.0 1 0.0"
-        lower="0.2" upper="0.25" effort="5.0" velocity="1.0" damping="0.05"
-        mimic_joint="base_screw" multiplier="0.1" mimic_offset="0.2"/>
-
-    <xacro:mimic_revolute_joint jname="craving3_joint"
-        parent="screw" child="craving3"
-        xyz="0 0.018 0.004" rpy="0.0 0 1.57"
-        axis="0.0 1 0.0"
-        lower="-0.25" upper="-0.2" effort="5.0" velocity="1.0" damping="0.05"
-        mimic_joint="base_screw" multiplier="0.1" mimic_offset="-0.25"/>
-
-
     <xacro:mimic_revolute_joint jname="finger1_joint"
         parent="plate" child="finger1"
         xyz="0.0315 -0.0185 0.028" rpy="0.0 0.0 -2.12"
         axis="1 0.0 0"
-        lower="-0.2" upper="0.09" effort="5.0" velocity="1.0" damping="0.0"
+        lower="-0.2" upper="0.07" effort="5.0" velocity="1.0" damping="0.0"
         mimic_joint="base_screw" multiplier="-50" mimic_offset="-0.2"/>
 
     <xacro:mimic_revolute_joint jname="finger2_joint"
         parent="plate" child="finger2"
         xyz="-0.0315 -0.0185 0.028" rpy="0.0 0.0 2.12"
         axis="1 0.0 0"
-        lower="-0.2" upper="0.09" effort="5.0" velocity="1.0" damping="0.0"
+        lower="-0.2" upper="0.07" effort="5.0" velocity="1.0" damping="0.0"
         mimic_joint="base_screw" multiplier="-50" mimic_offset="-0.2"/>
 
     <xacro:mimic_revolute_joint jname="finger3_joint"
         parent="plate" child="finger3"
         xyz="0 0.037 0.028" rpy="0.0 0.0 0.0"
         axis="1 0.0 0"
-        lower="-0.2" upper="0.09" effort="5.0" velocity="1.0" damping="0.0"
+        lower="-0.2" upper="0.07" effort="5.0" velocity="1.0" damping="0.0"
         mimic_joint="base_screw" multiplier="-50" mimic_offset="-0.2"/>
 
 </robot>

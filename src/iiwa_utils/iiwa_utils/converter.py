@@ -1,3 +1,6 @@
+import yaml
+import tempfile
+
 from pathlib import Path
 from typing import Dict, Optional, Union
 
@@ -23,3 +26,13 @@ def load_robot_description(
         return model_path.read_text(encoding="utf-8")
 
     raise FileNotFoundError(f"Supported file formats: .xacro/.urdf, got: {model_path}")
+
+
+def wrap_for_ros2_params(yaml_path: str, namespace: str) -> str:
+    with open(yaml_path, "r") as f:
+        data = yaml.safe_load(f)
+    wrapped = {namespace: {"ros__parameters": data}}
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
+    yaml.dump(wrapped, tmp, default_flow_style=False)
+    tmp.close()
+    return tmp.name
