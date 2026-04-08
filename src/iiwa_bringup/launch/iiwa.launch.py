@@ -5,6 +5,8 @@ from launch.actions import (
     IncludeLaunchDescription,
     OpaqueFunction,
     RegisterEventHandler,
+    SetEnvironmentVariable,
+    # TimerAction,
 )
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
@@ -14,54 +16,92 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from moveit_configs_utils import MoveItConfigsBuilder
+from ament_index_python.packages import get_package_share_directory
 
 from iiwa_utils import converter, setting_loader
 
-import yaml
-import tempfile
-
-def wrap_for_ros2_params(yaml_path: str, namespace: str) -> str:
-    with open(yaml_path, "r") as f:
-        data = yaml.safe_load(f)
-
-    wrapped = {namespace: {"ros__parameters": data}}
-
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False
-    )
-    yaml.dump(wrapped, tmp, default_flow_style=False)
-    tmp.close()
-    return tmp.name
-
 
 def _runtime_setup(context, *args, **kwargs):
+    setup = []
+
+    # Настройка параметров
+    simulate = LaunchConfiguration("simulate").perform(context) in ("true", "1", "yes")
+
     settings = setting_loader.build_settings(
-        settings_path=LaunchConfiguration("setting").perform(context), check_files=True
+        settings_path=LaunchConfiguration("setting").perform(context),
+        check_files=True,
     )
 
-    xacro_args = {
-        "initial_positions_file": settings.controller.moveit.initial_positions,
-        "robot_ip": settings.robot.ip,
-        "fri_port": str(settings.robot.port),
-        "simulate": "false",
-        "command_mode": settings.robot.command_mode,
-    }
+    joint_limits_ros2 = converter.wrap_for_ros2_params(
+        settings.controller.moveit.joint_limits,
+        "robot_description_planning",
+    )
+    kinematics_ros2 = converter.wrap_for_ros2_params(
+        settings.controller.moveit.kinematics,
+        "robot_description_kinematics",
+    )
+
+    description_path = settings.robot.description
+
+    if simulate:
+        xacro_args = {
+            "initial_positions_file": settings.controller.moveit.initial_positions,
+            "simulate": "true",
+        }
+        use_sim_time = True
+    else:
+        xacro_args = {
+            "initial_positions_file": settings.controller.moveit.initial_positions,
+            "robot_ip": settings.robot.ip,
+            "fri_port": str(settings.robot.port),
+            "simulate": "false",
+            "command_mode": settings.robot.command_mode,
+        }
+        use_sim_time = False
 
     robot_description = converter.load_robot_description(
-        model_path=settings.robot.description,
+        model_path=description_path,
         robot_name=settings.robot.name,
         xacro_args=xacro_args,
     )
 
+    # Вызов нод
     rsp_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
         name="robot_state_publisher",
         output="screen",
-        parameters=[{"robot_description": robot_description, 
-                     "use_sim_time": False}],
+        parameters=[
+            {"robot_description": robot_description},
+            {"use_sim_time": use_sim_time},
+        ],
     )
 
+    setup += [rsp_node]
+
+    # gazebo spawn
+    if simulate:
+        gazebo_launch = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution(
+                    [
+                        FindPackageShare("iiwa_bringup"),
+                        "launch", "supported", "gazebo.launch.py",
+                    ]
+                )
+            ),
+            # TODO: добавить аргументы для transform и rotation и передать их из setting.yaml а также мир
+            launch_arguments={
+                "robot_name": settings.robot.name,
+                "world": "empty.sdf",
+                "gazebo_config": str(get_package_share_directory("iiwa_config") + "/config/gazebo/gz_bridge.yaml"),
+                "simulate": "true",
+            }.items(),
+        )
+
+        setup += [gazebo_launch]
+    
+    # Controller launch
     controllers_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
@@ -69,23 +109,24 @@ def _runtime_setup(context, *args, **kwargs):
                     FindPackageShare("iiwa_bringup"),
                     "launch",
                     "supported",
-                    "iiwa_controllers.launch.py"
+                    "controllers.launch.py",
                 ]
             )
         ),
         launch_arguments={
-            "robot_name": str(settings.robot.name),
-            "description": str(settings.robot.description),
-            "initial_positions_file": str(settings.controller.moveit.initial_positions),
-            "controller_path": str(settings.controller.controller_path)
-        }.items()
+            "robot_name": settings.robot.name,
+            "description": description_path,
+            "initial_positions_file": settings.controller.moveit.initial_positions,
+            # "simulate": str(simulate),
+            "controller_path": settings.controller.controller_path,
+        }.items(),
     )
 
-    # Moveit
+    # Moveit launch
     moveit_configs = (
         MoveItConfigsBuilder("iiwa7", package_name="iiwa_config")
         .robot_description(
-            file_path=settings.robot.description,
+            file_path=description_path,
             mappings={
                 "initial_positions_file": settings.controller.moveit.initial_positions
             },
@@ -106,19 +147,11 @@ def _runtime_setup(context, *args, **kwargs):
         parameters=[
             moveit_configs.to_dict(),
             {"robot_description": robot_description},
+            {"use_sim_time": use_sim_time},
         ],
     )
 
-
-    joint_limits_ros2  = wrap_for_ros2_params(
-        settings.controller.moveit.joint_limits,
-        "robot_description_planning"
-    )
-    kinematics_ros2 = wrap_for_ros2_params(
-        settings.controller.moveit.kinematics,
-        "robot_description_kinematics"
-    )
-
+    # Rviz launch
     rviz_launch = Node(
         condition=IfCondition(LaunchConfiguration("rviz")),
         package="rviz2",
@@ -129,48 +162,62 @@ def _runtime_setup(context, *args, **kwargs):
         parameters=[
             moveit_configs.robot_description,
             moveit_configs.robot_description_semantic,
-            # moveit_configs.robot_description_kinematics,
             moveit_configs.planning_pipelines,
-            # moveit_configs.joint_limits,
             joint_limits_ros2,
-            kinematics_ros2, 
+            kinematics_ros2,
+            {"use_sim_time": use_sim_time},
         ],
     )
 
     shutdown_on_rviz_exit = RegisterEventHandler(
-        OnProcessExit(target_action=rviz_launch, on_exit=[EmitEvent(event=Shutdown())])
+        OnProcessExit(
+            target_action=rviz_launch,
+            on_exit=[EmitEvent(event=Shutdown())],
+        )
     )
-    
-    return [
-        rsp_node,
-        controllers_launch,
-        move_group,
-        rviz_launch,
+
+    setup += [
+        controllers_launch, 
+        move_group, 
+        rviz_launch, 
         shutdown_on_rviz_exit
     ]
 
+    return setup
 
 def generate_launch_description():
-    declare_rviz = DeclareLaunchArgument(
-        name="rviz",
-        default_value="0",
-        description="If true|1|yes then launch RViz/MoveIt branch (instead of controllers branch)",
+    declare_simulate = DeclareLaunchArgument(
+        name="simulate",
+        default_value="false",
+        description="true = Gazebo симуляция, false = реальный робот через FRI",
     )
 
-    declacre_setting = DeclareLaunchArgument(
+    declare_rviz = DeclareLaunchArgument(
+        name="rviz",
+        default_value="false",
+        description="true = запустить RViz",
+    )
+
+    declare_setting = DeclareLaunchArgument(
         name="setting",
         default_value=PathJoinSubstitution(
             [FindPackageShare("iiwa_config"), "config", "setting.yaml"]
         ),
-        description="Absolute path to settings file",
+        description="Путь к файлу настроек",
+    )
+
+    gz_resource_path = SetEnvironmentVariable(
+        name="GZ_SIM_RESOURCE_PATH",
+        value=get_package_share_directory("iiwa_description") + "/..",
     )
 
     runtime_setup = OpaqueFunction(function=_runtime_setup)
 
-    return LaunchDescription(
-        [
-            declare_rviz,
-            declacre_setting,
-            runtime_setup,
-        ]
-    )
+    return LaunchDescription([
+        gz_resource_path,
+        declare_simulate,
+        declare_rviz,
+        declare_setting,
+        runtime_setup,
+    ])
+

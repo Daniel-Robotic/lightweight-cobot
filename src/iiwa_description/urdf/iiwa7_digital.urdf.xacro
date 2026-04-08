@@ -4,13 +4,6 @@
     <!-- Аргукменты -->
     <xacro:arg name="initial_positions_file"
                default="$(find iiwa_config)/config/moveit/initial_positions.yaml"/>
-    <xacro:arg name="simulate" default="false"/>
-
-    <!-- Аргументы только для реального робота -->
-    <xacro:arg name="robot_ip" default="192.170.10.2"/>
-    <xacro:arg name="fri_port" default="30200"/>
-    <xacro:arg name="command_mode" default="position"/>
-
 
     <xacro:property name="initial_positions"
                     value="${xacro.load_yaml('$(arg initial_positions_file)')['initial_positions']}"/>
@@ -22,43 +15,15 @@
 
     <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper.xacro"/>
 
-    <xacro:if value="$(arg simulate)">
-        <gazebo>
-            <plugin filename="gz_ros2_control-system"
-                    name="gz_ros2_control::GazeboSimROS2ControlPlugin">
-                <parameters>$(find iiwa_config)/config/moveit/iiwa_controller.yaml</parameters>
-                <ros>
-                    <remapping>~/robot_description:=/robot_description</remapping>
-                </ros>
-            </plugin>
-        </gazebo>
-    </xacro:if>
-
-    <!-- <webots>
+    <webots>
         <plugin type="webots_ros2_control::Ros2Control"/>
-    </webots> -->
+    </webots>
 
-    <ros2_control name="iiwaControl" type="system">
+    <ros2_control name="iiwaGazeboControl" type="system">
 
-        <xacro:if value="$(arg simulate)">
-            <hardware>
-                <plugin>gz_ros2_control/GazeboSimSystem</plugin>
-            </hardware>
-        </xacro:if>
-
-        <hardware>
-            <plugin>iiwa_controller/IIWAHardwareInterface</plugin>
-
-            <param name="robot_ip">$(arg robot_ip)</param>
-            <param name="fri_port">$(arg fri_port)</param>
-            <param name="simulate">$(arg simulate)</param>
-            <param name="command_mode">$(arg command_mode)</param>
-
-        </hardware>
-
-         <!-- <hardware>
+         <hardware>
             <plugin>webots_ros2_control::Ros2ControlSystem</plugin>
-        </hardware> -->
+        </hardware>
 
         <joint name="joint1">
             <command_interface name="position">
@@ -142,14 +107,6 @@
             </state_interface>
             <state_interface name="velocity"/>
             <state_interface name="effort"/>
-        </joint>
-
-        <joint name="base_screw">
-            <command_interface name="position"/>
-            <state_interface name="position">
-                <param name="initial_value">0.0</param>
-            </state_interface>
-            <state_interface name="velocity"/>
         </joint>
 
     </ros2_control>
