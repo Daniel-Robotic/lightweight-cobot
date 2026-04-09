@@ -15,26 +15,20 @@
     <xacro:include filename="$(find iiwa_description)/urdf/macros.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/links.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/joints.xacro"/>
-    <!-- <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper.xacro"/> -->
 
     <xacro:include filename="$(find iiwa_description)/urdf/tools/patron.xacro"/>
 
 
     <xacro:if value="$(arg simulate)">
 
-        <gazebo>
-            <plugin filename="gz_ros2_control-system"
-                    name="gz_ros2_control::GazeboSimROS2ControlPlugin">
-                <parameters>$(find iiwa_config)/config/moveit/iiwa_controller.yaml</parameters>
-                <ros>
-                    <remapping>~/robot_description:=/robot_description</remapping>
-                </ros>
-            </plugin>
-        </gazebo>
+        <webots>
+            <plugin type="webots_ros2_control::Ros2Control"/>
+        </webots>
 
         <ros2_control name="iiwaGazeboControl" type="system">
+
             <hardware>
-                <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+                <plugin>webots_ros2_control::Ros2ControlSystem</plugin>
             </hardware>
 
             <joint name="joint1">

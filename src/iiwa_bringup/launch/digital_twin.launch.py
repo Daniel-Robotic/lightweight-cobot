@@ -26,7 +26,7 @@ def _runtime_setup(context, *args, **kwatgs):
     )
 
     robot_description = converter.load_robot_description(
-        model_path=settings.digital_twin.description,
+        model_path=settings.robot.description,
         robot_name=settings.robot.name,
         xacro_args={
             "initial_positions_file": settings.controller.moveit.initial_positions
@@ -54,7 +54,7 @@ def _runtime_setup(context, *args, **kwatgs):
         ),
         launch_arguments={
             "robot_name": str(settings.robot.name),
-            "description": str(settings.digital_twin.description),
+            "description": str(settings.robot.description),
             "world": str(settings.digital_twin.webots.world),
             "transform": str(settings.digital_twin.webots.transform),
             "rotation": str(settings.digital_twin.webots.rotation),
@@ -67,7 +67,7 @@ def _runtime_setup(context, *args, **kwatgs):
     moveit_configs = (
         MoveItConfigsBuilder("iiwa7", package_name="iiwa_config")
         .robot_description(
-            file_path=settings.digital_twin.description,
+            file_path=settings.robot.description,
             mappings={
                 "initial_positions_file": settings.controller.moveit.initial_positions
             },

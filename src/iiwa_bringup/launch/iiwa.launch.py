@@ -5,8 +5,6 @@ from launch.actions import (
     IncludeLaunchDescription,
     OpaqueFunction,
     RegisterEventHandler,
-    SetEnvironmentVariable,
-    # TimerAction,
 )
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
@@ -16,7 +14,6 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from moveit_configs_utils import MoveItConfigsBuilder
-from ament_index_python.packages import get_package_share_directory
 
 from iiwa_utils import converter, setting_loader
 
@@ -79,29 +76,54 @@ def _runtime_setup(context, *args, **kwargs):
 
     setup += [rsp_node]
 
-    # gazebo spawn
+    # webots spawn
     if simulate:
-        gazebo_launch = IncludeLaunchDescription(
+        webots_launch = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 PathJoinSubstitution(
                     [
                         FindPackageShare("iiwa_bringup"),
-                        "launch", "supported", "gazebo.launch.py",
+                        "launch",
+                        "supported",
+                        "webots_spawn.launch.py",
                     ]
                 )
             ),
-            # TODO: добавить аргументы для transform и rotation и передать их из setting.yaml а также мир
             launch_arguments={
-                "robot_name": settings.robot.name,
-                "world": str(get_package_share_directory("iiwa_description") + "/worlds/iiwa_world.sdf"),
-                "gazebo_config": str(get_package_share_directory("iiwa_config") + "/config/gazebo/gz_bridge.yaml"),
-                "simulate": "true",
+                "robot_name": str(settings.robot.name),
+                "description": str(settings.robot.description),
+                "world": str(settings.digital_twin.webots.world),
+                "transform": str(settings.digital_twin.webots.transform),
+                "rotation": str(settings.digital_twin.webots.rotation),
+                "controller_timer": str(settings.digital_twin.webots.controller_timer),
+                "controller": str(settings.controller.controller_path),
+                "initial_positions_file": str(settings.controller.moveit.initial_positions),
             }.items(),
         )
 
-        setup += [gazebo_launch]
+        setup += [webots_launch]
     
-    # Controller launch
+    # Controller launch)
+    if simulate:
+        controller_args = {
+            "robot_name": settings.robot.name,
+            "description": description_path,
+            "initial_positions_file": settings.controller.moveit.initial_positions,
+            "controller_path": settings.controller.controller_path,
+            "simulate": "true",
+            "transform": str(settings.digital_twin.webots.transform),
+            "rotation": str(settings.digital_twin.webots.rotation),
+            "controller_timer": str(settings.digital_twin.webots.controller_timer),
+        }
+    else:
+        controller_args = {
+            "robot_name": settings.robot.name,
+            "description": description_path,
+            "initial_positions_file": settings.controller.moveit.initial_positions,
+            "controller_path": settings.controller.controller_path,
+            "simulate": "false",
+        }
+
     controllers_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
@@ -113,13 +135,7 @@ def _runtime_setup(context, *args, **kwargs):
                 ]
             )
         ),
-        launch_arguments={
-            "robot_name": settings.robot.name,
-            "description": description_path,
-            "initial_positions_file": settings.controller.moveit.initial_positions,
-            # "simulate": str(simulate),
-            "controller_path": settings.controller.controller_path,
-        }.items(),
+        launch_arguments=controller_args.items(),
     )
 
     # Moveit launch
@@ -206,15 +222,9 @@ def generate_launch_description():
         description="Путь к файлу настроек",
     )
 
-    gz_resource_path = SetEnvironmentVariable(
-        name="GZ_SIM_RESOURCE_PATH",
-        value=get_package_share_directory("iiwa_description") + "/..",
-    )
-
     runtime_setup = OpaqueFunction(function=_runtime_setup)
 
     return LaunchDescription([
-        gz_resource_path,
         declare_simulate,
         declare_rviz,
         declare_setting,

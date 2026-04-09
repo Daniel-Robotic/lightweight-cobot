@@ -3,7 +3,7 @@
 <package format="3">
   <name>iiwa_config</name>
   <version>0.1.0</version>
-  <description>Пакет с настройками цифрового двойника и физического робота</description>
+  <description>Конфигурационные файлы системы KUKA iiwa7: параметры MoveIt, контроллеров, кинематики и общих настроек</description>
   <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>
 

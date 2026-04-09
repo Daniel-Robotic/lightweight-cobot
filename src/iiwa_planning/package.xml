@@ -3,15 +3,22 @@
 <package format="3">
   <name>iiwa_planning</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Планирование движения KUKA iiwa7: C++ и Python узлы на основе MoveIt 2 (OMPL, Pilz, moveit_py)</description>
   <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>
-  
+
   <depend>rclcpp</depend>
   <depend>rclpy</depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <depend>moveit_core</depend>
+  <depend>moveit_ros_planning</depend>
+  <depend>moveit_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>moveit_py</depend>
+  <depend>tf_transformations</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

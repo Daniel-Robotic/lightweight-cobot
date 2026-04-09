@@ -34,8 +34,6 @@ class RvizCfg:
 class DigitalTwinCfg:
     webots: WebotsCfg
     rviz: RvizCfg
-    description: str
-
 
 @dataclass(frozen=True)
 class MoveitCfg:
@@ -175,8 +173,7 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
 
     digital_twin = DigitalTwinCfg(
         webots=webots,
-        rviz=rviz,
-        description=resolve_path(str(require(dt_raw, "description")), settings_dir),
+        rviz=rviz
     )
 
     # controller, moveit
@@ -212,7 +209,6 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         assert_file(s.robot.description, "robot.description")
         assert_file(s.digital_twin.webots.world, "digital_twin.webots.world")
         assert_file(s.digital_twin.rviz.config, "digital_twin.rviz.config")
-        assert_file(s.digital_twin.description, "digital_twin.description")
         assert_file(s.controller.controller_path, "controller.controller_path")
 
         assert_file(s.controller.moveit.srdf, "controller.moveit.srdf")

@@ -3,11 +3,14 @@
 <package format="3">
   <name>iiwa_description</name>
   <version>0.0.0</version>
-  <description>Описание робота в urdf/xacro а также описание webots мира</description>
+  <description>URDF/XACRO описание робота KUKA iiwa7 и конфигурация мира Webots</description>
   <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>urdf</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

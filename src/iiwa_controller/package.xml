@@ -3,8 +3,8 @@
 <package format="3">
   <name>iiwa_controller</name>
   <version>0.1.0</version>
-  <description>Own controller for controlling the KUKA aiwa 7 collaborative robot using the FRI library</description>
-  <maintainer email="daniell@example.com">Daniell</maintainer>
+  <description>Hardware interface для KUKA iiwa7: управление через FRI (Fast Robot Interface) в экосистеме ros2_control</description>
+  <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
@@ -12,6 +12,7 @@
   <depend>hardware_interface</depend>
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

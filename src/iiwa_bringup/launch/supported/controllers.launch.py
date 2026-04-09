@@ -4,6 +4,8 @@ from launch.substitutions import LaunchConfiguration
 from launch.event_handlers import OnProcessExit
 from launch.actions import RegisterEventHandler
 from launch_ros.actions import Node
+from webots_ros2_driver.urdf_spawner import URDFSpawner
+
 
 from iiwa_utils import converter
 
@@ -11,27 +13,32 @@ from iiwa_utils import converter
 def _setup_controllers(context, *args, **kwargs):
     robot_name = LaunchConfiguration("robot_name").perform(context)
     description = LaunchConfiguration("description").perform(context)
+    transform = LaunchConfiguration("transform").perform(context)
+    rotation = LaunchConfiguration("rotation").perform(context)
     initial_positions_file = LaunchConfiguration("initial_positions_file").perform(context)
+    controller_timer = LaunchConfiguration("controller_timer").perform(context)
     controller_path = LaunchConfiguration("controller_path").perform(context)
     simulate = LaunchConfiguration("simulate").perform(context).lower() in ("true", "1", "yes")
+
+    xacro_args = {"initial_positions_file": initial_positions_file}
+    if simulate:
+        xacro_args["simulate"] = "true"
 
     robot_description = converter.load_robot_description(
         model_path=description,
         robot_name=robot_name,
-        xacro_args={"initial_positions_file": initial_positions_file},
+        xacro_args=xacro_args,
     )
 
-    # СИМУЛЯЦИЯ (Gazebo)
+    # Webots
     if simulate:
+        tmo = ["--controller-manager-timeout", str(controller_timer)]
+
         jsb = Node(
             package="controller_manager",
             executable="spawner",
             output="screen",
-            arguments=[
-                "joint_state_broadcaster",
-                "--controller-manager", "/controller_manager",
-                "--controller-manager-timeout", "30",
-            ],
+            arguments=["joint_state_broadcaster"] + tmo,
             parameters=[{"use_sim_time": True}],
         )
 
@@ -39,24 +46,29 @@ def _setup_controllers(context, *args, **kwargs):
             package="controller_manager",
             executable="spawner",
             output="screen",
-            arguments=[
-                "iiwa_arm_controller",
-                "--controller-manager", "/controller_manager",
-                "--controller-manager-timeout", "30",
-            ],
+            arguments=["iiwa_arm_controller"] + tmo,
             parameters=[{"use_sim_time": True}],
         )
 
-        jtc_after_jsb = RegisterEventHandler(
-            OnProcessExit(
-                target_action=jsb,
-                on_exit=[jtc],
-            )
+        torque_controller_spawner = Node(
+            package="controller_manager",
+            executable="spawner",
+            output="screen",
+            arguments=["forward_torque_controller",
+                    "--inactive"] + tmo,
+            parameters=[{"use_sim_time": True}]
         )
 
-        return [jsb, jtc_after_jsb]
+        spawner_urdf = URDFSpawner(
+            name=robot_name,
+            robot_description=robot_description,
+            translation=transform,
+            rotation=rotation,
+        )
 
-    # РЕАЛЬНЫЙ РОБОТ (FRI)
+        return [jsb, jtc, torque_controller_spawner, spawner_urdf]
+
+    # FRI
     else:
         ros2_control_node = Node(
             package="controller_manager",
