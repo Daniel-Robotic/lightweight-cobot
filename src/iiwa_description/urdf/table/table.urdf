@@ -200,7 +200,6 @@
         </visual>
     </gazebo>
 
-    <!-- ═══ Джойнты ═══ -->
     <joint name="world_frame" type="fixed">
         <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
         <parent link="world"/>

@@ -4,23 +4,23 @@
     <xacro:property name="pkg" value="package://iiwa_description/resource/meshes"/>
 
     <!-- Меши отображения -->
-    <xacro:property name="mesh_base_v" value="${pkg}/visual/base_link.DAE"/>
-    <xacro:property name="mesh_link1_v" value="${pkg}/visual/link1.DAE"/>
-    <xacro:property name="mesh_link2_v" value="${pkg}/visual/link2.DAE"/>
-    <xacro:property name="mesh_link3_v" value="${pkg}/visual/link3.DAE"/>
-    <xacro:property name="mesh_link4_v" value="${pkg}/visual/link4.DAE"/>
-    <xacro:property name="mesh_link5_v" value="${pkg}/visual/link5.DAE"/>
-    <xacro:property name="mesh_link6_v" value="${pkg}/visual/link6.DAE"/>
-    <xacro:property name="mesh_link7_v" value="${pkg}/visual/link7.DAE"/>
+    <xacro:property name="mesh_base_v" value="${pkg}/iiwa/visual/base_link.DAE"/>
+    <xacro:property name="mesh_link1_v" value="${pkg}/iiwa/visual/link1.DAE"/>
+    <xacro:property name="mesh_link2_v" value="${pkg}/iiwa/visual/link2.DAE"/>
+    <xacro:property name="mesh_link3_v" value="${pkg}/iiwa/visual/link3.DAE"/>
+    <xacro:property name="mesh_link4_v" value="${pkg}/iiwa/visual/link4.DAE"/>
+    <xacro:property name="mesh_link5_v" value="${pkg}/iiwa/visual/link5.DAE"/>
+    <xacro:property name="mesh_link6_v" value="${pkg}/iiwa/visual/link6.DAE"/>
+    <xacro:property name="mesh_link7_v" value="${pkg}/iiwa/visual/link7.DAE"/>
 
     <!-- Меши колизии -->
-    <xacro:property name="mesh_base_c" value="${pkg}/collision/base_link.STL"/>
-    <xacro:property name="mesh_link1_c" value="${pkg}/collision/link1.STL"/>
-    <xacro:property name="mesh_link2_c" value="${pkg}/collision/link2.STL"/>
-    <xacro:property name="mesh_link3_c" value="${pkg}/collision/link3.STL"/>
-    <xacro:property name="mesh_link4_c" value="${pkg}/collision/link4.STL"/>
-    <xacro:property name="mesh_link5_c" value="${pkg}/collision/link5.STL"/>
-    <xacro:property name="mesh_link6_c" value="${pkg}/collision/link6.STL"/>
-    <xacro:property name="mesh_link7_c" value="${pkg}/collision/link7.STL"/>
+    <xacro:property name="mesh_base_c" value="${pkg}/iiwa/collision/base_link.STL"/>
+    <xacro:property name="mesh_link1_c" value="${pkg}/iiwa/collision/link1.STL"/>
+    <xacro:property name="mesh_link2_c" value="${pkg}/iiwa/collision/link2.STL"/>
+    <xacro:property name="mesh_link3_c" value="${pkg}/iiwa/collision/link3.STL"/>
+    <xacro:property name="mesh_link4_c" value="${pkg}/iiwa/collision/link4.STL"/>
+    <xacro:property name="mesh_link5_c" value="${pkg}/iiwa/collision/link5.STL"/>
+    <xacro:property name="mesh_link6_c" value="${pkg}/iiwa/collision/link6.STL"/>
+    <xacro:property name="mesh_link7_c" value="${pkg}/iiwa/collision/link7.STL"/>
 
 </robot>

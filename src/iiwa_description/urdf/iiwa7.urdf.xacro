@@ -15,7 +15,9 @@
     <xacro:include filename="$(find iiwa_description)/urdf/macros.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/links.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/joints.xacro"/>
-    <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper.xacro"/>
+    <!-- <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper.xacro"/> -->
+
+    <xacro:include filename="$(find iiwa_description)/urdf/tools/patron.xacro"/>
 
 
     <xacro:if value="$(arg simulate)">
@@ -117,14 +119,6 @@
                 </state_interface>
                 <state_interface name="velocity"/>
                 <state_interface name="effort"/>
-            </joint>
-
-            <joint name="base_screw">
-                <command_interface name="position"/>
-                <state_interface name="position">
-                    <param name="initial_value">0.0</param>
-                </state_interface>
-                <state_interface name="velocity"/>
             </joint>
 
         </ros2_control>

@@ -10,7 +10,7 @@ EXTERNPROTO "../resource/protos/Object.proto"
 
 WorldInfo {
   title "iiwa robotics"
-  basicTimeStep 10
+  basicTimeStep 32
   optimalThreadCount 4
   contactProperties [
     ContactProperties {
@@ -29,6 +29,13 @@ WorldInfo {
       bounce 0
       softCFM 0.002
       maxContactJoints 100
+    }
+    ContactProperties {
+      material1 "default"
+      material2 "default"
+      maxContactJoints 20
+      bounce 0
+      softCFM 0.001
     }
   ]
 }

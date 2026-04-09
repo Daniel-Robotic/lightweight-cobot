@@ -10,7 +10,7 @@
     <!--CHAINS: When a chain is specified, all the links along the chain (including endpoints) are included in the group. Additionally, all the joints that are parents to included links are also included. This means that joints along the chain and the parent joint of the base link are included in the group-->
     <!--SUBGROUPS: Groups can also be formed by referencing to already defined group names-->
     <group name="iiwa_arm">
-        <joint name="virtual"/>
+        <joint name="world_base_joint"/>
         <joint name="joint1"/>
         <joint name="joint2"/>
         <joint name="joint3"/>
@@ -18,6 +18,8 @@
         <joint name="joint5"/>
         <joint name="joint6"/>
         <joint name="joint7"/>
+        <joint name="tools_joint"/>
+        <joint name="tool"/>
     </group>
     <!--GROUP STATES: Purpose: Define a named state for a particular group, in terms of joint values. This is useful to define states like 'folded arms'-->
     <group_state name="home" group="iiwa_arm">
@@ -39,15 +41,7 @@
         <joint name="joint7" value="0"/>
     </group_state>
     <!--END EFFECTOR: Purpose: Represent information about an end effector.-->
-    <end_effector name="hand" parent_link="link_ee" group="iiwa_arm"/>
-    <!--PASSIVE JOINTS: MoveIt не ожидает их в /joint_states и не планирует ими.
-        Геометрия захвата всё равно учитывается при проверке коллизий.-->
-    <passive_joint name="base_screw"/>
-    <passive_joint name="finger1_joint"/>
-    <passive_joint name="finger2_joint"/>
-    <passive_joint name="finger3_joint"/>
-    <!--VIRTUAL JOINT: Purpose: this element defines a virtual joint between a robot link and an external frame of reference (considered fixed with respect to the robot)-->
-    <virtual_joint name="virtual" type="fixed" parent_frame="word" child_link="base_link"/>
+    <end_effector name="patron" parent_link="patron" group="iiwa_arm"/>
     <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
     <disable_collisions link1="base_link" link2="link1" reason="Adjacent"/>
     <disable_collisions link1="base_link" link2="link2" reason="Never"/>
@@ -59,46 +53,26 @@
     <disable_collisions link1="link1" link2="link5" reason="Never"/>
     <disable_collisions link1="link1" link2="link6" reason="Never"/>
     <disable_collisions link1="link1" link2="link7" reason="Never"/>
+    <disable_collisions link1="link1" link2="patron" reason="Never"/>
     <disable_collisions link1="link2" link2="link3" reason="Adjacent"/>
     <disable_collisions link1="link2" link2="link4" reason="Never"/>
     <disable_collisions link1="link2" link2="link5" reason="Never"/>
     <disable_collisions link1="link2" link2="link6" reason="Never"/>
     <disable_collisions link1="link2" link2="link7" reason="Never"/>
+    <disable_collisions link1="link2" link2="patron" reason="Never"/>
     <disable_collisions link1="link3" link2="link4" reason="Adjacent"/>
     <disable_collisions link1="link3" link2="link5" reason="Never"/>
     <disable_collisions link1="link3" link2="link6" reason="Never"/>
     <disable_collisions link1="link3" link2="link7" reason="Never"/>
+    <disable_collisions link1="link3" link2="patron" reason="Never"/>
     <disable_collisions link1="link4" link2="link5" reason="Adjacent"/>
     <disable_collisions link1="link4" link2="link6" reason="Never"/>
     <disable_collisions link1="link4" link2="link7" reason="Never"/>
+    <disable_collisions link1="link4" link2="patron" reason="Never"/>
     <disable_collisions link1="link5" link2="link6" reason="Adjacent"/>
     <disable_collisions link1="link5" link2="link7" reason="Never"/>
+    <disable_collisions link1="link5" link2="patron" reason="Never"/>
     <disable_collisions link1="link6" link2="link7" reason="Adjacent"/>
-    <!-- Захват -->
-    <disable_collisions link1="link7" link2="base_frame" reason="Adjacent"/>
-    <disable_collisions link1="link7" link2="plate" reason="Never"/>
-    <disable_collisions link1="link7" link2="screw" reason="Never"/>
-    <disable_collisions link1="link7" link2="craving1" reason="Never"/>
-    <disable_collisions link1="link7" link2="craving2" reason="Never"/>
-    <disable_collisions link1="link7" link2="craving3" reason="Never"/>
-    <disable_collisions link1="link7" link2="finger1" reason="Never"/>
-    <disable_collisions link1="link7" link2="finger2" reason="Never"/>
-    <disable_collisions link1="link7" link2="finger3" reason="Never"/>
-    <disable_collisions link1="base_frame" link2="plate" reason="Adjacent"/>
-    <disable_collisions link1="base_frame" link2="screw" reason="Adjacent"/>
-    <disable_collisions link1="base_frame" link2="craving1" reason="Never"/>
-    <disable_collisions link1="base_frame" link2="craving2" reason="Never"/>
-    <disable_collisions link1="base_frame" link2="craving3" reason="Never"/>
-    <disable_collisions link1="plate" link2="finger1" reason="Adjacent"/>
-    <disable_collisions link1="plate" link2="finger2" reason="Adjacent"/>
-    <disable_collisions link1="plate" link2="finger3" reason="Adjacent"/>
-    <disable_collisions link1="screw" link2="craving1" reason="Adjacent"/>
-    <disable_collisions link1="screw" link2="craving2" reason="Adjacent"/>
-    <disable_collisions link1="screw" link2="craving3" reason="Adjacent"/>
-    <disable_collisions link1="craving1" link2="craving2" reason="Never"/>
-    <disable_collisions link1="craving1" link2="craving3" reason="Never"/>
-    <disable_collisions link1="craving2" link2="craving3" reason="Never"/>
-    <disable_collisions link1="finger1" link2="finger2" reason="Never"/>
-    <disable_collisions link1="finger1" link2="finger3" reason="Never"/>
-    <disable_collisions link1="finger2" link2="finger3" reason="Never"/>
+    <disable_collisions link1="link6" link2="patron" reason="Never"/>
+    <disable_collisions link1="link7" link2="patron" reason="Adjacent"/>
 </robot>
