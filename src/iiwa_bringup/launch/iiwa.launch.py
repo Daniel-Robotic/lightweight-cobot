@@ -103,7 +103,7 @@ def _runtime_setup(context, *args, **kwargs):
 
         setup += [webots_launch]
     
-    # Controller launch)
+    # Controller launch
     if simulate:
         controller_args = {
             "robot_name": settings.robot.name,
@@ -122,6 +122,7 @@ def _runtime_setup(context, *args, **kwargs):
             "initial_positions_file": settings.controller.moveit.initial_positions,
             "controller_path": settings.controller.controller_path,
             "simulate": "false",
+            "command_mode": settings.robot.command_mode,
         }
 
     controllers_launch = IncludeLaunchDescription(

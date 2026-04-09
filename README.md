@@ -21,7 +21,8 @@ sudo apt install -y ros-${ROS_DISTRO}-webots-ros2 \
                     ros-${ROS_DISTRO}-ros2-controllers \
                     ros-${ROS_DISTRO}-moveit \
                     ros-${ROS_DISTRO}-moveit-py \
-                    ros-${ROS_DISTRO}-ament-cmake-clang-format
+                    ros-${ROS_DISTRO}-ament-cmake-clang-format \
+                    sudo apt install ros-$ROS_DISTRO-rosbag2-storage-mcap
 
 ```
 
@@ -59,4 +60,38 @@ sudo pip3 install transforms3d --break-system-packages
 
 ```bash
 rosdep install --from-paths src --ignore-src -r -y --os=ubuntu:jammy
+```
+
+Запись данных в rosbag:
+
+```bash
+# Record all topics
+ros2 bag record -a --storage mcap -o my_session
+
+# Record specific topics
+ros2 bag record \
+  /camera/image_raw \
+  /lidar/points \
+  /imu/data \
+  --storage mcap \
+  -o robot_drive_session
+
+
+# LZ4 = faster write, moderate compression (good for real-time recording)
+ros2 bag record -a --storage mcap \
+  --compression-mode file \
+  --compression-format lz4 \
+  -o compressed_session
+
+# Zstandard = slower write, better compression (good for post-processing)
+ros2 bag record -a --storage mcap \
+  --compression-mode file \
+  --compression-format zstd \
+  -o compressed_zstd_session
+
+# convert existing rosbag2 to mcap format
+ros2 bag convert \
+  -i robot_drive_old/ \
+  -o robot_drive_mcap/ \
+  --output-options '{"storage_id": "mcap"}'
 ```

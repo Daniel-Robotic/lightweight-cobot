@@ -8,7 +8,7 @@ controller_manager:
     iiwa_arm_controller:
       type: "joint_trajectory_controller/JointTrajectoryController"
 
-    forward_torque_controller:
+    iiwa_arm_torque_controller:
       type: "forward_command_controller/ForwardCommandController"
 
 # Основной контроллер - плавное движение по траектории
@@ -58,7 +58,7 @@ iiwa_arm_controller:
 
 # Torque контроллер - прямое управление моментом
 # Активировать только при command_mode:=torque в launch файле
-forward_torque_controller:
+iiwa_arm_torque_controller:
   ros__parameters:
     joints:
       - joint1

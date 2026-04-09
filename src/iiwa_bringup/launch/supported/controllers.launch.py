@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch.event_handlers import OnProcessExit
 from launch.actions import RegisterEventHandler
@@ -19,8 +19,10 @@ def _setup_controllers(context, *args, **kwargs):
     controller_timer = LaunchConfiguration("controller_timer").perform(context)
     controller_path = LaunchConfiguration("controller_path").perform(context)
     simulate = LaunchConfiguration("simulate").perform(context).lower() in ("true", "1", "yes")
+    command_mode = LaunchConfiguration("command_mode").perform(context)
 
     xacro_args = {"initial_positions_file": initial_positions_file}
+    
     if simulate:
         xacro_args["simulate"] = "true"
 
@@ -54,8 +56,7 @@ def _setup_controllers(context, *args, **kwargs):
             package="controller_manager",
             executable="spawner",
             output="screen",
-            arguments=["forward_torque_controller",
-                    "--inactive"] + tmo,
+            arguments=["iiwa_arm_torque_controller", "--inactive"] + tmo,
             parameters=[{"use_sim_time": True}]
         )
 
@@ -90,25 +91,26 @@ def _setup_controllers(context, *args, **kwargs):
             ],
         )
 
+        jtc_args = ["iiwa_arm_controller", "--controller-manager", "/controller_manager"]
+        torque_args = ["iiwa_arm_torque_controller", "--controller-manager", "/controller_manager"]
+        
+        if command_mode == "torque":
+            jtc_args += ["--inactive"]
+        else:
+            torque_args += ["--inactive"]
+
         jtc = Node(
             package="controller_manager",
             executable="spawner",
             output="screen",
-            arguments=[
-                "iiwa_arm_controller",
-                "--controller-manager", "/controller_manager",
-            ],
+            arguments=jtc_args,
         )
 
         torque_controller = Node(
             package="controller_manager",
             executable="spawner",
             output="screen",
-            arguments=[
-                "forward_torque_controller",
-                "--controller-manager", "/controller_manager",
-                "--inactive",
-            ],
+            arguments=torque_args,
         )
 
         jtc_after_jsb = RegisterEventHandler(
@@ -126,4 +128,7 @@ def _setup_controllers(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([OpaqueFunction(function=_setup_controllers)])
+    return LaunchDescription([
+        DeclareLaunchArgument("command_mode", default_value="position"),
+        OpaqueFunction(function=_setup_controllers),
+    ])
