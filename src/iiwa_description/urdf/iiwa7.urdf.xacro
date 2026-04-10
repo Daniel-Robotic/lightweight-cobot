@@ -18,11 +18,29 @@
 
     <xacro:include filename="$(find iiwa_description)/urdf/tools/patron.xacro"/>
 
-
     <xacro:if value="$(arg simulate)">
 
         <webots>
             <plugin type="webots_ros2_control::Ros2Control"/>
+
+            <device reference="camera_rgb" type="Camera">
+                <ros>
+                    <topicName>/camera/color</topicName>
+                    <updateRate>30</updateRate>
+                    <alwaysOn>True</alwaysOn>
+                    <frameName>camera_optical_frame</frameName>
+                </ros>
+            </device>
+
+            <device reference="camera_depth" type="RangeFinder">
+                <ros>
+                    <topicName>/camera/depth</topicName>
+                    <updateRate>30</updateRate>
+                    <alwaysOn>True</alwaysOn>
+                    <frameName>camera_optical_frame</frameName>
+                </ros>
+            </device>
+
         </webots>
 
         <ros2_control name="iiwaGazeboControl" type="system">
