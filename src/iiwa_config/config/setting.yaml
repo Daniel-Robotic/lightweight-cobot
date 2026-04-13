@@ -28,3 +28,31 @@ controller:
     moveit_controllers: pkg://iiwa_config/config/moveit/moveit_controllers.yaml
     moveit_cpp: pkg://iiwa_config/config/moveit/moveit_cpp.yaml
 
+
+foxglove:
+  enabled: true  # Запускать ли foxglove_bridge вместе с роботом
+  port: 8765 # WebSocket-порт, к которому подключается Foxglove Studio (по умолчанию 8765)
+  debug: false # Включить подробное логирование bridge-процесса
+  address: 0.0.0.0  # Адрес, на котором слушает сервер. 0.0.0.0 — все интерфейсы, 127.0.0.1 — только локально
+  tls: false # Включить TLS-шифрование соединения (нужны certfile + keyfile)
+  certfile: "" # Путь к SSL-сертификату (нужен только при tls: true)Путь к SSL-сертификату (нужен только при tls: true)
+  keyfile: "" # Путь к SSL-сертификату (нужен только при tls: true)
+  topic_whitelist: ['.*'] # Regex-список топиков, которые bridge публикует клиенту
+  param_whitelist: ['.*'] # Regex-список ROS-параметров, видимых клиенту
+  service_whitelist: ['.*'] # Regex-список сервисов, доступных клиенту
+  client_topic_whitelist: ['.*'] # Regex-список топиков, в которые клиент может публиковать (clientPublish)
+  min_qos_depth: 1 # Минимальная глубина QoS-очереди при подписке bridge на топик
+  max_qos_depth: 10 # Максимальная глубина QoS-очереди
+  num_threads: 0 # Число потоков исполнения. 0 = автоматически по числу CPU
+  send_buffer_limit: 10000000 # Максимальный размер буфера отправки в байтах (защита от OOM при медленном клиенте)
+  use_sim_time: false # Использовать симуляционное время /clock вместо системного
+  capabilities:  # Список возможностей, открытых клиенту
+    - clientPublish
+    - parameters
+    - parametersSubscribe
+    - services
+    - connectionGraph
+    - assets
+  include_hidden: false # Показывать клиенту скрытые топики и сервисы (начинаются с _)
+  asset_uri_allowlist: ['^package://(?:[-\w%]+/)*[-\w%.]+\.(?:dae|fbx|glb|gltf|jpeg|jpg|mtl|obj|png|stl|tif|tiff|urdf|webp|xacro)$'] # Regex-список URI вида package://..., из которых bridge разрешает отдавать файлы-ассеты (URDF, mesh и т.п.)
+  ignore_unresponsive_param_nodes: true # Не падать, если нода не отвечает на запросы параметров (защита от зависания при старте)

@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -18,12 +20,19 @@ from moveit_configs_utils import MoveItConfigsBuilder
 from iiwa_utils import converter, setting_loader
 
 
+def _foxglove_params(fg, use_sim_time: bool) -> dict:
+    params = asdict(fg)
+    params.pop("enabled")
+    params["use_sim_time"] = use_sim_time
+
+    return params
+
+
 def _runtime_setup(context, *args, **kwargs):
     setup = []
 
     # Настройка параметров
     simulate = LaunchConfiguration("simulate").perform(context) in ("true", "1", "yes")
-    foxglove = LaunchConfiguration("foxglove").perform(context) in ("true", "1", "yes")
 
     settings = setting_loader.build_settings(
         settings_path=LaunchConfiguration("setting").perform(context),
@@ -137,7 +146,7 @@ def _runtime_setup(context, *args, **kwargs):
                 ]
             )
         ),
-        launch_arguments=controller_args.items(),
+        launch_arguments={k: str(v) for k, v in controller_args.items()}.items(),
     )
 
     # Moveit launch
@@ -201,19 +210,16 @@ def _runtime_setup(context, *args, **kwargs):
         shutdown_on_rviz_exit
     ]
 
-    if foxglove:
-        pass
+    if settings.foxglove.enabled:
+        foxglove_bridge = Node(
+            package="foxglove_bridge",
+            executable="foxglove_bridge",
+            output="screen",
+            name="foxglove_bridge",
+            parameters=[_foxglove_params(settings.foxglove, use_sim_time)]
+        )
 
-        # PythonLaunchDescriptionSource(
-        #     PathJoinSubstitution(
-        #         [
-        #             FindPackageShare("iiwa_bringup"),
-        #             "launch",
-        #             "supported",
-        #             "controllers.launch.py",
-        #         ]
-        #     )
-        # ),
+        setup += [foxglove_bridge]
 
     return setup
 
@@ -238,19 +244,12 @@ def generate_launch_description():
         description="Путь к файлу настроек",
     )
 
-    declare_foxglove = DeclareLaunchArgument(
-        name="foxglove",
-        default_value="false",
-        description="true = запустить foxglove стриминг"
-    )
-
     runtime_setup = OpaqueFunction(function=_runtime_setup)
 
     return LaunchDescription([
         declare_simulate,
         declare_rviz,
         declare_setting,
-        declare_foxglove,
         runtime_setup,
     ])
 

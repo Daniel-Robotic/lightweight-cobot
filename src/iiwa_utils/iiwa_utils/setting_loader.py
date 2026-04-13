@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Any, Dict, Type, TypeVar
+from typing import Any, Dict, List, Optional, Type, TypeVar
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -35,6 +35,7 @@ class DigitalTwinCfg:
     webots: WebotsCfg
     rviz: RvizCfg
 
+
 @dataclass(frozen=True)
 class MoveitCfg:
     srdf: str
@@ -52,6 +53,30 @@ class ControllerCfg:
     moveit: MoveitCfg
 
 
+@dataclass(frozen=True)
+class FoxgloveCfg:
+    enabled: bool                       # Запускать ли foxglove_bridge
+    port: int                           # WebSocket-порт (обычно 8765)
+    address: str                        # Адрес прослушивания (0.0.0.0 = все интерфейсы)
+    debug: bool                         # Подробное логирование bridge
+    tls: bool                           # Включить TLS-шифрование
+    certfile: str                       # Путь к SSL-сертификату (при tls=true)
+    keyfile: str                        # Путь к приватному ключу SSL (при tls=true)
+    topic_whitelist: List[str]          # Regex топиков, публикуемых клиенту
+    param_whitelist: List[str]          # Regex ROS-параметров, видимых клиенту
+    service_whitelist: List[str]        # Regex сервисов, доступных клиенту
+    client_topic_whitelist: List[str]   # Regex топиков, в которые клиент может писать
+    min_qos_depth: int                  # Минимальная глубина QoS-очереди
+    max_qos_depth: int                  # Максимальная глубина QoS-очереди
+    num_threads: int                    # Потоки bridge (0 = авто по CPU)
+    send_buffer_limit: int              # Лимит буфера отправки в байтах
+    use_sim_time: bool                  # Использовать /clock вместо системного времени
+    capabilities: List[str]             # Возможности, открытые клиенту
+    include_hidden: bool                # Показывать скрытые топики/сервисы
+    asset_uri_allowlist: List[str]      # Разрешённые package://-URI для отдачи ассетов
+    ignore_unresponsive_param_nodes: bool  # Не падать при зависших param-нодах
+
+
 class SettingsError(RuntimeError):
     pass
 
@@ -61,10 +86,9 @@ class Settings:
     robot: RobotCfg
     digital_twin: DigitalTwinCfg
     controller: ControllerCfg
+    foxglove: FoxgloveCfg
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize dataclass tree -> dict (recursive)."""
-
         def _convert(obj: Any) -> Any:
             if is_dataclass(obj):
                 return {f.name: _convert(getattr(obj, f.name)) for f in fields(obj)}
@@ -90,6 +114,7 @@ class Settings:
         return build_settings(settings_path=settings_path, check_files=check_files)
 
 
+# Helpers
 def load_yaml(path: str) -> Dict[str, Any]:
     path = os.path.abspath(path)
     if not os.path.exists(path):
@@ -102,29 +127,18 @@ def load_yaml(path: str) -> Dict[str, Any]:
 
 
 def resolve_path(value: str, settings_dir: str) -> str:
-    """
-    Supported:
-      - pkg://<pkg>/<rel>
-      - /abs/path
-      - ./relative or relative (relative to settings.yaml dir)
-    Returns absolute normalized path.
-    """
     if not isinstance(value, str) or not value.strip():
         raise SettingsError("empty path value in settings")
-
     value = value.strip()
-
     if value.startswith("pkg://"):
-        rest = value[len("pkg://") :]
+        rest = value[len("pkg://"):]
         if "/" not in rest:
             raise SettingsError(f"bad pkg uri: {value} (need pkg://<pkg>/<path>)")
         pkg, rel = rest.split("/", 1)
         share = get_package_share_directory(pkg)
         return os.path.normpath(os.path.join(share, rel))
-
     if os.path.isabs(value):
         return os.path.normpath(value)
-
     return os.path.normpath(os.path.join(settings_dir, value))
 
 
@@ -139,6 +153,72 @@ def assert_file(path: str, key: str) -> None:
         raise SettingsError(f"file for '{key}' does not exist: {path}")
     if not os.path.isfile(path):
         raise SettingsError(f"path for '{key}' is not a file: {path}")
+
+
+# Foxglove defaults
+_FOXGLOVE_DEFAULTS: Dict[str, Any] = {
+    "enabled": False,
+    "port": 8765,
+    "address": "0.0.0.0",
+    "debug": False,
+    "tls": False,
+    "certfile": "",
+    "keyfile": "",
+    "topic_whitelist": [".*"],
+    "param_whitelist": [".*"],
+    "service_whitelist": [".*"],
+    "client_topic_whitelist": [".*"],
+    "min_qos_depth": 1,
+    "max_qos_depth": 10,
+    "num_threads": 0,
+    "send_buffer_limit": 10_000_000,
+    "use_sim_time": False,
+    "capabilities": [
+        "clientPublish",
+        "parameters",
+        "parametersSubscribe",
+        "services",
+        "connectionGraph",
+        "assets",
+    ],
+    "include_hidden": False,
+    "asset_uri_allowlist": [
+        r"^package://(?:[-\w%]+/)*[-\w%.]+\.(?:dae|fbx|glb|gltf|jpeg|jpg|mtl|obj|png|stl|tif|tiff|urdf|webp|xacro)$"
+    ],
+    "ignore_unresponsive_param_nodes": True,
+}
+
+
+def _parse_foxglove(raw: Optional[Dict[str, Any]]) -> FoxgloveCfg:
+    """Парсит секцию foxglove, подставляя дефолты для пропущенных полей."""
+    if raw is None:
+        raw = {}
+
+    def get(key: str) -> Any:
+        return raw.get(key, _FOXGLOVE_DEFAULTS[key])
+
+    return FoxgloveCfg(
+        enabled=bool(get("enabled")),
+        port=int(get("port")),
+        address=str(get("address")),
+        debug=bool(get("debug")),
+        tls=bool(get("tls")),
+        certfile=str(get("certfile")),
+        keyfile=str(get("keyfile")),
+        topic_whitelist=list(get("topic_whitelist")),
+        param_whitelist=list(get("param_whitelist")),
+        service_whitelist=list(get("service_whitelist")),
+        client_topic_whitelist=list(get("client_topic_whitelist")),
+        min_qos_depth=int(get("min_qos_depth")),
+        max_qos_depth=int(get("max_qos_depth")),
+        num_threads=int(get("num_threads")),
+        send_buffer_limit=int(get("send_buffer_limit")),
+        use_sim_time=bool(get("use_sim_time")),
+        capabilities=list(get("capabilities")),
+        include_hidden=bool(get("include_hidden")),
+        asset_uri_allowlist=list(get("asset_uri_allowlist")),
+        ignore_unresponsive_param_nodes=bool(get("ignore_unresponsive_param_nodes")),
+    )
 
 
 def build_settings(settings_path: str, check_files: bool = True) -> Settings:
@@ -166,64 +246,52 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         world=resolve_path(str(require(webots_raw, "world")), settings_dir),
         transform=str(require(webots_raw, "transform")),
         rotation=str(require(webots_raw, "rotation")),
-        controller_timer=int(require(webots_raw, "controller_timer")),
+        controller_timer=str(int(require(webots_raw, "controller_timer"))),
     )
-
-    rviz = RvizCfg(config=resolve_path(str(require(rviz_raw, "config")), settings_dir))
-
-    digital_twin = DigitalTwinCfg(
-        webots=webots,
-        rviz=rviz
+    rviz = RvizCfg(
+        config=resolve_path(str(require(rviz_raw, "config")), settings_dir)
     )
+    digital_twin = DigitalTwinCfg(webots=webots, rviz=rviz)
 
-    # controller, moveit
+    # controller + moveit
     ctrl_raw = require(raw, "controller")
     moveit_raw = require(ctrl_raw, "moveit")
 
     moveit = MoveitCfg(
         srdf=resolve_path(str(require(moveit_raw, "srdf")), settings_dir),
         kinematics=resolve_path(str(require(moveit_raw, "kinematics")), settings_dir),
-        joint_limits=resolve_path(
-            str(require(moveit_raw, "joint_limits")), settings_dir
-        ),
+        joint_limits=resolve_path(str(require(moveit_raw, "joint_limits")), settings_dir),
         pilz_limits=resolve_path(str(require(moveit_raw, "pilz_limits")), settings_dir),
-        initial_positions=resolve_path(
-            str(require(moveit_raw, "initial_positions")), settings_dir
-        ),
-        moveit_controllers=resolve_path(
-            str(require(moveit_raw, "moveit_controllers")), settings_dir
-        ),
+        initial_positions=resolve_path(str(require(moveit_raw, "initial_positions")), settings_dir),
+        moveit_controllers=resolve_path(str(require(moveit_raw, "moveit_controllers")), settings_dir),
         moveit_cpp=resolve_path(str(require(moveit_raw, "moveit_cpp")), settings_dir),
     )
-
     controller = ControllerCfg(
-        controller_path=resolve_path(
-            str(require(ctrl_raw, "controller_path")), settings_dir
-        ),
+        controller_path=resolve_path(str(require(ctrl_raw, "controller_path")), settings_dir),
         moveit=moveit,
     )
 
-    s = Settings(robot=robot, digital_twin=digital_twin, controller=controller)
+    # foxglove
+    foxglove = _parse_foxglove(raw.get("foxglove"))
+
+    s = Settings(
+        robot=robot,
+        digital_twin=digital_twin,
+        controller=controller,
+        foxglove=foxglove,
+    )
 
     if check_files:
         assert_file(s.robot.description, "robot.description")
         assert_file(s.digital_twin.webots.world, "digital_twin.webots.world")
         assert_file(s.digital_twin.rviz.config, "digital_twin.rviz.config")
         assert_file(s.controller.controller_path, "controller.controller_path")
-
         assert_file(s.controller.moveit.srdf, "controller.moveit.srdf")
         assert_file(s.controller.moveit.kinematics, "controller.moveit.kinematics")
         assert_file(s.controller.moveit.joint_limits, "controller.moveit.joint_limits")
         assert_file(s.controller.moveit.pilz_limits, "controller.moveit.pilz_limits")
-        assert_file(
-            s.controller.moveit.initial_positions, "controller.moveit.initial_positions"
-        )
-        assert_file(
-            s.controller.moveit.moveit_controllers,
-            "controller.moveit.moveit_controllers",
-        )
+        assert_file(s.controller.moveit.initial_positions, "controller.moveit.initial_positions")
+        assert_file(s.controller.moveit.moveit_controllers, "controller.moveit.moveit_controllers")
         assert_file(s.controller.moveit.moveit_cpp, "controller.moveit.moveit_cpp")
 
     return s
-
-
