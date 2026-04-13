@@ -8,7 +8,8 @@ robot:
 
 digital_twin:
   webots:
-    world: pkg://iiwa_description/worlds/iiwa.wbt
+    # world: pkg://iiwa_description/worlds/iiwa.wbt
+    world: pkg://iiwa_description/worlds/simple_world.wbt
     transform: "-0.25 0 0.79"
     rotation: "0 0 1 0"
     controller_timer: "50"

@@ -32,6 +32,15 @@
                 </ros>
             </device>
 
+            <device reference="example_camera" type="Camera">
+                <ros>
+                    <topicName>/camera_example/color</topicName>
+                    <updateRate>30</updateRate>
+                    <alwaysOn>True</alwaysOn>
+                    <frameName>example_camera</frameName>
+                </ros>
+            </device>
+
             <device reference="camera_depth" type="RangeFinder">
                 <ros>
                     <topicName>/camera/depth</topicName>

@@ -125,6 +125,40 @@ def _runtime_setup(context, *args, **kwargs):
             "rotation": str(settings.digital_twin.webots.rotation),
             "controller_timer": str(settings.digital_twin.webots.controller_timer),
         }
+
+        # TODO пример работы, необходимо правильно интегрировать в структуру проекта и удалить из-за избыточности
+
+#         example_camera_urdf = """<?xml version="1.0"?>
+# <robot name="example_camera_robot">
+#     <link name="example_camera_link"/>
+#     <webots>
+#         <device reference="example_camera" type="Camera">
+#             <ros>
+#                 <topicName>/example_camera/image_raw</topicName>
+#                 <updateRate>30</updateRate>
+#                 <alwaysOn>True</alwaysOn>
+#                 <frameName>example_camera_link</frameName>
+#             </ros>
+#         </device>
+#     </webots>
+# </robot>
+# """
+
+#         from webots_ros2_driver.webots_controller import WebotsController
+
+#         example_camera_driver = WebotsController(
+#         robot_name="example_camera_robot",
+#         parameters=[
+#             {
+#                 "robot_description": example_camera_urdf,
+#                 "use_sim_time": True,
+#                 "set_robot_state_publisher": False,
+#             }
+#         ],
+#         respawn=True,
+#     )  
+#         setup += [example_camera_driver]
+
     else:
         controller_args = {
             "robot_name": settings.robot.name,

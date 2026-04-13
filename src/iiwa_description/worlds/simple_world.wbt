@@ -7,8 +7,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.20135401485081894 0.14705590432610455 0.9684168119700772 1.9104172436184537
-  position 2.126114183750861 -6.172386590547907 2.2530769187603243
+  orientation -0.28913430413481667 0.20676337530925004 0.9346926023047372 1.96317584288795
+  position 2.0700764329273156 -5.621201880809646 3.39425616182994
 }
 TexturedBackground {
 }
@@ -16,4 +16,15 @@ TexturedBackgroundLight {
 }
 RectangleArena {
   floorSize 5 5
+}
+
+Robot {
+  translation -1.26 0 0.77
+  children [
+    Camera {
+      name "example_camera"
+    }
+  ]
+  name "example_camera_robot"
+  controller "<extern>"
 }
