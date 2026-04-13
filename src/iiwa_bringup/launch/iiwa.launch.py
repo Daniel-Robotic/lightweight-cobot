@@ -23,6 +23,7 @@ def _runtime_setup(context, *args, **kwargs):
 
     # Настройка параметров
     simulate = LaunchConfiguration("simulate").perform(context) in ("true", "1", "yes")
+    foxglove = LaunchConfiguration("foxglove").perform(context) in ("true", "1", "yes")
 
     settings = setting_loader.build_settings(
         settings_path=LaunchConfiguration("setting").perform(context),
@@ -200,6 +201,20 @@ def _runtime_setup(context, *args, **kwargs):
         shutdown_on_rviz_exit
     ]
 
+    if foxglove:
+        pass
+
+        # PythonLaunchDescriptionSource(
+        #     PathJoinSubstitution(
+        #         [
+        #             FindPackageShare("iiwa_bringup"),
+        #             "launch",
+        #             "supported",
+        #             "controllers.launch.py",
+        #         ]
+        #     )
+        # ),
+
     return setup
 
 def generate_launch_description():
@@ -223,12 +238,19 @@ def generate_launch_description():
         description="Путь к файлу настроек",
     )
 
+    declare_foxglove = DeclareLaunchArgument(
+        name="foxglove",
+        default_value="false",
+        description="true = запустить foxglove стриминг"
+    )
+
     runtime_setup = OpaqueFunction(function=_runtime_setup)
 
     return LaunchDescription([
         declare_simulate,
         declare_rviz,
         declare_setting,
+        declare_foxglove,
         runtime_setup,
     ])
 
