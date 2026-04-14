@@ -16,7 +16,7 @@
     <xacro:include filename="$(find iiwa_description)/urdf/links.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/joints.xacro"/>
 
-    <xacro:include filename="$(find iiwa_description)/urdf/tools/patronv2.xacro"/>
+    <xacro:include filename="$(find iiwa_description)/urdf/tools/patron.xacro"/>
 
     <xacro:if value="$(arg simulate)">
 
