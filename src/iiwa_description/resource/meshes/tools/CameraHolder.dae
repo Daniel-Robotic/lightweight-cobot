@@ -1,8 +1,8 @@
 <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
   <asset>
     <contributor/>
-    <created>2026-04-10T13:27:38.363305</created>
-    <modified>2026-04-10T13:27:38.363309</modified>
+    <created>2026-04-14T16:59:02.416745</created>
+    <modified>2026-04-14T16:59:02.416750</modified>
     <unit name="meter" meter="1.0"/>
     <up_axis>Z_UP</up_axis>
   </asset>
@@ -18,7 +18,7 @@
               <color>0.0 0.0 0.0 1.0</color>
             </ambient>
             <diffuse>
-              <color>0.6941176652908325 0.572549045085907 0.6196078658103943 1.0</color>
+              <color>0.6941176652908325 0.3921568691730499 0.1725490242242813 1.0</color>
             </diffuse>
             <specular>
               <color>1 1 1 1.0</color>

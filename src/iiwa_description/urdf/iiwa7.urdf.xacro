@@ -16,7 +16,7 @@
     <xacro:include filename="$(find iiwa_description)/urdf/links.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/joints.xacro"/>
 
-    <xacro:include filename="$(find iiwa_description)/urdf/tools/patron.xacro"/>
+    <xacro:include filename="$(find iiwa_description)/urdf/tools/patronv2.xacro"/>
 
     <xacro:if value="$(arg simulate)">
 
@@ -29,15 +29,6 @@
                     <updateRate>30</updateRate>
                     <alwaysOn>True</alwaysOn>
                     <frameName>camera_optical_frame</frameName>
-                </ros>
-            </device>
-
-            <device reference="example_camera" type="Camera">
-                <ros>
-                    <topicName>/camera_example/color</topicName>
-                    <updateRate>30</updateRate>
-                    <alwaysOn>True</alwaysOn>
-                    <frameName>example_camera</frameName>
                 </ros>
             </device>
 
