@@ -19,8 +19,9 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            'object_spawner = iiwa_utils.object_spawner:main',
-            "motion_planning_test = iiwa_utils.motion_planing_test:main"
+            "object_spawner = iiwa_utils.object_spawner:main",
+            "motion_planning_test = iiwa_utils.motion_planing_test:main",
+            "camera_spawner = iiwa_utils.camera_spawner:main",
         ],
     },
 )

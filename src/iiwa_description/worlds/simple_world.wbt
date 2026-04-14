@@ -17,14 +17,3 @@ TexturedBackgroundLight {
 RectangleArena {
   floorSize 5 5
 }
-
-Robot {
-  translation -1.26 0 0.77
-  children [
-    Camera {
-      name "example_camera"
-    }
-  ]
-  name "example_camera_robot"
-  controller "<extern>"
-}

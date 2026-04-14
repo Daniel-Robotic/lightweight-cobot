@@ -1,3 +1,4 @@
+import json
 from dataclasses import asdict
 
 from launch import LaunchDescription
@@ -16,8 +17,10 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from moveit_configs_utils import MoveItConfigsBuilder
+from webots_ros2_driver.webots_controller import WebotsController
 
 from iiwa_utils import converter, setting_loader
+from iiwa_utils.camera_spawner import load_camera_config, build_ros_urdf  # type: ignore
 
 
 def _foxglove_params(fg, use_sim_time: bool) -> dict:
@@ -112,7 +115,7 @@ def _runtime_setup(context, *args, **kwargs):
         )
 
         setup += [webots_launch]
-    
+
     # Controller launch
     if simulate:
         controller_args = {
@@ -126,38 +129,34 @@ def _runtime_setup(context, *args, **kwargs):
             "controller_timer": str(settings.digital_twin.webots.controller_timer),
         }
 
-        # TODO пример работы, необходимо правильно интегрировать в структуру проекта и удалить из-за избыточности
+        if settings.digital_twin.webots.cameras:
+            # Спавн камеры
+            camera_spawner_node = Node(
+                package="iiwa_utils",
+                executable="camera_spawner",
+                name="camera_spawner",
+                output="screen",
+                parameters=[{
+                    "camera_configs": json.dumps(settings.digital_twin.webots.cameras)
+                }],
+            )
+            setup.append(camera_spawner_node)
 
-#         example_camera_urdf = """<?xml version="1.0"?>
-# <robot name="example_camera_robot">
-#     <link name="example_camera_link"/>
-#     <webots>
-#         <device reference="example_camera" type="Camera">
-#             <ros>
-#                 <topicName>/example_camera/image_raw</topicName>
-#                 <updateRate>30</updateRate>
-#                 <alwaysOn>True</alwaysOn>
-#                 <frameName>example_camera_link</frameName>
-#             </ros>
-#         </device>
-#     </webots>
-# </robot>
-# """
+            # WebotsController для каждой камеры
+            for cam_path in settings.digital_twin.webots.cameras:
+                cam_cfg = load_camera_config(cam_path)
+                urdf = build_ros_urdf(cam_cfg)
 
-#         from webots_ros2_driver.webots_controller import WebotsController
-
-#         example_camera_driver = WebotsController(
-#         robot_name="example_camera_robot",
-#         parameters=[
-#             {
-#                 "robot_description": example_camera_urdf,
-#                 "use_sim_time": True,
-#                 "set_robot_state_publisher": False,
-#             }
-#         ],
-#         respawn=True,
-#     )  
-#         setup += [example_camera_driver]
+                camera_controller = WebotsController(
+                    robot_name=f"{cam_cfg.name}_robot",
+                    parameters=[{
+                        "robot_description": urdf,
+                        "use_sim_time": True,
+                        "set_robot_state_publisher": False,
+                    }],
+                    respawn=True,
+                )
+                setup.append(camera_controller)
 
     else:
         controller_args = {

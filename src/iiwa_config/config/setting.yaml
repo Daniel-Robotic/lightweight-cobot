@@ -14,6 +14,9 @@ digital_twin:
     rotation: "0 0 1 0"
     controller_timer: "50"
 
+    cameras:
+      - pkg://iiwa_config/config/cameras/d455_top.yaml
+
   rviz:
     config: pkg://iiwa_config/config/rviz/rviz_moveit.rviz
 

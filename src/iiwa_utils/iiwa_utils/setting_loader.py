@@ -23,6 +23,7 @@ class WebotsCfg:
     transform: str
     rotation: str
     controller_timer: str
+    cameras: List[str]
 
 
 @dataclass(frozen=True)
@@ -240,13 +241,17 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
     # digital_twin
     dt_raw = require(raw, "digital_twin")
     webots_raw = require(dt_raw, "webots")
+    cameras_raw = webots_raw.get("cameras", [])
     rviz_raw = require(dt_raw, "rviz")
+
+    cameras = [resolve_path(str(c), settings_dir) for c in cameras_raw]
 
     webots = WebotsCfg(
         world=resolve_path(str(require(webots_raw, "world")), settings_dir),
         transform=str(require(webots_raw, "transform")),
         rotation=str(require(webots_raw, "rotation")),
         controller_timer=str(int(require(webots_raw, "controller_timer"))),
+        cameras=cameras,
     )
     rviz = RvizCfg(
         config=resolve_path(str(require(rviz_raw, "config")), settings_dir)
@@ -282,6 +287,9 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
     )
 
     if check_files:
+        for i, cam_path in enumerate(s.digital_twin.webots.cameras):
+            assert_file(cam_path, f"digital_twin.webots.cameras[{i}]")
+
         assert_file(s.robot.description, "robot.description")
         assert_file(s.digital_twin.webots.world, "digital_twin.webots.world")
         assert_file(s.digital_twin.rviz.config, "digital_twin.rviz.config")
