@@ -65,6 +65,8 @@ rosdep install --from-paths src --ignore-src -r -y --os=ubuntu:jammy
 Запись данных в rosbag:
 
 ```bash
+$ sudo apt-get install ros-$ROS_DISTRO-rosbag2-storage-mcap
+
 # Record all topics
 ros2 bag record -a --storage mcap -o my_session
 
