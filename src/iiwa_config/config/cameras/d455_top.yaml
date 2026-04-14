@@ -6,7 +6,7 @@
 
 name: d455_top
 # Положение в сцене (x y z)
-translation: "-0.25 0 1.5"
+translation: "0 0 2.49"
 # Ориентация (ось_x ось_y ось_z угол_рад)
 rotation: "0 0 1 0"
 
