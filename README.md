@@ -22,7 +22,9 @@ sudo apt install -y ros-${ROS_DISTRO}-webots-ros2 \
                     ros-${ROS_DISTRO}-moveit \
                     ros-${ROS_DISTRO}-moveit-py \
                     ros-${ROS_DISTRO}-ament-cmake-clang-format \
-                    sudo apt install ros-$ROS_DISTRO-rosbag2-storage-mcap
+                    ros-${ROS_DISTRO}-rosbag2-storage-mcap \
+                    ros-${ROS_DISTRO}-librealsense2 \
+                    ros-${ROS_DISTRO}-realsense2* \
 
 ```
 
