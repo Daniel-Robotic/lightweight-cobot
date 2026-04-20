@@ -50,7 +50,7 @@ services:
     ports:
       - "${CUSTOMVOICE_PORT:-8091}:8091"
     command:
-      - "${MODEL_CUSTOMVOICE:-Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice}"
+      - "${MODEL_CUSTOMVOICE:-Qwen/Qwen3-TTS-12Hz-0.63B-CustomVoice}"
       - "--omni"
       - "--port"
       - "8091"
@@ -69,7 +69,7 @@ services:
     ports:
       - "${VOICEDESIGN_PORT:-8092}:8091"
     command:
-      - "${MODEL_VOICEDESIGN:-Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign}"
+      - "${MODEL_VOICEDESIGN:-Qwen/Qwen3-TTS-12Hz-0.63B-VoiceDesign}"
       - "--omni"
       - "--port"
       - "8091"
@@ -88,7 +88,7 @@ services:
     ports:
       - "${BASE_PORT:-8093}:8091"
     command:
-      - "${MODEL_BASE:-Qwen/Qwen3-TTS-12Hz-1.7B-Base}"
+      - "${MODEL_BASE:-Qwen/Qwen3-TTS-12Hz-0.63B-Base}"
       - "--omni"
       - "--port"
       - "8091"
