@@ -53,8 +53,7 @@ services:
     ports:
       - "${CUSTOMVOICE_PORT:-8091}:8091"
     command: >
-      ${MODEL_SIZE:-Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice}
-      --omni
+      --model ${MODEL_SIZE:-Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice}
       --port 8091
       --gpu-memory-utilization ${GPU_MEM_UTIL:-0.90}
       --max-model-len ${MAX_MODEL_LEN:-4096}
@@ -72,8 +71,7 @@ services:
     ports:
       - "${VOICEDESIGN_PORT:-8092}:8091"
     command: >
-      ${MODEL_VOICEDESIGN:-Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign}
-      --omni
+      --model ${MODEL_VOICEDESIGN:-Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign}
       --port 8091
       --gpu-memory-utilization ${GPU_MEM_UTIL:-0.90}
       --max-model-len ${MAX_MODEL_LEN:-4096}
@@ -91,8 +89,7 @@ services:
     ports:
       - "${BASE_PORT:-8093}:8091"
     command: >
-      ${MODEL_BASE:-Qwen/Qwen3-TTS-12Hz-1.7B-Base}
-      --omni
+      --model ${MODEL_BASE:-Qwen/Qwen3-TTS-12Hz-1.7B-Base}
       --port 8091
       --gpu-memory-utilization ${GPU_MEM_UTIL:-0.90}
       --max-model-len ${MAX_MODEL_LEN:-4096}
