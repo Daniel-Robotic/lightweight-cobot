@@ -3,6 +3,8 @@ install/
 build/
 .vscode
 .idea
+venv
+.venv
 
 
 **.FCBak
