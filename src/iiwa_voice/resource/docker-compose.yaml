@@ -5,14 +5,15 @@
 #    voicedesign  → :8092  (создание голоса по текстовому описанию)
 #    base         → :8093  (клонирование голоса из ~3 сек. аудио)
 #
-#  Запуск всех сервисов:    docker compose up -d
-#  Только один сервис:      docker compose up -d qwen3-tts-customvoice
+#  Запуск всех сервисов:    docker compose --profile all up -d
+#  Только один сервис:      docker compose --profile customvoice up -d
 #  Логи:                    docker compose logs -f qwen3-tts-customvoice
 # =============================================================================
 
 x-tts-common: &tts-common
   image: vllm/vllm-omni:v0.18.0
   ipc: host
+  entrypoint: ["vllm", "serve"]
   ulimits:
     memlock: -1
     stack: 67108864
@@ -22,77 +23,80 @@ x-tts-common: &tts-common
       reservations:
         devices:
           - driver: nvidia
-            count: ${GPU_COUNT:-1}       # кол-во GPU на сервис (см. .env)
+            count: ${GPU_COUNT:-1}
             capabilities: [gpu]
   volumes:
     - ${HF_CACHE_DIR:-./hf_cache}:/root/.cache/huggingface
-    - ./output_audio:/output_audio       # сохранение WAV-файлов
+    - ./output_audio:/output_audio
   environment:
-    HF_TOKEN: ${HF_TOKEN:-}              # токен Hugging Face (если нужен)
-    VLLM_USE_V1: "0"                     # офлайн-режим совместимости
-    VLLM_WORKER_MULTIPROC_METHOD: spawn  # требуется для TTS-воркеров
+    HF_TOKEN: ${HF_TOKEN:-}
+    VLLM_USE_V1: "0"
+    VLLM_WORKER_MULTIPROC_METHOD: spawn
     CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-0}
   healthcheck:
     test: ["CMD", "python3", "-c",
-           "import urllib.request; urllib.request.urlopen('http://localhost:${_PORT:-8091}/health')"]
+           "import urllib.request; urllib.request.urlopen('http://localhost:8091/health')"]
     interval: 30s
     timeout: 10s
     retries: 5
-    start_period: 120s   # модель грузится долго
+    start_period: 120s
 
 # =============================================================================
 services:
 
-  # ---------------------------------------------------------------------------
-  # 1. CustomVoice — готовые голоса (Vivian, Ryan и др.)
-  #    POST /v1/audio/speech   { "input": "...", "voice": "Vivian" }
-  # ---------------------------------------------------------------------------
+  # CustomVoice — готовые голоса (Vivian, Ryan и др.)
   qwen3-tts-customvoice:
     <<: *tts-common
     container_name: qwen3-tts-customvoice
     ports:
       - "${CUSTOMVOICE_PORT:-8091}:8091"
-    command: >
-      --model ${MODEL_SIZE:-Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice}
-      --port 8091
-      --gpu-memory-utilization ${GPU_MEM_UTIL:-0.90}
-      --max-model-len ${MAX_MODEL_LEN:-4096}
+    command:
+      - "${MODEL_CUSTOMVOICE:-Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice}"
+      - "--omni"
+      - "--port"
+      - "8091"
+      - "--gpu-memory-utilization"
+      - "${GPU_MEM_UTIL:-0.90}"
+      - "--max-model-len"
+      - "${MAX_MODEL_LEN:-4096}"
     profiles:
       - customvoice
       - all
 
-  # ---------------------------------------------------------------------------
-  # 2. VoiceDesign — синтез голоса по описанию на естественном языке
-  #    POST /v1/audio/speech   { "input": "...", "voice": "a calm female voice" }
-  # ---------------------------------------------------------------------------
+  # VoiceDesign — синтез голоса по описанию на естественном языке
   qwen3-tts-voicedesign:
     <<: *tts-common
     container_name: qwen3-tts-voicedesign
     ports:
       - "${VOICEDESIGN_PORT:-8092}:8091"
-    command: >
-      --model ${MODEL_VOICEDESIGN:-Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign}
-      --port 8091
-      --gpu-memory-utilization ${GPU_MEM_UTIL:-0.90}
-      --max-model-len ${MAX_MODEL_LEN:-4096}
+    command:
+      - "${MODEL_VOICEDESIGN:-Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign}"
+      - "--omni"
+      - "--port"
+      - "8091"
+      - "--gpu-memory-utilization"
+      - "${GPU_MEM_UTIL:-0.90}"
+      - "--max-model-len"
+      - "${MAX_MODEL_LEN:-4096}"
     profiles:
       - voicedesign
       - all
 
-  # ---------------------------------------------------------------------------
-  # 3. Base — клонирование голоса из референс-аудио
-  #    POST /v1/audio/speech   { "input": "...", + ref_audio файл }
-  # ---------------------------------------------------------------------------
+  # Base — клонирование голоса из референс-аудио
   qwen3-tts-base:
     <<: *tts-common
     container_name: qwen3-tts-base
     ports:
       - "${BASE_PORT:-8093}:8091"
-    command: >
-      --model ${MODEL_BASE:-Qwen/Qwen3-TTS-12Hz-1.7B-Base}
-      --port 8091
-      --gpu-memory-utilization ${GPU_MEM_UTIL:-0.90}
-      --max-model-len ${MAX_MODEL_LEN:-4096}
+    command:
+      - "${MODEL_BASE:-Qwen/Qwen3-TTS-12Hz-1.7B-Base}"
+      - "--omni"
+      - "--port"
+      - "8091"
+      - "--gpu-memory-utilization"
+      - "${GPU_MEM_UTIL:-0.90}"
+      - "--max-model-len"
+      - "${MAX_MODEL_LEN:-4096}"
     profiles:
       - base
       - all
