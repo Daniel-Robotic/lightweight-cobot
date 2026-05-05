@@ -78,7 +78,8 @@ def main():
     pose_goal.pose.position.x = 0.28
     pose_goal.pose.position.y = -0.2
     pose_goal.pose.position.z = 0.5
-    iiwa_arm.set_goal_state(pose_stamped_msg=pose_goal, pose_link="link7")
+    iiwa_arm.set_goal_state(pose_stamped_msg=pose_goal, 
+                            pose_link="patron")
 
     # plan to goal
     plan_and_execute(iiwa, iiwa_arm, logger, sleep_time=3.0)

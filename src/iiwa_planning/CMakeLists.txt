@@ -15,6 +15,7 @@ find_package(moveit_core REQUIRED)
 find_package(moveit_ros_planning REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(iiwa_msgs REQUIRED)
 
 add_executable(motion_planning_cpp src/motion_planning_cpp.cpp)
 target_include_directories(motion_planning_cpp PUBLIC include)
@@ -37,10 +38,16 @@ install(TARGETS
 )
 
 install(PROGRAMS
-  # scripts/motion_planning_test.py
-  scripts/motion_planning.py
+  scripts/motion_planning_test.py
+  # scripts/motion_planning.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME motion_planning
+)
+
+install(PROGRAMS
+  scripts/move_to_pose_server.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME move_to_pose_server
 )
 
 

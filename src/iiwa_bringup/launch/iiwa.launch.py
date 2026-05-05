@@ -211,6 +211,17 @@ def _runtime_setup(context, *args, **kwargs):
         ],
     )
 
+    move_to_pose_server = Node(
+        package="iiwa_planning",
+        executable="move_to_pose_server",
+        output="screen",
+        parameters=[
+            moveit_configs.to_dict(),
+            {"robot_description": robot_description},
+            {"use_sim_time": use_sim_time},
+        ],
+    )
+
     # Rviz launch
     rviz_launch = Node(
         condition=IfCondition(LaunchConfiguration("rviz")),
@@ -237,10 +248,11 @@ def _runtime_setup(context, *args, **kwargs):
     )
 
     setup += [
-        controllers_launch, 
-        move_group, 
-        rviz_launch, 
-        shutdown_on_rviz_exit
+        controllers_launch,
+        move_group,
+        move_to_pose_server,
+        rviz_launch,
+        shutdown_on_rviz_exit,
     ]
 
     if settings.foxglove.enabled:
