@@ -1,0 +1,21 @@
+# Goal
+float64 x
+float64 y
+float64 z
+# ZYX Euler in radians (A=yaw, B=pitch, C=roll — KUKA ABC convention)
+float64 a
+float64 b
+float64 c
+# Velocity scaling 0.0–1.0
+float32 speed
+# Planner: ompl | ptp | lin | circ | chomp (default: ompl)
+string planner
+# Reference frame (default: base_link)
+string frame_id
+---
+# Result
+bool success
+string message
+---
+# Feedback
+string state  # "planning" | "executing"

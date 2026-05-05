@@ -38,13 +38,6 @@ install(TARGETS
 )
 
 install(PROGRAMS
-  scripts/motion_planning_test.py
-  # scripts/motion_planning.py
-  DESTINATION lib/${PROJECT_NAME}
-  RENAME motion_planning
-)
-
-install(PROGRAMS
   scripts/move_to_pose_server.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME move_to_pose_server

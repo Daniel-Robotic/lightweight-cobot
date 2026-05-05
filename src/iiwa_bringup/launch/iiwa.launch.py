@@ -219,6 +219,13 @@ def _runtime_setup(context, *args, **kwargs):
             moveit_configs.to_dict(),
             {"robot_description": robot_description},
             {"use_sim_time": use_sim_time},
+            {
+                "pose_link": settings.planning.pose_link,
+                "planning_group": settings.planning.planning_group,
+                "default_frame": settings.planning.default_frame,
+                "default_planner": settings.planning.default_planner,
+                "planning_attempts": settings.planning.planning_attempts,
+            },
         ],
     )
 

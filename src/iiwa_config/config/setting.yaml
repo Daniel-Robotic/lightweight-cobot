@@ -33,6 +33,13 @@ controller:
     moveit_cpp: pkg://iiwa_config/config/moveit/moveit_cpp.yaml
 
 
+planning:
+  pose_link: "link_ee"        # TCP-линк для декартовых целей
+  planning_group: "iiwa_arm"  # Группа планирования из SRDF
+  default_frame: "base_link"  # Система отсчёта по умолчанию
+  default_planner: "ompl"     # Планировщик по умолчанию
+  planning_attempts: 3        # Число попыток планирования
+
 foxglove:
   enabled: true  # Запускать ли foxglove_bridge вместе с роботом
   port: 8765 # WebSocket-порт, к которому подключается Foxglove Studio (по умолчанию 8765)

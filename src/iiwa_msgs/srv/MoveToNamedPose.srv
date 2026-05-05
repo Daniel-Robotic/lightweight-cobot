@@ -1,0 +1,7 @@
+# Named state from SRDF (e.g. "home", "work")
+string name
+# Velocity scaling 0.0–1.0
+float32 speed
+---
+bool success
+string message

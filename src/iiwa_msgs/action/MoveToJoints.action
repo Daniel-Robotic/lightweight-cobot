@@ -1,0 +1,11 @@
+# Goal — 7 joint positions in radians
+float64[7] joints
+# Velocity scaling 0.0–1.0
+float32 speed
+---
+# Result
+bool success
+string message
+---
+# Feedback
+string state  # "planning" | "executing"

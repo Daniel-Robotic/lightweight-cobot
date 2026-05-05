@@ -55,6 +55,15 @@ class ControllerCfg:
 
 
 @dataclass(frozen=True)
+class PlanningCfg:
+    pose_link: str          # TCP-линк для декартовых целей
+    planning_group: str     # Группа планирования из SRDF
+    default_frame: str      # Система отсчёта по умолчанию
+    default_planner: str    # Планировщик по умолчанию
+    planning_attempts: int  # Число попыток планирования
+
+
+@dataclass(frozen=True)
 class FoxgloveCfg:
     enabled: bool                       # Запускать ли foxglove_bridge
     port: int                           # WebSocket-порт (обычно 8765)
@@ -87,6 +96,7 @@ class Settings:
     robot: RobotCfg
     digital_twin: DigitalTwinCfg
     controller: ControllerCfg
+    planning: PlanningCfg
     foxglove: FoxgloveCfg
 
     def to_dict(self) -> Dict[str, Any]:
@@ -276,6 +286,16 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         moveit=moveit,
     )
 
+    # planning
+    planning_raw = raw.get("planning", {})
+    planning = PlanningCfg(
+        pose_link=str(planning_raw.get("pose_link", "link_ee")),
+        planning_group=str(planning_raw.get("planning_group", "iiwa_arm")),
+        default_frame=str(planning_raw.get("default_frame", "base_link")),
+        default_planner=str(planning_raw.get("default_planner", "ompl")),
+        planning_attempts=int(planning_raw.get("planning_attempts", 3)),
+    )
+
     # foxglove
     foxglove = _parse_foxglove(raw.get("foxglove"))
 
@@ -283,6 +303,7 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         robot=robot,
         digital_twin=digital_twin,
         controller=controller,
+        planning=planning,
         foxglove=foxglove,
     )
 
