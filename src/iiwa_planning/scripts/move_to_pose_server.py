@@ -19,13 +19,13 @@ from iiwa_msgs.action import MoveToPose, MoveToJoints
 from iiwa_msgs.srv import MoveToNamedPose
 
 
-# Таблица планировщиков: имя → (pipeline, planner_id, время планирования в секундах)
+# Таблица планировщиков
 PLANNERS = {
-    "ompl":  ("ompl",                           "RRTConnectkConfigDefault", 10.0),
-    "ptp":   ("pilz_industrial_motion_planner",  "PTP",                      2.0),
-    "lin":   ("pilz_industrial_motion_planner",  "LIN",                      2.0),
-    "circ":  ("pilz_industrial_motion_planner",  "CIRC",                     2.0),
-    "chomp": ("chomp",                           "",                         10.0),
+    "ompl":  ("ompl", "RRTConnectkConfigDefault", 10.0),
+    "ptp":   ("pilz_industrial_motion_planner", "PTP", 2.0),
+    "lin":   ("pilz_industrial_motion_planner", "LIN", 2.0),
+    "circ":  ("pilz_industrial_motion_planner", "CIRC", 2.0),
+    "chomp": ("chomp", "", 10.0),
 }
 
 

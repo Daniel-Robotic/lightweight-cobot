@@ -47,7 +47,7 @@ LC_ALL=C ros2 launch iiwa_moveit demo...
 sudo pip3 install transforms3d --break-system-packages
 ```
 Отправка робота в точку:
-```
+```bash
 ros2 action send_goal /iiwa/move_to_pose iiwa_msgs/action/MoveToPose \
   "{x: 0.5, y: 0.0, z: 0.5, a: 3.14, b: 0, c: 0, speed: 0.1, planner: 'ptp'}"
 
@@ -61,6 +61,14 @@ ros2 service call /iiwa/move_to_named iiwa_msgs/srv/MoveToNamedPose \
   "{name: 'work', speed: 0.3}"
 
 ros2 service call /iiwa/stop std_srvs/srv/Trigger "{}"
+```
+
+Пример сбора данных:
+```bash
+ros2 run iiwa_utils test_motion_sequence --ros-args -p n_iterations:=5 -p bag_path:=test_bag/ -p topics:="['/joint_states', '/d455_top/color/image_raw/image', '/d455_top/image_raw/camera_info']"
+
+ros2 run iiwa_utils test_motion_sequence \
+  --ros-args -p config_path:=/path/to/my_config.json 
 ```
 
 Спавн объекта:
