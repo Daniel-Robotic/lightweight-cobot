@@ -164,8 +164,11 @@ def _runtime_setup(context, *args, **kwargs):
             "description": description_path,
             "initial_positions_file": settings.controller.moveit.initial_positions,
             "controller_path": settings.controller.controller_path,
+            "transform": str(settings.digital_twin.webots.transform),
+            "rotation": str(settings.digital_twin.webots.rotation),
             "simulate": "false",
             "command_mode": settings.robot.command_mode,
+            "controller_timer": str(settings.digital_twin.webots.controller_timer),
         }
 
     controllers_launch = IncludeLaunchDescription(
