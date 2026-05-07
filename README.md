@@ -63,12 +63,33 @@ ros2 service call /iiwa/move_to_named iiwa_msgs/srv/MoveToNamedPose \
 ros2 service call /iiwa/stop std_srvs/srv/Trigger "{}"
 ```
 
-Пример сбора данных:
+Примеры использования `test_motion_sequence`:
 ```bash
-ros2 run iiwa_utils test_motion_sequence --ros-args -p n_iterations:=5 -p bag_path:=test_bag/ -p topics:="['/joint_states', '/d455_top/color/image_raw/image', '/d455_top/image_raw/camera_info']"
-
+# Просто выполнить последовательность без записи
 ros2 run iiwa_utils test_motion_sequence \
-  --ros-args -p config_path:=/path/to/my_config.json 
+  --ros-args -p n_iterations:=3 \
+             -p delay_between_iterations:=5.0
+
+# Записать все доступные топики в bag
+ros2 run iiwa_utils test_motion_sequence \
+  --ros-args -p n_iterations:=5 \
+             -p delay_between_iterations:=5.0 \
+             -p bag_path:=/tmp/iiwa_session
+
+# Записать конкретные топики
+ros2 run iiwa_utils test_motion_sequence \
+  --ros-args -p n_iterations:=5 \
+             -p delay_between_iterations:=5.0 \
+             -p bag_path:=/tmp/iiwa_session \
+             -p topics:="['/joint_states', '/d455_top/color/image_raw', '/tf']"
+
+# Использовать свой конфиг поз
+ros2 run iiwa_utils test_motion_sequence \
+  --ros-args -p config_path:=/path/to/my_config.json \
+             -p n_iterations:=1 \
+             -p delay_between_iterations:=3.0 \
+             -p bag_path:=/tmp/iiwa_session
+
 ```
 
 Спавн объекта:

@@ -1,23 +1,19 @@
 package ros;
 
-// ════════════════════════════════════════════════════════════════════════════
+// Sunrise OS 1.16 | FRI 1.16 | KUKA iiwa 7
 //
-//  ServerFriRos2.java
-//  Sunrise OS 1.16  |  FRI 1.16  |  KUKA iiwa 7
+// Режимы команды FRI:
+//   POSITION      - ROS2 задаёт целевые углы суставов
+//   TORQUE        - ROS2 задаёт добавочные моменты суставов
+//   NO_COMMAND_MODE - FRI только читает состояние, ведение рукой
 //
-//  Режимы управления:
-//    Position — FRI задаёт целевые углы суставов (PositionControlMode)
-//               Сглаживание команд выполняется на стороне ROS2 (FRIClient EMA)
-//    Torque   — FRI задаёт добавочные моменты (JointImpedanceControlMode)
-//    Monitor  — FRI только читает состояние (NO_COMMAND_MODE)
-//               Масса инструмента берётся из Sunrise WB (Load Data)
-//               и валидируется через SmartServo.validateForImpedanceMode()
+// Режимы управления Sunrise (только для POSITION и TORQUE):
+//   POSITION_CONTROL         - жёсткое позиционирование
+//   JOINT_IMPEDANCE_CONTROL  - упругое позиционирование с заданной жёсткостью
 //
-//  Сетевые интерфейсы:
-//    KONI — 192.170.10.10 (рекомендуется)
-//    KLI  — 192.168.21.31
-//
-// ════════════════════════════════════════════════════════════════════════════
+// Сетевые интерфейсы:
+//   KONI - 192.170.10.10 (рекомендуется)
+//   KLI  - 192.168.21.31
 
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -38,6 +34,7 @@ import com.kuka.roboticsAPI.deviceModel.LBR;
 import com.kuka.roboticsAPI.geometricModel.Tool;
 import com.kuka.roboticsAPI.motionModel.BasicMotions;
 import com.kuka.roboticsAPI.motionModel.PositionHold;
+import com.kuka.roboticsAPI.motionModel.controlModeModel.AbstractMotionControlMode;
 import com.kuka.roboticsAPI.motionModel.controlModeModel.JointImpedanceControlMode;
 import com.kuka.roboticsAPI.motionModel.controlModeModel.PositionControlMode;
 import com.kuka.roboticsAPI.uiModel.ApplicationDialogType;
@@ -45,71 +42,70 @@ import com.kuka.roboticsAPI.uiModel.ApplicationDialogType;
 
 public class ServerFriRos2 extends RoboticsAPIApplication {
 
-
-    // ── КОНСТАНТЫ ────────────────────────────────────────────────────────────
-
-    private static final double[] ZERO_POSITION            = {0, 0, 0, 0, 0, 0, 0};
+    // Позиции для движения перед запуском FRI
+    private static final double[] ZERO_POSITION = {0, 0, 0, 0, 0, 0, 0};
     private static final double[] MONITOR_WORKING_POSITION = {0, 0, 0, -1.57, 0, 1.57, 0};
 
+    // Сетевые адреса
     private static final String KONI_IP = "192.170.10.10";
-    private static final String KLI_IP  = "192.168.21.31";
+    private static final String KLI_IP = "192.168.21.31";
 
-    private static final int    FRI_CONNECT_TIMEOUT_SEC = 30;
-    private static final double APPROACH_VEL            = 0.30;
+    private static final int FRI_CONNECT_TIMEOUT_SEC = 30;
+    private static final double APPROACH_VEL = 0.30;
 
-    // Monitor режим: нулевая жёсткость = свободное ведение рукой
+    // Параметры для NO_COMMAND_MODE: нулевая жёсткость позволяет свободно вести робота рукой
     private static final double MONITOR_JOINT_STIFFNESS = 0.0;
-    private static final double MONITOR_JOINT_DAMPING   = 0.7;
+    private static final double MONITOR_JOINT_DAMPING = 0.7;
 
 
-    // ── ПЕРЕЧИСЛЕНИЯ ─────────────────────────────────────────────────────────
+    // Режим команды FRI - что именно отправляет ROS2 в каждом цикле
+    private enum CommandMode {
+        POSITION,
+        TORQUE,
+        NO_COMMAND_MODE
+    }
 
+    // Режим управления Sunrise - как контроллер обрабатывает команды
+    private enum ControlMode {
+        POSITION_CONTROL,
+        JOINT_IMPEDANCE_CONTROL
+    }
+
+    // Сетевой интерфейс для подключения FRI
     private enum NetworkInterface {
         KONI("KONI (192.170.10.10) - выделенная FRI-сеть", KONI_IP),
-        KLI ("KLI  (192.168.21.31) - основная сеть KRC",   KLI_IP);
+        KLI("KLI (192.168.21.31) - основная сеть KRC", KLI_IP);
 
         final String label;
         final String ip;
 
         NetworkInterface(String label, String ip) {
             this.label = label;
-            this.ip    = ip;
+            this.ip = ip;
         }
     }
 
-    private enum ControlMode {
-        POSITION,
-        TORQUE,
-        MONITOR
-    }
 
-
-    // ── ПОЛЯ ─────────────────────────────────────────────────────────────────
-
-    private LBR        _lbr;
+    private LBR _lbr;
     private Controller _lbrController;
 
-    /**
-     * Инструмент, настроенный в Sunrise WB → Object Templates.
-     * Имя должно совпадать с именем в SWB (здесь: "patron").
-     * Масса и CoM берутся из Load Data этого объекта.
-     */
+    // Инструмент из Sunrise WB - Object Templates tool1
+    // Масса и CoM берутся из Load Data этого объекта
     @Inject
-    @Named("patron")
+    @Named("tool1")
     private Tool _tool;
 
     private NetworkInterface _selectedNetwork;
-    private ControlMode      _selectedMode;
-    private int              _sendPeriodMs;
-    private double           _jointStiffness;
+    private CommandMode _selectedCommandMode;
+    private ControlMode _selectedControlMode;
+    private int _sendPeriodMs;
+    private double _jointStiffness;
 
-    private FRIConfiguration    _friConfig;
-    private FRISession          _friSession;
-    private FRIJointOverlay     _friOverlay;
+    private FRIConfiguration _friConfig;
+    private FRISession _friSession;
+    private FRIJointOverlay _friOverlay;
     private IFRISessionListener _friListener;
 
-
-    // ── LIFECYCLE ────────────────────────────────────────────────────────────
 
     @Override
     public void initialize() {
@@ -117,16 +113,13 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
         _lbrController = (Controller) getContext().getControllers().toArray()[0];
         _lbr = (LBR) _lbrController.getDevices().toArray()[0];
 
-        // Прикрепляем инструмент к фланцу — обязательно для корректной
-        // гравкомпенсации и validateForImpedanceMode()
+        // Прикрепляем инструмент к фланцу для корректной гравкомпенсации
         _tool.attachTo(_lbr.getFlange());
 
-        getLogger().info("════════════════════════════════════════════");
-        getLogger().info("  ServerFriRos2  |  KUKA iiwa 7 + ROS2 FRI");
-        getLogger().info("  Sunrise OS 1.16  |  FRI 1.16");
-        getLogger().info("  Робот      : " + _lbr.getName());
-        getLogger().info("  Инструмент : " + _tool.getName());
-        getLogger().info("════════════════════════════════════════════");
+        getLogger().info("ServerFriRos2 | KUKA iiwa 7 + ROS2 FRI");
+        getLogger().info("Sunrise OS 1.16 | FRI 1.16");
+        getLogger().info("Робот: " + _lbr.getName());
+        getLogger().info("Инструмент: " + _tool.getName());
 
         initFriListener();
         requestUserConfig();
@@ -137,10 +130,10 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
 
         moveToInitialPosition();
 
-        switch (_selectedMode) {
-            case POSITION: runPositionMode(); break;
-            case TORQUE:   runTorqueMode();   break;
-            case MONITOR:  runMonitorMode();  break;
+        switch (_selectedCommandMode) {
+            case POSITION:       runPositionMode();    break;
+            case TORQUE:         runTorqueMode();      break;
+            case NO_COMMAND_MODE: runMonitorMode();    break;
         }
 
         getLogger().info("Программа завершена.");
@@ -150,7 +143,7 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
     public void dispose() {
 
         if (_friSession != null) {
-            getLogger().info("dispose(): Закрытие FRI-сессии...");
+            getLogger().info("Закрытие FRI-сессии...");
             try {
                 _friSession.close();
             } catch (Exception e) {
@@ -163,107 +156,152 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
     }
 
 
-    // ── UI — ЗАПРОС КОНФИГУРАЦИИ ─────────────────────────────────────────────
-
+    // Последовательный опрос конфигурации - каждый шаг зависит от предыдущего
     private void requestUserConfig() {
 
-        // Шаг 1: Сетевой интерфейс
+        // Шаг 1: сетевой интерфейс
         int netChoice = getApplicationUI().displayModalDialog(
             ApplicationDialogType.QUESTION,
-            "Шаг 1 / 3  —  Сетевой интерфейс FRI\n\n"
+            "Шаг 1 - Сетевой интерфейс FRI\n\n"
             + "KONI: выделенная высокоскоростная сеть (рекомендуется)\n"
-            + "KLI : основная сеть KRC",
+            + "KLI: основная сеть KRC",
             NetworkInterface.KONI.label,
             NetworkInterface.KLI.label
         );
         _selectedNetwork = (netChoice == 0) ? NetworkInterface.KONI : NetworkInterface.KLI;
-        getLogger().info("[Шаг 1] Сеть: " + _selectedNetwork.label);
+        getLogger().info("Сетевой интерфейс: " + _selectedNetwork.label);
 
-        // Шаг 2: Режим управления
+        // Шаг 2: режим команды FRI
         int modeChoice = getApplicationUI().displayModalDialog(
             ApplicationDialogType.QUESTION,
-            "Шаг 2 / 3  —  Режим управления FRI\n\n"
-            + "Position : ROS2 задаёт угловые позиции суставов\n"
-            + "Torque   : ROS2 задаёт добавочные моменты\n"
-            + "Monitor  : только данные; ведение рукой",
+            "Шаг 2 - Режим команды FRI\n\n"
+            + "Position: ROS2 задаёт угловые позиции суставов\n"
+            + "Torque: ROS2 задаёт добавочные моменты суставов\n"
+            + "Monitor: только чтение, ведение рукой (NO_COMMAND_MODE)",
             "Position",
             "Torque",
             "Monitor"
         );
 
         if (modeChoice == 0) {
-            _selectedMode   = ControlMode.POSITION;
-            _jointStiffness = 0;
-
-            int pChoice = getApplicationUI().displayModalDialog(
-                ApplicationDialogType.QUESTION,
-                "Шаг 3 / 3  —  Период отправки [мс]  (Position)\n\n"
-                + "Режим: PositionControlMode (жёсткое позиционирование)\n"
-                + "Сглаживание команд выполняется на стороне ROS2.\n\n"
-                + "10 мс — стабильно\n"
-                + " 5 мс — стандарт для 200 Гц ros2_control\n"
-                + " 2 мс — быстро, требует низкого джиттера",
-                "10 мс",
-                " 5 мс",
-                " 2 мс"
-            );
-            _sendPeriodMs = new int[]{10, 5, 2}[pChoice];
+            _selectedCommandMode = CommandMode.POSITION;
+            selectControlMode();
+            selectSendPeriodForPosition();
 
         } else if (modeChoice == 1) {
-            _selectedMode = ControlMode.TORQUE;
-
-            int pChoice = getApplicationUI().displayModalDialog(
-                ApplicationDialogType.QUESTION,
-                "Шаг 3а / 4  —  Период отправки [мс]  (Torque)\n\n"
-                + "При пропуске пакета Sunrise переходит в PositionHold.\n"
-                + "Рекомендуется 1–2 мс при стабильной KONI-сети.",
-                " 5 мс",
-                " 2 мс  (рекомендуется)",
-                " 1 мс  (максимальная частота)"
-            );
-            _sendPeriodMs = new int[]{5, 2, 1}[pChoice];
-
-            int sChoice = getApplicationUI().displayModalDialog(
-                ApplicationDialogType.QUESTION,
-                "Шаг 3б / 4  —  Жёсткость суставов [Нм/рад]  (Torque)\n\n"
-                + "Высокая: точное следование, меньше отклонение\n"
-                + "Низкая : мягкое взаимодействие со средой\n\n"
-                + "⚠  1500 Нм/рад — только без людей в рабочей зоне!",
-                "1500  (жёсткий / производственный)",
-                "1000  (стандарт)",
-                " 800  (средний)",
-                " 500  (мягкий / взаимодействие)",
-                " 300  (очень мягкий)"
-            );
-            _jointStiffness = new double[]{1500, 1000, 800, 500, 300}[sChoice];
+            _selectedCommandMode = CommandMode.TORQUE;
+            // TORQUE всегда требует JointImpedanceControlMode на стороне Sunrise
+            _selectedControlMode = ControlMode.JOINT_IMPEDANCE_CONTROL;
+            selectJointStiffness();
+            selectSendPeriodForTorque();
 
         } else {
-            _selectedMode   = ControlMode.MONITOR;
-            _sendPeriodMs   = 2;   // 2 мс — запас для non-RT систем без FIFO-планировщика
-            _jointStiffness = 0;
-            getLogger().info("[Шаг 3] Monitor: период = " + _sendPeriodMs + " мс");
+            _selectedCommandMode = CommandMode.NO_COMMAND_MODE;
+            // Нулевая жёсткость задана константой, пользователю выбирать нечего
+            _selectedControlMode = ControlMode.JOINT_IMPEDANCE_CONTROL;
+            _sendPeriodMs = 2;
+            _jointStiffness = 0.0;
+            getLogger().info("Monitor (NO_COMMAND_MODE): период = " + _sendPeriodMs + " мс");
         }
 
-        getLogger().info("════════════════════════════════════════════");
-        getLogger().info("  КОНФИГУРАЦИЯ ЗАПУСКА");
-        getLogger().info("  Сеть       : " + _selectedNetwork.label);
-        getLogger().info("  IP хоста   : " + _selectedNetwork.ip);
-        getLogger().info("  Режим      : " + _selectedMode.name());
-        getLogger().info("  Период     : " + _sendPeriodMs + " мс");
-        getLogger().info("  Инструмент : " + _tool.getName());
-        if (_selectedMode == ControlMode.TORQUE) {
-            getLogger().info("  Жёсткость : " + _jointStiffness + " Нм/рад");
-        }
-        getLogger().info("════════════════════════════════════════════");
+        logConfiguration();
     }
 
 
-    // ── ДВИЖЕНИЕ В СТАРТОВУЮ ПОЗИЦИЮ ─────────────────────────────────────────
+    // Шаг 3a (только для POSITION): выбор режима управления Sunrise
+    private void selectControlMode() {
+
+        int ctrlChoice = getApplicationUI().displayModalDialog(
+            ApplicationDialogType.QUESTION,
+            "Шаг 3 - Режим управления Sunrise (Position)\n\n"
+            + "PositionControl: жёсткое позиционирование, максимальная точность следования\n"
+            + "JointImpedance: упругое позиционирование, задаётся жёсткость суставов",
+            "PositionControl",
+            "JointImpedance"
+        );
+
+        if (ctrlChoice == 0) {
+            _selectedControlMode = ControlMode.POSITION_CONTROL;
+            _jointStiffness = 0.0;
+            getLogger().info("Режим управления: PositionControlMode");
+        } else {
+            _selectedControlMode = ControlMode.JOINT_IMPEDANCE_CONTROL;
+            selectJointStiffness();
+        }
+    }
+
+
+    // Выбор жёсткости суставов для JointImpedanceControlMode
+    private void selectJointStiffness() {
+
+        int sChoice = getApplicationUI().displayModalDialog(
+            ApplicationDialogType.QUESTION,
+            "Жёсткость суставов [Нм/рад]\n\n"
+            + "Высокая жёсткость: точное следование, меньше отклонение от траектории\n"
+            + "Низкая жёсткость: мягкое взаимодействие со средой\n\n"
+            + "Внимание: 1500 Нм/рад только в производственном режиме без людей в зоне!",
+            "1500 - жёсткий / производственный",
+            "1000 - стандарт",
+            "800 - средний",
+            "500 - мягкий / взаимодействие",
+            "300 - очень мягкий"
+        );
+        _jointStiffness = new double[]{1500, 1000, 800, 500, 300}[sChoice];
+        getLogger().info("Жёсткость суставов: " + _jointStiffness + " Нм/рад");
+    }
+
+
+    private void selectSendPeriodForPosition() {
+
+        int pChoice = getApplicationUI().displayModalDialog(
+            ApplicationDialogType.QUESTION,
+            "Шаг 4 - Период отправки FRI [мс] (Position)\n\n"
+            + "10 мс: стабильно, подходит для большинства сетей\n"
+            + "5 мс: стандарт для ros2_control на 200 Гц\n"
+            + "2 мс: быстро, требует низкого джиттера сети",
+            "10 мс",
+            "5 мс",
+            "2 мс"
+        );
+        _sendPeriodMs = new int[]{10, 5, 2}[pChoice];
+        getLogger().info("Период отправки: " + _sendPeriodMs + " мс");
+    }
+
+
+    private void selectSendPeriodForTorque() {
+
+        int pChoice = getApplicationUI().displayModalDialog(
+            ApplicationDialogType.QUESTION,
+            "Шаг 4 - Период отправки FRI [мс] (Torque)\n\n"
+            + "При пропуске пакета Sunrise автоматически переходит в PositionHold.\n"
+            + "Рекомендуется 1-2 мс при стабильной KONI-сети.",
+            "5 мс",
+            "2 мс (рекомендуется)",
+            "1 мс (максимальная частота)"
+        );
+        _sendPeriodMs = new int[]{5, 2, 1}[pChoice];
+        getLogger().info("Период отправки: " + _sendPeriodMs + " мс");
+    }
+
+
+    private void logConfiguration() {
+
+        getLogger().info("Итоговая конфигурация:");
+        getLogger().info("  Сеть: " + _selectedNetwork.label);
+        getLogger().info("  IP: " + _selectedNetwork.ip);
+        getLogger().info("  Режим команды FRI: " + _selectedCommandMode.name());
+        getLogger().info("  Режим управления Sunrise: " + _selectedControlMode.name());
+        getLogger().info("  Период отправки: " + _sendPeriodMs + " мс");
+        getLogger().info("  Инструмент: " + _tool.getName());
+        if (_selectedControlMode == ControlMode.JOINT_IMPEDANCE_CONTROL && _jointStiffness > 0) {
+            getLogger().info("  Жёсткость суставов: " + _jointStiffness + " Нм/рад");
+        }
+    }
+
 
     private void moveToInitialPosition() {
 
-        if (_selectedMode == ControlMode.MONITOR) {
-
+        if (_selectedCommandMode == CommandMode.NO_COMMAND_MODE) {
             getLogger().info("Движение в рабочую позицию Monitor (через нулевую)...");
             _lbr.move(
                 BasicMotions.batch(
@@ -272,9 +310,7 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
                 ).setJointVelocityRel(APPROACH_VEL)
             );
             getLogger().info("Рабочая позиция Monitor достигнута.");
-
         } else {
-
             getLogger().info("Движение в нулевую позицию...");
             _lbr.move(
                 BasicMotions.ptp(ZERO_POSITION).setJointVelocityRel(APPROACH_VEL)
@@ -284,20 +320,18 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
     }
 
 
-    // ── РЕЖИМ: POSITION ──────────────────────────────────────────────────────
-
     private void runPositionMode() {
-        getLogger().info("═══ Position режим (PositionControlMode) ═══");
+
+        getLogger().info("Запуск Position режима, управление: " + _selectedControlMode.name());
 
         if (!setupFriSession(ClientCommandMode.POSITION)) {
             return;
         }
 
-        PositionControlMode ctrlMode = new PositionControlMode();
+        AbstractMotionControlMode ctrlMode = buildControlMode();
         PositionHold posHold = new PositionHold(ctrlMode, -1, TimeUnit.SECONDS);
 
         getLogger().info("Position режим активен. Ожидаю команды от ROS2...");
-
         _lbr.move(posHold.addMotionOverlay(_friOverlay));
 
         _friSession.close();
@@ -306,11 +340,9 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
     }
 
 
-    // ── РЕЖИМ: TORQUE ────────────────────────────────────────────────────────
-
     private void runTorqueMode() {
-        getLogger().info("═══ Torque режим ═══");
-        getLogger().info("Жёсткость: " + _jointStiffness + " Нм/рад");
+
+        getLogger().info("Запуск Torque режима, жёсткость: " + _jointStiffness + " Нм/рад");
 
         if (!setupFriSession(ClientCommandMode.TORQUE)) {
             return;
@@ -326,7 +358,6 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
         PositionHold posHold = new PositionHold(ctrlMode, -1, TimeUnit.SECONDS);
 
         getLogger().info("Torque режим активен. Ожидаю команды от ROS2...");
-
         _lbr.move(posHold.addMotionOverlay(_friOverlay));
 
         _friSession.close();
@@ -335,41 +366,27 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
     }
 
 
-    // ── РЕЖИМ: MONITOR ───────────────────────────────────────────────────────
-
-    /**
-     * Monitor режим.
-     *
-     * Фаза A: Валидация Load Data инструмента из Sunrise WB.
-     *         Масса берётся из Object Templates → patron → Load Data,
-     *         как в TeachKuka.java (SmartServo.validateForImpedanceMode).
-     *
-     * Фаза B: Диалог подтверждения — оператор запускает ROS2 FRI узел.
-     *
-     * Фаза C: FRI в NO_COMMAND_MODE — данные суставов идут в ROS2.
-     *
-     * Фаза D: PositionHold с нулевой жёсткостью — свободное ведение рукой.
-     */
     private void runMonitorMode() {
-        getLogger().info("═══ Monitor режим ═══");
 
-        // Фаза A: валидация Load Data инструмента из SWB
+        getLogger().info("Запуск Monitor режима (NO_COMMAND_MODE).");
+
+        // Фаза A: валидация Load Data инструмента из Sunrise WB
         validateLoadModel();
 
-        // Фаза B: ждём подтверждения оператора что ROS2 FRI готов
+        // Фаза B: ждём подтверждения оператора, что ROS2 FRI-узел запущен
         getApplicationUI().displayModalDialog(
             ApplicationDialogType.INFORMATION,
-            "Запустите ROS2 FRI узел на ПК (" + _selectedNetwork.ip + ").\n\n"
+            "Запустите ROS2 FRI-узел на ПК (" + _selectedNetwork.ip + ").\n\n"
             + "Нажмите OK когда ros2_control_node активен.",
-            "OK — ROS2 готов"
+            "OK - ROS2 готов"
         );
 
-        // Фаза C: FRI в режиме только чтения
+        // Фаза C: FRI в режиме только чтения (NO_COMMAND_MODE)
         if (!setupFriSession(ClientCommandMode.NO_COMMAND_MODE)) {
             return;
         }
 
-        // Фаза D: PositionHold с нулевой жёсткостью — свободное ведение рукой
+        // Фаза D: PositionHold с нулевой жёсткостью - свободное ведение рукой
         JointImpedanceControlMode guidingMode = new JointImpedanceControlMode(
             MONITOR_JOINT_STIFFNESS, MONITOR_JOINT_STIFFNESS, MONITOR_JOINT_STIFFNESS,
             MONITOR_JOINT_STIFFNESS, MONITOR_JOINT_STIFFNESS, MONITOR_JOINT_STIFFNESS,
@@ -379,11 +396,10 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
 
         PositionHold posHold = new PositionHold(guidingMode, -1, TimeUnit.SECONDS);
 
-        getLogger().info("Monitor активен:");
-        getLogger().info("  • Ведите робота рукой — он не сопротивляется.");
-        getLogger().info("  • Данные суставов транслируются в ROS2 каждые "
-            + _sendPeriodMs + " мс.");
-        getLogger().info("  • Остановите FRI-клиент для завершения.");
+        getLogger().info("Monitor режим активен.");
+        getLogger().info("Ведите робота рукой - он не сопротивляется.");
+        getLogger().info("Данные суставов транслируются в ROS2 каждые " + _sendPeriodMs + " мс.");
+        getLogger().info("Остановите FRI-клиент для завершения.");
 
         _lbr.move(posHold);
 
@@ -393,47 +409,50 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
     }
 
 
-    // ── ВАЛИДАЦИЯ НАГРУЗКИ ИНСТРУМЕНТА ──────────────────────────────────────
+    // Создаёт объект режима управления на основе выбора пользователя
+    private AbstractMotionControlMode buildControlMode() {
 
-    /**
-     * Проверяет Load Data (масса / CoM / инерция) инструмента из Sunrise WB.
-     *
-     * Аналог validateLoadModel() из TeachKuka.java:
-     *   SmartServo.validateForImpedanceMode(_tool) проверяет, что данные
-     *   нагрузки заданы корректно для работы с JointImpedanceControlMode.
-     *
-     * Если валидация не прошла — нужно задать Load Data в:
-     *   Sunrise WB → Object Templates → patron → Load Data
-     *   (Mass, Centre of Mass, Moment of Inertia)
-     */
+        if (_selectedControlMode == ControlMode.POSITION_CONTROL) {
+            getLogger().info("Создан PositionControlMode.");
+            return new PositionControlMode();
+        }
+
+        // JointImpedanceControlMode - одинаковая жёсткость для всех суставов
+        JointImpedanceControlMode mode = new JointImpedanceControlMode(
+            _jointStiffness, _jointStiffness, _jointStiffness,
+            _jointStiffness, _jointStiffness, _jointStiffness,
+            _jointStiffness
+        );
+        mode.setDampingForAllJoints(0.7);
+        getLogger().info("Создан JointImpedanceControlMode, жёсткость = " + _jointStiffness + " Нм/рад");
+        return mode;
+    }
+
+
+    // Проверяет Load Data инструмента из Sunrise WB через SmartServo.validateForImpedanceMode.
+    // Корректные данные нагрузки обязательны для точной гравкомпенсации в Monitor режиме.
     private void validateLoadModel() {
-        getLogger().info("════════════════════════════════════════════");
-        getLogger().info("  ВАЛИДАЦИЯ НАГРУЗКИ ИНСТРУМЕНТА");
-        getLogger().info("  Инструмент: " + _tool.getName());
-        getLogger().info("════════════════════════════════════════════");
+
+        getLogger().info("Валидация нагрузки инструмента: " + _tool.getName());
 
         boolean valid = SmartServo.validateForImpedanceMode(_tool);
 
         if (valid) {
-            getLogger().info("  ✓ Load Data валидны.");
-            getLogger().info("    Масса и CoM заданы корректно в Sunrise WB.");
-            getLogger().info("    Гравкомпенсация будет работать точно.");
+            getLogger().info("Load Data валидны. Гравкомпенсация будет работать точно.");
         } else {
-            getLogger().warn("  ⚠ Валидация Load Data НЕ прошла!");
-            getLogger().warn("    Задайте данные нагрузки в:");
-            getLogger().warn("    Sunrise WB → Object Templates → "
-                + _tool.getName() + " → Load Data");
-            getLogger().warn("    (Mass [кг], Centre of Mass [мм], Inertia [кг·м²])");
-            getLogger().warn("    Гравкомпенсация в Monitor режиме может работать некорректно.");
+            getLogger().warn("Валидация Load Data не прошла для инструмента: " + _tool.getName());
+            getLogger().warn("Задайте данные в Sunrise WB -> Object Templates -> "
+                + _tool.getName() + " -> Load Data");
+            getLogger().warn("(Mass [кг], Centre of Mass [мм], Inertia [кг/м2])");
+            getLogger().warn("Гравкомпенсация в Monitor режиме может работать некорректно.");
 
-            // Предупреждаем оператора — он решает продолжить или нет
             int choice = getApplicationUI().displayModalDialog(
                 ApplicationDialogType.QUESTION,
                 "Load Data инструмента '" + _tool.getName() + "' не заданы.\n\n"
                 + "Без корректных данных нагрузки гравкомпенсация\n"
                 + "будет работать с ошибкой.\n\n"
-                + "Задайте данные в Sunrise WB → Object Templates → "
-                + _tool.getName() + " → Load Data,\nзатем перезапустите программу.\n\n"
+                + "Задайте данные в Sunrise WB -> Object Templates -> "
+                + _tool.getName() + " -> Load Data\nи перезапустите программу.\n\n"
                 + "Или продолжите без корректной нагрузки (на свой риск).",
                 "Продолжить",
                 "Остановить"
@@ -441,16 +460,11 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
 
             if (choice == 1) {
                 throw new RuntimeException(
-                    "Остановлено оператором: Load Data не заданы для "
-                    + _tool.getName());
+                    "Остановлено оператором: Load Data не заданы для " + _tool.getName());
             }
         }
-
-        getLogger().info("════════════════════════════════════════════");
     }
 
-
-    // ── FRI — НАСТРОЙКА СЕССИИ ───────────────────────────────────────────────
 
     private boolean setupFriSession(ClientCommandMode commandMode) {
 
@@ -459,10 +473,10 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
         _friConfig.setReceiveMultiplier(1);
 
         getLogger().info("Создание FRI-сессии...");
-        getLogger().info("  Хост    : " + _friConfig.getHostName()
-            + "  порт: " + _friConfig.getPortOnRemote());
-        getLogger().info("  Режим   : " + commandMode.name());
-        getLogger().info("  Период  : " + _friConfig.getSendPeriodMilliSec() + " мс");
+        getLogger().info("Хост: " + _friConfig.getHostName()
+            + ", порт: " + _friConfig.getPortOnRemote());
+        getLogger().info("Режим команды: " + commandMode.name());
+        getLogger().info("Период отправки: " + _friConfig.getSendPeriodMilliSec() + " мс");
 
         _friSession = new FRISession(_friConfig);
         _friSession.addFRISessionListener(_friListener);
@@ -471,12 +485,9 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
             getLogger().info("Ожидание FRI-клиента на " + _selectedNetwork.ip
                 + " (таймаут " + FRI_CONNECT_TIMEOUT_SEC + " с)...");
             _friSession.await(FRI_CONNECT_TIMEOUT_SEC, TimeUnit.SECONDS);
-
         } catch (TimeoutException e) {
-            getLogger().error("Таймаут FRI! Клиент не ответил за "
-                + FRI_CONNECT_TIMEOUT_SEC + " с.");
-            getLogger().error("Убедитесь, что ROS2 FRI-узел запущен на "
-                + _selectedNetwork.ip);
+            getLogger().error("Таймаут FRI! Клиент не ответил за " + FRI_CONNECT_TIMEOUT_SEC + " с.");
+            getLogger().error("Убедитесь, что ROS2 FRI-узел запущен на " + _selectedNetwork.ip);
             _friSession.close();
             _friSession = null;
             return false;
@@ -487,43 +498,46 @@ public class ServerFriRos2 extends RoboticsAPIApplication {
 
         if (commandMode != ClientCommandMode.NO_COMMAND_MODE) {
             _friOverlay = new FRIJointOverlay(_friSession, commandMode);
-            getLogger().info("FRIJointOverlay создан: " + commandMode.name());
+            getLogger().info("FRIJointOverlay создан для режима: " + commandMode.name());
         } else {
             _friOverlay = null;
-            getLogger().info("Monitor: FRIJointOverlay не создаётся (только чтение).");
+            getLogger().info("Monitor: FRIJointOverlay не создаётся (только чтение данных).");
         }
 
         return true;
     }
 
 
-    // ── FRI — LISTENER ───────────────────────────────────────────────────────
-
     private void initFriListener() {
         _friListener = new IFRISessionListener() {
 
             @Override
             public void onFRIConnectionQualityChanged(FRIChannelInformation info) {
-                getLogger().info("[FRI] Качество: " + info.getQuality()
-                    + "  jitter=" + info.getJitter() + " мс"
-                    + "  latency=" + info.getLatency() + " мс");
+                getLogger().info("FRI качество изменилось: " + info.getQuality()
+                    + ", jitter=" + info.getJitter() + " мс"
+                    + ", latency=" + info.getLatency() + " мс");
             }
 
             @Override
             public void onFRISessionStateChanged(FRIChannelInformation info) {
-                getLogger().info("[FRI] Состояние: " + info.getFRISessionState()
-                    + "  jitter=" + info.getJitter() + " мс"
-                    + "  latency=" + info.getLatency() + " мс");
+                getLogger().info("FRI состояние изменилось: " + info.getFRISessionState()
+                    + ", jitter=" + info.getJitter() + " мс"
+                    + ", latency=" + info.getLatency() + " мс");
             }
         };
     }
 
     private void logFriChannelInfo() {
         FRIChannelInformation info = _friSession.getFRIChannelInformation();
-        getLogger().info("[FRI] Состояние : " + info.getFRISessionState());
-        getLogger().info("[FRI] Качество  : " + info.getQuality());
-        getLogger().info("[FRI] Jitter    : " + info.getJitter() + " мс");
-        getLogger().info("[FRI] Latency   : " + info.getLatency() + " мс");
+        getLogger().info("FRI состояние: " + info.getFRISessionState());
+        getLogger().info("FRI качество: " + info.getQuality());
+        getLogger().info("FRI jitter: " + info.getJitter() + " мс");
+        getLogger().info("FRI latency: " + info.getLatency() + " мс");
     }
 
+
+    public static void main(final String[] args) {
+        ServerFriRos2 app = new ServerFriRos2();
+        app.runApplication();
+    }
 }

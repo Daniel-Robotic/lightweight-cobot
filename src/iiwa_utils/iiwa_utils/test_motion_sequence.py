@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -22,20 +23,17 @@ class IiwaTestRunner(Node):
         super().__init__('iiwa_test_runner')
 
         self.declare_parameter('n_iterations', 3)
-        self.declare_parameter('bag_path', '/tmp/iiwa_test')
+        self.declare_parameter('bag_path', '')
         self.declare_parameter('config_path', '')
-        self.declare_parameter('topics', [
-            '/joint_states',
-            '/iiwa/joint_states',
-            '/tf',
-            '/tf_static',
-        ])
+        self.declare_parameter('topics', [''])
         self.declare_parameter("delay_between_iterations", 5.0)
 
         self._n_iter = self.get_parameter('n_iterations').value
         self._delay_between_iterations = self.get_parameter("delay_between_iterations").value
         self._bag_path = self.get_parameter('bag_path').value
-        self._topics_param = self.get_parameter('topics').value
+        topics_param = self.get_parameter('topics').value
+        # [''] means not specified — record all topics
+        self._topics_param: list[str] = [t for t in topics_param if t]
         config_path = self.get_parameter('config_path').value
 
         cfg = self._load_config(config_path)
@@ -56,8 +54,11 @@ class IiwaTestRunner(Node):
         self._registered_topics: set[str] = set()
         self._subs = []
 
-        self._init_bag()
-        self._init_subscribers()
+        if self._bag_path:
+            self._init_bag()
+            self._init_subscribers()
+        else:
+            self.get_logger().info('bag_path not set — recording disabled')
 
     # Config
     def _load_config(self, config_path: str) -> dict:
@@ -68,6 +69,11 @@ class IiwaTestRunner(Node):
 
     # Bag files
     def _init_bag(self):
+        bag_dir = Path(self._bag_path)
+        if bag_dir.exists():
+            shutil.rmtree(bag_dir)
+            self.get_logger().info(f'Removed existing bag at {self._bag_path}')
+
         storage_opts = rosbag2_py.StorageOptions(uri=self._bag_path, storage_id='mcap')
         converter_opts = rosbag2_py.ConverterOptions(
             input_serialization_format='cdr',
@@ -82,7 +88,11 @@ class IiwaTestRunner(Node):
         time.sleep(2.0)
         available = dict(self.get_topic_names_and_types())
 
-        for topic in self._topics_param:
+        topics = self._topics_param if self._topics_param else list(available.keys())
+        if not self._topics_param:
+            self.get_logger().info(f'topics not set — recording all {len(topics)} available topics')
+
+        for topic in topics:
             if topic not in available:
                 self.get_logger().warn(f'Topic {topic} not available, skipping')
                 continue

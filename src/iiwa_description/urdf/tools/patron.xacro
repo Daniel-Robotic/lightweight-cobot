@@ -92,6 +92,7 @@
     </link>
 
     <link name="camera_optical_frame"/>
+    <link name="tcp" />
 
     <joint name="tool" type="fixed">
         <parent link="link_ee"/>
@@ -103,6 +104,12 @@
         <origin xyz="0.0 0.0 0.032" rpy="0.0 0.0 0.0"/>
         <parent link="camera_holder"/>
         <child link="patron"/>
+    </joint>
+
+    <joint name="patron_tcp" type="fixed">
+        <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 -1.5708"/>
+        <parent link="patron"/>
+        <child link="tcp"/>
     </joint>
 
     <joint name="camera_holder_corner" type="fixed">

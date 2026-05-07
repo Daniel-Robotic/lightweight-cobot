@@ -36,6 +36,13 @@ def _setup_controllers(context, *args, **kwargs):
     if simulate:
         tmo = ["--controller-manager-timeout", str(controller_timer)]
 
+        spawner_urdf = URDFSpawner(
+            name=robot_name,
+            robot_description=robot_description,
+            translation=transform,
+            rotation=rotation,
+        )
+
         jsb = Node(
             package="controller_manager",
             executable="spawner",
@@ -60,14 +67,14 @@ def _setup_controllers(context, *args, **kwargs):
             parameters=[{"use_sim_time": True}]
         )
 
-        spawner_urdf = URDFSpawner(
-            name=robot_name,
-            robot_description=robot_description,
-            translation=transform,
-            rotation=rotation,
+        jtc_after_jsb = RegisterEventHandler(
+            OnProcessExit(
+                target_action=jsb,
+                on_exit=[jtc, torque_controller_spawner],
+            )
         )
 
-        return [jsb, jtc, torque_controller_spawner, spawner_urdf]
+        return [spawner_urdf, jsb, jtc_after_jsb]
 
     # FRI
     else:
@@ -93,7 +100,7 @@ def _setup_controllers(context, *args, **kwargs):
 
         jtc_args = ["iiwa_arm_controller", "--controller-manager", "/controller_manager"]
         torque_args = ["iiwa_arm_torque_controller", "--controller-manager", "/controller_manager"]
-        
+
         if command_mode == "torque":
             jtc_args += ["--inactive"]
         else:
@@ -113,10 +120,17 @@ def _setup_controllers(context, *args, **kwargs):
             arguments=torque_args,
         )
 
+        state_broadcaster = Node(
+            package="controller_manager",
+            executable="spawner",
+            output="screen",
+            arguments=["iiwa_state_broadcaster", "--controller-manager", "/controller_manager"],
+        )
+
         jtc_after_jsb = RegisterEventHandler(
             OnProcessExit(
                 target_action=jsb,
-                on_exit=[jtc, torque_controller],
+                on_exit=[jtc, torque_controller, state_broadcaster],
             )
         )
 
