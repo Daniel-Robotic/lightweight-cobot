@@ -5,10 +5,10 @@ agreement or other license is obtained by KUKA Deutschland GmbH, Augsburg, Germa
 
 SCOPE
 
-The software ï¿½KUKA Sunrise.Connectivity FRI Client SDKï¿½ is targeted to work in
-conjunction with the ï¿½KUKA Sunrise.Connectivity FastRobotInterfaceï¿½ toolkit.
-In the following, the term ï¿½softwareï¿½ refers to all material directly
-belonging to the provided SDK ï¿½Software development kitï¿½, particularly source
+The software “KUKA Sunrise.Connectivity FRI Client SDK” is targeted to work in
+conjunction with the “KUKA Sunrise.Connectivity FastRobotInterface” toolkit.
+In the following, the term “software” refers to all material directly
+belonging to the provided SDK “Software development kit”, particularly source
 code, libraries, binaries, manuals and technical documentation.
 
 COPYRIGHT
@@ -181,7 +181,7 @@ int UdpConnection::receive(char *buffer, int maxSize)
 #else
       int sockAddrSize;
 #endif
-      sockAddrSize = static_cast<socklen_t>(sizeof(struct sockaddr_in));
+      sockAddrSize = sizeof(struct sockaddr_in);
       /** check for timeout
        Because SO_RCVTIMEO is in Windows not correctly implemented, select is used for the receive time out.
        If a timeout greater than 0 is given, wait until the timeout is reached or a message was received.
