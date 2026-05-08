@@ -145,3 +145,13 @@ ros2 bag convert \
   -o robot_drive_mcap/ \
   --output-options '{"storage_id": "mcap"}'
 ```
+
+
+<!-- Generate Doc -->
+```bash
+chmod +x doc/build_docs.sh
+
+./build_docs.sh #Собирает статику в mkdocs/site/
+./build_docs.sh build # То же самое явно
+./build_docs.sh serve # Live-preview с авто-перезагрузкой
+```

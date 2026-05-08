@@ -1,0 +1,43 @@
+site_name: Документация НОЦ ПРиППТ
+site_description: Документация по использованию коллаборативного робота KUKA LBR iiwa 7 и его программированию в среде ROS 2.
+site_author: Даниил Грабарь
+
+theme:
+  name: material
+  language: ru
+  features:
+    - navigation.tabs           # вкладки сверху
+    - navigation.tabs.sticky    # вкладки остаются при скролле
+    - navigation.sections       # разделы в боковой панели
+    - navigation.expand         # раскрывать разделы автоматически
+    - navigation.top            # кнопка "наверх"
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Главная: index.md          # ← вкладка 1
+
+  # - Обзор проекта:             # ← вкладка 2
+  #   - Введение: overview/intro.md
+  #   - Архитектура: overview/architecture.md
+  #   - Зависимости: overview/dependencies.md
+
+  # - Установка:                 # ← вкладка 3
+  #   - Требования: install/requirements.md
+  #   - ROS2: install/ros2.md
+  #   - KUKA FRI: install/fri.md
+
+  # - Разработка:                # ← вкладка 4
+  #   - Структура пакетов: dev/packages.md
+  #   - Камеры RealSense: dev/realsense.md
+  #   - Управление KUKA: dev/kuka.md
+  #   - Сборка: dev/build.md
+
+  # - API:                       # ← вкладка 5
+  #   - Обзор: api/overview.md
+  #   - Топики: api/topics.md
+    # - Сервисы: api/services.md
