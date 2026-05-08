@@ -120,17 +120,10 @@ def _setup_controllers(context, *args, **kwargs):
             arguments=torque_args,
         )
 
-        state_broadcaster = Node(
-            package="controller_manager",
-            executable="spawner",
-            output="screen",
-            arguments=["iiwa_state_broadcaster", "--controller-manager", "/controller_manager"],
-        )
-
         jtc_after_jsb = RegisterEventHandler(
             OnProcessExit(
                 target_action=jsb,
-                on_exit=[jtc, torque_controller, state_broadcaster],
+                on_exit=[jtc, torque_controller],
             )
         )
 

@@ -1,91 +1,70 @@
-// ============================================================
-// FRIClient.h
-// Низкоуровневый клиент FRI (Fast Robot Interface).
-// Наследуется от KUKA::FRI::LBRClient и реализует три
-// callback-метода, которые вызывает ClientApplication::step():
-//   - monitor()        - только чтение состояния
-//   - waitForCommand() - переходный режим, эхо позиции
-//   - command()        - управление
-// ============================================================
 #pragma once
 
 #include <array>
-#include <mutex>
 #include <atomic>
+#include <mutex>
 
-#include "friLBRClient.h"
 #include "friClientApplication.h"
+#include "friLBRClient.h"
 #include "friUdpConnection.h"
 
-namespace iiwa_controller {
+namespace iiwa_controller
+{
 
-    /// Режим управления роботом через FRI
-    enum class CommandMode {
-        POSITION,   // Управление по позиции суставов [рад]
-        TORQUE      // Управление по моментум суставов [Нм]
-    };
+enum class CommandMode
+{
+  POSITION,
+  TORQUE
+};
 
-    class FRIClient : public KUKA::FRI::LBRClient {
-        public:
-            // Константы
-            static constexpr size_t N_JOINTS = 7;  // Число суставов
+// Атомарный снимок всего FRI-состояния — захватывается за один lock в FRI-потоке,
+// читается из ros2_control read() за один lock.
+struct IIWAStateSnapshot
+{
+  std::array<double, 7> measured_pos{};  // Измеренные позиции [рад]
+  std::array<double, 7> measured_tau{};  // Измеренные моменты [Нм]
+  std::array<double, 7> external_tau{};  // Внешние моменты (без модели робота) [Нм]
+  std::array<double, 7> ipo_pos{};       // IPO-позиция интерполятора [рад] (только в Commanding)
+  double sample_time{0.005};             // Период цикла FRI [с]
+  KUKA::FRI::EConnectionQuality quality{KUKA::FRI::POOR};
+  bool ipo_valid{false};  // IPO недоступна в Monitor-режиме
+};
 
-            // Конструктор, деструктор
-            explicit FRIClient(CommandMode mode = CommandMode::POSITION);
-            ~FRIClient() override = default;
+class FRIClient : public KUKA::FRI::LBRClient
+{
+public:
+  static constexpr size_t N_JOINTS = 7;
 
-            // Callbacks, которые вызывает ClientApplication::step()
-            // Вызывается в состоянии MONITORING
-            void monitor() override;
+  explicit FRIClient(CommandMode mode = CommandMode::POSITION);
+  ~FRIClient() override = default;
 
-            // Вызывается в COMMANDING_WAIT: робот ждёт команд.
-            void waitForCommand() override;
+  // Callbacks ClientApplication::step() → вызываются из FRI-потока
+  void monitor() override;
+  void waitForCommand() override;
+  void command() override;
+  void onStateChange(
+    KUKA::FRI::ESessionState oldState, KUKA::FRI::ESessionState newState) override;
 
-            // Вызывается в COMMANDING_ACTIVE: основной цикл управления
-            void command() override;
+  // Thread-safe API для ros2_control (вызывается из read/write в control-потоке)
+  void setTargetJointPositions(const std::array<double, N_JOINTS> & q);
+  void setTargetJointTorques(const std::array<double, N_JOINTS> & tau);
+  IIWAStateSnapshot getStateSnapshot() const;
+  bool isCommandingActive() const;
+  KUKA::FRI::ESessionState getSessionState() const;
 
-            // Уведомление о смене состояния FRI сессии
-            void onStateChange(KUKA::FRI::ESessionState oldState,
-                                KUKA::FRI::ESessionState newState) override;
+private:
+  CommandMode cmd_mode_;
+  std::atomic<KUKA::FRI::ESessionState> session_state_{KUKA::FRI::IDLE};
 
-            // Thread-safe API для ros2_control (вызывается из read/write)
-            // Записать целевую позицию из ros2_control (рад)
-            void setTargetJointPositions(const std::array<double, N_JOINTS>& q);
+  mutable std::mutex data_mutex_;
+  std::array<double, N_JOINTS> target_pos_{};
+  std::array<double, N_JOINTS> target_tau_{};
+  IIWAStateSnapshot snapshot_{};
 
-            /// Записать целевой момент (Нм); используется только в режиме TORQUE
-            void setTargetJointTorques(const std::array<double, N_JOINTS>& tau);
+  // Обновить snapshot_ без IPO (Monitor-режим, где getIpoJointPosition() бросает исключение)
+  void captureMonitoringData();
+  // Обновить snapshot_ с IPO (Commanding-режим)
+  void captureCommandingData();
+};
 
-            /// Получить последнюю измеренную позицию суставов (рад)
-            std::array<double, N_JOINTS> getMeasuredJointPositions() const;
-
-            /// Получить последний измеренный момент (Нм)
-            std::array<double, N_JOINTS> getMeasuredTorque() const;
-
-            /// Проверить, активен ли FRI в режиме COMMANDING_ACTIVE
-            bool isCommandingActive() const;
-
-            /// Получить текущее состояние сессии FRI
-            KUKA::FRI::ESessionState getSessionState() const;
-
-        private:
-            // Режим управления
-            CommandMode cmd_mode_;
-
-            // Состояние FRI сессии
-            std::atomic<KUKA::FRI::ESessionState> session_state_{
-                KUKA::FRI::IDLE};
-
-            // Данные, защищённые мьютексом
-            mutable std::mutex data_mutex_;
-
-            std::array<double, N_JOINTS> target_pos_{};    // Целевая позиция [рад]
-            std::array<double, N_JOINTS> target_tau_{};    // Целевой момент [Нм]
-            std::array<double, N_JOINTS> measured_pos_{};  // Измеренная позиция
-            std::array<double, N_JOINTS> measured_tau_{};  // Измеренный момент
-
-            // Вспомогательные методы
-            /// Безопасно скопировать измеренную позицию из robotState() в measured_pos_
-            void updateMeasuredState();
-    };
-
-}
+}  // namespace iiwa_controller
