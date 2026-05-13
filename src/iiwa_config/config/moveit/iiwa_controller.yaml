@@ -1,6 +1,6 @@
 controller_manager:
   ros__parameters:
-    update_rate: 200  # должен совпадать с FRI-циклом (10мс = 100Гц)
+    update_rate: 200  # резервное значение, при запуске через launch перезаписывается из fri_cycle_ms
 
     joint_state_broadcaster:
       type: "joint_state_broadcaster/JointStateBroadcaster"
@@ -30,16 +30,17 @@ iiwa_arm_controller:
       - position
       - velocity
 
-    # Интерполяция между точками траектории
-    interpolate_from_desired_state: true
+    # Интерполяция от реально измеренной позиции, а не от желаемой.
+    # При true JTC стартует от последнего desired state, который может расходиться
+    # с реальным положением при старте или переподключении FRI → скачок → удар приводов.
+    interpolate_from_desired_state: false
 
     # Разрешить неполные goals
     allow_partial_joints_goal: false
 
-    # Разрешить ненулевую скорость в конечной точке траектории
-    # true = плавные составные движения
-    # false = полная остановка в каждой точке (безопаснее)
-    allow_nonzero_velocity_at_trajectory_end: true
+    # Полная остановка в конечной точке.
+    # При true и команде через топик JTC уходит в осцилляцию у цели.
+    allow_nonzero_velocity_at_trajectory_end: false
 
     state_publish_rate: 100.0 # Гц публикации /joint_states
     action_monitor_rate: 20.0 # Гц мониторинга action goal

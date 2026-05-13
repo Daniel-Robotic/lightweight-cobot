@@ -11,12 +11,12 @@ namespace iiwa_controller
 static const char * friStateName(KUKA::FRI::ESessionState s)
 {
   switch (s) {
-    case KUKA::FRI::IDLE:             return "IDLE";
-    case KUKA::FRI::MONITORING_WAIT:  return "MONITORING_WAIT";
+    case KUKA::FRI::IDLE: return "IDLE";
+    case KUKA::FRI::MONITORING_WAIT: return "MONITORING_WAIT";
     case KUKA::FRI::MONITORING_READY: return "MONITORING_READY";
-    case KUKA::FRI::COMMANDING_WAIT:  return "COMMANDING_WAIT";
-    case KUKA::FRI::COMMANDING_ACTIVE:return "COMMANDING_ACTIVE";
-    default:                          return "UNKNOWN";
+    case KUKA::FRI::COMMANDING_WAIT: return "COMMANDING_WAIT";
+    case KUKA::FRI::COMMANDING_ACTIVE: return "COMMANDING_ACTIVE";
+    default: return "UNKNOWN";
   }
 }
 
@@ -26,8 +26,8 @@ FRIClient::FRIClient(CommandMode mode) : cmd_mode_(mode)
   target_tau_.fill(0.0);
 }
 
-// Вызывается ТОЛЬКО из Monitor-состояний.
-// getIpoJointPosition() в Monitor-режиме бросает FRIException → не вызываем.
+// Вызывается только в Monitor-состояниях.
+// В Monitor-режиме getIpoJointPosition() бросает FRIException, поэтому здесь не зовём.
 void FRIClient::captureMonitoringData()
 {
   std::memcpy(
@@ -40,12 +40,12 @@ void FRIClient::captureMonitoringData()
     snapshot_.external_tau.data(),
     robotState().getExternalTorque(), N_JOINTS * sizeof(double));
   snapshot_.sample_time = robotState().getSampleTime();
-  snapshot_.quality     = robotState().getConnectionQuality();
-  snapshot_.ipo_valid   = false;
+  snapshot_.quality = robotState().getConnectionQuality();
+  snapshot_.ipo_valid = false;
 }
 
 // Вызывается из Commanding-состояний (COMMANDING_WAIT и COMMANDING_ACTIVE).
-// getIpoJointPosition() здесь доступна.
+// В отличие от Monitor, здесь getIpoJointPosition() доступна.
 void FRIClient::captureCommandingData()
 {
   captureMonitoringData();
@@ -55,39 +55,37 @@ void FRIClient::captureCommandingData()
   snapshot_.ipo_valid = true;
 }
 
-// MONITORING_WAIT / MONITORING_READY
+// Вызывается в MONITORING_WAIT и MONITORING_READY
 void FRIClient::monitor()
 {
   std::lock_guard<std::mutex> lock(data_mutex_);
   captureMonitoringData();
 }
 
-// COMMANDING_WAIT
-// FRI-документация §6.2.2: клиент ОБЯЗАН отправлять команды в каждом цикле.
-// Переход COMMANDING_WAIT → COMMANDING_ACTIVE происходит когда:
-//   |IPO_position[j] - commanded_position[j]| < 0.001 рад  (для всех j)
-// КРИТИЧЕСКИ ВАЖНО: эхировать IPO-позицию, а не measured-позицию!
-// Если эхировать measured, статическое отклонение от IPO заблокирует переход.
+// Вызывается в COMMANDING_WAIT.
+// По документации FRI (п. 6.2.2) клиент должен отправлять команды в каждом цикле.
+// Переход в COMMANDING_ACTIVE происходит только когда разница между commanded_position
+// и IPO_position меньше 0.001 рад для всех суставов.
+// Важно эхировать именно IPO-позицию, не measured. Если взять measured,
+// статическое отклонение не даст выполниться этому условию.
 void FRIClient::waitForCommand()
 {
   std::lock_guard<std::mutex> lock(data_mutex_);
   captureCommandingData();
 
-  // Инициализируем целевую позицию IPO-позицией.
-  // ros2_control::write() перезапишет её в следующем цикле командой контроллера.
-  // Важно: до первого write() мы должны эхировать IPO, а не 0.
+  // Инициализируем цель IPO-позицией, иначе до первого write() будем посылать нули.
   std::memcpy(target_pos_.data(), snapshot_.ipo_pos.data(), N_JOINTS * sizeof(double));
 
   robotCommand().setJointPosition(target_pos_.data());
 
   if (cmd_mode_ == CommandMode::TORQUE) {
-    // В COMMANDING_WAIT момент обнуляем — контроллер ещё не синхронизирован
+    // Пока контроллер не синхронизирован, момент держим на нуле
     target_tau_.fill(0.0);
     robotCommand().setTorque(target_tau_.data());
   }
 }
 
-// COMMANDING_ACTIVE — основной цикл управления
+// Вызывается в COMMANDING_ACTIVE, основной цикл управления
 void FRIClient::command()
 {
   std::lock_guard<std::mutex> lock(data_mutex_);
@@ -96,8 +94,8 @@ void FRIClient::command()
   robotCommand().setJointPosition(target_pos_.data());
 
   if (cmd_mode_ == CommandMode::TORQUE) {
-    // TORQUE-режим: позиция = feedforward удержания, момент = дополнительный overlay.
-    // Кука ограничивает: отклонение позиции > ±10° → CommandInvalidException.
+    // В режиме TORQUE позиция работает как feedforward удержания, момент добавляется поверх.
+    // Кука выбрасывает CommandInvalidException если отклонение позиции превышает 10 градусов.
     robotCommand().setTorque(target_tau_.data());
   }
 }
@@ -109,23 +107,24 @@ void FRIClient::onStateChange(
 
   RCLCPP_INFO(
     rclcpp::get_logger("FRIClient"),
-    "[FRI] %s → %s", friStateName(oldState), friStateName(newState));
+    "FRI смена состояния: %s, теперь %s", friStateName(oldState), friStateName(newState));
 
-  if (newState == KUKA::FRI::IDLE || newState == KUKA::FRI::MONITORING_WAIT) {
+  if (newState == KUKA::FRI::IDLE ||
+    newState == KUKA::FRI::MONITORING_WAIT ||
+    newState == KUKA::FRI::MONITORING_READY)
+  {
     std::lock_guard<std::mutex> lock(data_mutex_);
     target_tau_.fill(0.0);
     RCLCPP_WARN(
       rclcpp::get_logger("FRIClient"),
-      "[FRI] Сессия неактивна — моменты обнулены для безопасности");
+      "FRI сессия неактивна, моменты обнулены");
   }
 }
 
-// Thread-safe сеттеры/геттеры
-
 void FRIClient::setTargetJointPositions(const std::array<double, N_JOINTS> & q)
 {
-  // Защита: командный интерфейс может содержать NaN до первой команды контроллера.
-  // Отправка NaN в COMMANDING_ACTIVE → немедленный CK_COMPOUND_RETURN_ERROR.
+  // До первой команды контроллера интерфейс содержит NaN.
+  // Если отправить NaN роботу в COMMANDING_ACTIVE, получим CK_COMPOUND_RETURN_ERROR.
   for (const auto & v : q) {
     if (!std::isfinite(v)) {
       return;

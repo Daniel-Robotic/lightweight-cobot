@@ -17,17 +17,17 @@ enum class CommandMode
   TORQUE
 };
 
-// Атомарный снимок всего FRI-состояния — захватывается за один lock в FRI-потоке,
-// читается из ros2_control read() за один lock.
+// Снимок состояния робота захватывается атомарно за один lock в FRI-потоке
+// и так же за один lock читается из read() в потоке управления.
 struct IIWAStateSnapshot
 {
-  std::array<double, 7> measured_pos{};  // Измеренные позиции [рад]
-  std::array<double, 7> measured_tau{};  // Измеренные моменты [Нм]
-  std::array<double, 7> external_tau{};  // Внешние моменты (без модели робота) [Нм]
-  std::array<double, 7> ipo_pos{};       // IPO-позиция интерполятора [рад] (только в Commanding)
-  double sample_time{0.005};             // Период цикла FRI [с]
+  std::array<double, 7> measured_pos{}; // измеренные позиции суставов [рад]
+  std::array<double, 7> measured_tau{}; // измеренные моменты [Нм]
+  std::array<double, 7> external_tau{}; // внешние моменты без компенсации модели [Нм]
+  std::array<double, 7> ipo_pos{};      // позиция интерполятора [рад], только в Commanding
+  double sample_time{0.005};            // период цикла FRI [с]
   KUKA::FRI::EConnectionQuality quality{KUKA::FRI::POOR};
-  bool ipo_valid{false};  // IPO недоступна в Monitor-режиме
+  bool ipo_valid{false};                // в Monitor-режиме IPO недоступна
 };
 
 class FRIClient : public KUKA::FRI::LBRClient
@@ -38,14 +38,14 @@ public:
   explicit FRIClient(CommandMode mode = CommandMode::POSITION);
   ~FRIClient() override = default;
 
-  // Callbacks ClientApplication::step() → вызываются из FRI-потока
+  // Коллбэки FRI SDK, вызываются из friThreadFunc через ClientApplication::step()
   void monitor() override;
   void waitForCommand() override;
   void command() override;
   void onStateChange(
     KUKA::FRI::ESessionState oldState, KUKA::FRI::ESessionState newState) override;
 
-  // Thread-safe API для ros2_control (вызывается из read/write в control-потоке)
+  // Потокобезопасное API для ros2_control, вызывается из read() и write()
   void setTargetJointPositions(const std::array<double, N_JOINTS> & q);
   void setTargetJointTorques(const std::array<double, N_JOINTS> & tau);
   IIWAStateSnapshot getStateSnapshot() const;
@@ -61,9 +61,9 @@ private:
   std::array<double, N_JOINTS> target_tau_{};
   IIWAStateSnapshot snapshot_{};
 
-  // Обновить snapshot_ без IPO (Monitor-режим, где getIpoJointPosition() бросает исключение)
+  // Обновить snapshot_ без поля ipo_pos (в Monitor-режиме getIpoJointPosition() недоступна)
   void captureMonitoringData();
-  // Обновить snapshot_ с IPO (Commanding-режим)
+  // Обновить snapshot_ вместе с ipo_pos (в Commanding-режиме)
   void captureCommandingData();
 };
 

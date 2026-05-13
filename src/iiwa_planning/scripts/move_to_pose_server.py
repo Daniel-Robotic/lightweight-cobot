@@ -89,14 +89,16 @@ class IiwaMotionServer(Node):
         self.create_service(MoveToNamedPose, "iiwa/move_to_named", self._handle_named, callback_group=cb)
         self.create_service(Trigger, "iiwa/stop", self._handle_stop, callback_group=cb)
 
-    def _make_plan_params(self, pipeline: str, planner_id: str, plan_time: float, velocity_scale: float) -> PlanRequestParameters:
+    def _make_plan_params(self, pipeline: str, planner_id: str, plan_time: float, velocity_scale: float, accel_scale: float | None = None) -> PlanRequestParameters:
         params = PlanRequestParameters(self._moveit, self._planning_group)
         params.planning_pipeline = pipeline
         params.planner_id = planner_id
         params.planning_time = plan_time
         params.planning_attempts = self._planning_attempts
         params.max_velocity_scaling_factor = velocity_scale
-        params.max_acceleration_scaling_factor = velocity_scale
+        # Ускорение отдельно от скорости: при равных значениях старт/стоп слишком резкий.
+        # По умолчанию — 30% от заданной скорости, но не выше 0.2 абсолютно.
+        params.max_acceleration_scaling_factor = accel_scale if accel_scale is not None else min(velocity_scale * 0.3, 0.2)
         return params
 
     def _plan_and_execute(self, plan_params: PlanRequestParameters, goal_handle):

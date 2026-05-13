@@ -20,6 +20,8 @@ def _setup_controllers(context, *args, **kwargs):
     controller_path = LaunchConfiguration("controller_path").perform(context)
     simulate = LaunchConfiguration("simulate").perform(context).lower() in ("true", "1", "yes")
     command_mode = LaunchConfiguration("command_mode").perform(context)
+    fri_cycle_ms = int(LaunchConfiguration("fri_cycle_ms").perform(context))
+    update_rate = 1000 // fri_cycle_ms
 
     xacro_args = {"initial_positions_file": initial_positions_file}
     
@@ -85,6 +87,7 @@ def _setup_controllers(context, *args, **kwargs):
             parameters=[
                 {"robot_description": robot_description},
                 controller_path,
+                {"update_rate": update_rate},
             ],
         )
 
@@ -137,5 +140,6 @@ def _setup_controllers(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("command_mode", default_value="position"),
+        DeclareLaunchArgument("fri_cycle_ms", default_value="5"),
         OpaqueFunction(function=_setup_controllers),
     ])

@@ -169,6 +169,7 @@ def _runtime_setup(context, *args, **kwargs):
             "simulate": "false",
             "command_mode": settings.robot.command_mode,
             "controller_timer": str(settings.digital_twin.webots.controller_timer),
+            "fri_cycle_ms": str(settings.robot.fri_cycle_ms),
         }
 
     controllers_launch = IncludeLaunchDescription(

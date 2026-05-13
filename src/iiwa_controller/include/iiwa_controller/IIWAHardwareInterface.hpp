@@ -2,22 +2,24 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
-// ros2_control Jazzy 4.44.0+ API
-// ВАЖНО: НЕ переопределять export_state_interfaces() / export_command_interfaces() —
-// устаревшие конструкторы не регистрируют introspection-callback pal_statistics → segfault.
-// Базовый класс создаёт интерфейсы из URDF через on_export_state_interfaces().
-// Доступ к данным через handle-API: set_state() / get_command().
+// В Jazzy 4.44.0+ нельзя переопределять export_state_interfaces() и export_command_interfaces().
+// Устаревший конструктор не регистрирует introspection-callback pal_statistics,
+// из-за чего падает с segfault. Базовый класс сам создаёт интерфейсы из URDF.
+// Данные читаем и пишем через handle-API: set_state() и get_command().
 #include "hardware_interface/hardware_info.hpp"
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_component_interface_params.hpp"
 #include "hardware_interface/handle.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
+#include "rclcpp/clock.hpp"
 #include "rclcpp/macros.hpp"
 #include "rclcpp_lifecycle/state.hpp"
 
@@ -31,13 +33,11 @@ class IIWAHardwareInterface : public hardware_interface::SystemInterface
 public:
   RCLCPP_SHARED_PTR_DEFINITIONS(IIWAHardwareInterface)
 
-  // Lifecycle
-
   CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams & params) override;
 
-  // Экспортируем external_torque как "unlisted" интерфейс (не нужно объявлять в URDF).
-  // Стандартные интерфейсы (position, velocity, effort) базовый класс создаёт из URDF.
+  // external_torque не объявлен в URDF, поэтому регистрируем его здесь как unlisted.
+  // Стандартные интерфейсы (position, velocity, effort) базовый класс берёт из URDF сам.
   std::vector<hardware_interface::InterfaceDescription>
   export_unlisted_state_interface_descriptions() override;
 
@@ -53,36 +53,43 @@ public:
 private:
   static constexpr size_t N_JOINTS = FRIClient::N_JOINTS;
 
-  // Параметры из <hardware><param> в URDF
+  // Параметры из секции <hardware><param> в URDF
   std::string robot_ip_;
   int fri_port_{30200};
   bool simulate_{false};
   std::string cmd_mode_str_{"position"};
 
-  // FRI объекты
+  // Объекты FRI SDK
   std::unique_ptr<FRIClient> fri_client_;
   std::unique_ptr<KUKA::FRI::UdpConnection> connection_;
   std::unique_ptr<KUKA::FRI::ClientApplication> app_;
 
-  // FRI работает в фоновом потоке: step() блокируется до UDP-пакета,
-  // поэтому не нагружает CPU. Синхронизация — через мьютекс FRIClient.
+  // FRI-поток: step() блокируется в recvfrom() до прихода UDP-пакета.
+  // После каждого успешного шага сигналит sync_cv_, чтобы read() забрал свежий снимок.
+  // Это устраняет рассинхрон двух независимых клоков: read() всегда ждёт нового пакета.
   std::thread fri_thread_;
   std::atomic<bool> fri_running_{false};
+  std::mutex sync_mutex_;
+  std::condition_variable sync_cv_;
+  bool new_data_{false};
   void friThreadFunc();
 
-  // Кэшированные хэндлы интерфейсов состояния (заполняются в on_activate)
+  // Хэндлы интерфейсов состояния, заполняются в on_activate
   std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_pos_;
   std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_vel_;
   std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_eff_;
   std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_ext_;
 
-  // Кэшированные хэндлы командных интерфейсов
+  // Хэндлы командных интерфейсов
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_pos_;
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_eff_;
 
-  // Предыдущие позиции и отфильтрованные скорости (EMA, alpha=0.2)
+  // Предыдущие позиции и скорости после EMA-фильтра
   std::array<double, N_JOINTS> prev_pos_{};
   std::array<double, N_JOINTS> vel_filtered_{};
+
+  // Отдельный объект часов для RCLCPP_*_THROTTLE — не создаём временный в FRI-потоке
+  rclcpp::Clock throttle_clock_{RCL_STEADY_TIME};
 
   CommandMode parseCommandMode(const std::string & mode_str) const;
 };

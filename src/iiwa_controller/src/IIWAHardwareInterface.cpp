@@ -28,7 +28,6 @@ static std::string getParam(
   return (it != info.hardware_parameters.end()) ? it->second : default_val;
 }
 
-// on_init — читаем параметры из <hardware><param> в URDF
 CallbackReturn IIWAHardwareInterface::on_init(
   const hardware_interface::HardwareComponentInterfaceParams & params)
 {
@@ -38,10 +37,10 @@ CallbackReturn IIWAHardwareInterface::on_init(
 
   const auto & info = params.hardware_info;
 
-  robot_ip_      = getParam(info, "robot_ip", "192.170.10.10");
-  fri_port_      = std::stoi(getParam(info, "fri_port", "30200"));
-  simulate_      = (getParam(info, "simulate", "false") == "true");
-  cmd_mode_str_  = getParam(info, "command_mode", "position");
+  robot_ip_ = getParam(info, "robot_ip", "192.170.10.2");
+  fri_port_ = std::stoi(getParam(info, "fri_port", "30200"));
+  simulate_ = (getParam(info, "simulate", "false") == "true");
+  cmd_mode_str_ = getParam(info, "command_mode", "position");
 
   RCLCPP_INFO(
     rclcpp::get_logger("IIWAHardwareInterface"),
@@ -61,8 +60,8 @@ CallbackReturn IIWAHardwareInterface::on_init(
   return CallbackReturn::SUCCESS;
 }
 
-// Добавляем external_torque как "unlisted" интерфейс — не требует объявления в URDF.
-// Стандартные интерфейсы (position/velocity/effort) базовый класс создаёт из URDF.
+// external_torque не объявлен в URDF, поэтому добавляем его вручную как unlisted.
+// Стандартные интерфейсы (position, velocity, effort) базовый класс берёт из URDF сам.
 std::vector<hardware_interface::InterfaceDescription>
 IIWAHardwareInterface::export_unlisted_state_interface_descriptions()
 {
@@ -71,9 +70,9 @@ IIWAHardwareInterface::export_unlisted_state_interface_descriptions()
 
   for (size_t i = 0; i < N_JOINTS; ++i) {
     hardware_interface::InterfaceInfo if_info;
-    if_info.name           = "external_torque";
-    if_info.data_type      = "double";
-    if_info.initial_value  = "0.0";
+    if_info.name = "external_torque";
+    if_info.data_type = "double";
+    if_info.initial_value = "0.0";
     descs.emplace_back(info_.joints[i].name, if_info);
   }
 
@@ -85,13 +84,10 @@ CommandMode IIWAHardwareInterface::parseCommandMode(const std::string & mode_str
   return (mode_str == "torque") ? CommandMode::TORQUE : CommandMode::POSITION;
 }
 
-// on_activate — открываем FRI и ждём подключения
 CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(rclcpp::get_logger("IIWAHardwareInterface"), "Активация...");
 
-  // Кэшируем хэндлы интерфейсов (доступны после on_export_*,
-  // базовый класс вызывает их до on_activate).
   for (size_t i = 0; i < N_JOINTS; ++i) {
     const std::string & jn = info_.joints[i].name;
 
@@ -103,7 +99,7 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
     h_cmd_pos_[i] = get_command_interface_handle(jn + "/" + hardware_interface::HW_IF_POSITION);
     h_cmd_eff_[i] = get_command_interface_handle(jn + "/" + hardware_interface::HW_IF_EFFORT);
 
-    if (!h_pos_[i] || !h_vel_[i] || !h_eff_[i] || !h_cmd_pos_[i] || !h_cmd_eff_[i]) {
+    if (!h_pos_[i] || !h_vel_[i] || !h_eff_[i] || !h_ext_[i] || !h_cmd_pos_[i] || !h_cmd_eff_[i]) {
       RCLCPP_FATAL(
         rclcpp::get_logger("IIWAHardwareInterface"),
         "Не удалось получить хэндл интерфейса для сустава '%s'. "
@@ -118,18 +114,16 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
     return CallbackReturn::SUCCESS;
   }
 
-  // Создаём FRI-объекты
   fri_client_ = std::make_unique<FRIClient>(parseCommandMode(cmd_mode_str_));
-  connection_ = std::make_unique<KUKA::FRI::UdpConnection>();
-  app_        = std::make_unique<KUKA::FRI::ClientApplication>(*connection_, *fri_client_);
+  // 100 мс таймаут: если закрытие сокета не разблокирует recvfrom() мгновенно,
+  // поток всё равно выйдет через одну итерацию.
+  connection_ = std::make_unique<KUKA::FRI::UdpConnection>(100);
+  app_ = std::make_unique<KUKA::FRI::ClientApplication>(*connection_, *fri_client_);
 
-  // Открываем UDP-порт.
-  // remoteHost=nullptr: принимаем пакеты от любого хоста.
-  // Робот сам начинает слать пакеты после запуска ServerFriRos2 на контроллере.
-  if (!app_->connect(fri_port_, nullptr)) {
+  if (!app_->connect(fri_port_, robot_ip_.c_str())) {
     RCLCPP_FATAL(
       rclcpp::get_logger("IIWAHardwareInterface"),
-      "Не удалось открыть UDP-порт %d", fri_port_);
+      "Не удалось подключиться к %s:%d", robot_ip_.c_str(), fri_port_);
     return CallbackReturn::ERROR;
   }
 
@@ -138,13 +132,12 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
     "UDP-порт %d открыт. Запустите ServerFriRos2 на роботе (%s)...",
     fri_port_, robot_ip_.c_str());
 
-  // Запускаем FRI-поток
   fri_running_.store(true, std::memory_order_relaxed);
   fri_thread_ = std::thread(&IIWAHardwareInterface::friThreadFunc, this);
 
-  // Ждём установки FRI-сессии (до 15 с)
+  // Ждём пока FRI-сессия установится, максимум 15 секунд.
   constexpr int kTimeoutMs = 15000;
-  constexpr int kPollMs    = 100;
+  constexpr int kPollMs = 100;
   int elapsed = 0;
   while (fri_client_->getSessionState() == KUKA::FRI::IDLE && elapsed < kTimeoutMs) {
     std::this_thread::sleep_for(std::chrono::milliseconds(kPollMs));
@@ -156,12 +149,9 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
       rclcpp::get_logger("IIWAHardwareInterface"),
       "FRI не подключился за %d с. Проверьте ServerFriRos2 на %s",
       kTimeoutMs / 1000, robot_ip_.c_str());
-    // Не возвращаем ERROR: даём шанс дождаться в фоне
   } else {
-    RCLCPP_INFO(rclcpp::get_logger("IIWAHardwareInterface"), "FRI-сессия установлена!");
+    RCLCPP_INFO(rclcpp::get_logger("IIWAHardwareInterface"), "FRI сессия установлена!");
 
-    // Инициализируем prev_pos_ текущей измеренной позицией,
-    // чтобы первый расчёт velocity не дал ложного скачка.
     const auto snap = fri_client_->getStateSnapshot();
     prev_pos_ = snap.measured_pos;
     vel_filtered_.fill(0.0);
@@ -170,41 +160,55 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
   return CallbackReturn::SUCCESS;
 }
 
-// Фоновый поток: step() ждёт UDP-пакет, вызывает callback, отправляет ответ.
-// Блокирующий recv внутри step() — поток не ест CPU впустую.
+// FRI-поток: крутит step() в ритме UDP-пакетов от Sunrise.
+// После каждого успешного шага сигналит read() через condition_variable.
+// Такая схема синхронизирует контрольный цикл с FRI-циклом:
+//   read() всегда получает данные именно того пакета, что только что пришёл,
+//   а не «какой-то из двух независимых потоков успел первый».
 void IIWAHardwareInterface::friThreadFunc()
 {
-  RCLCPP_INFO(rclcpp::get_logger("IIWAHardwareInterface"), "FRI-поток запущен");
+  RCLCPP_INFO(rclcpp::get_logger("IIWAHardwareInterface"), "FRI поток запущен");
 
   while (fri_running_.load(std::memory_order_relaxed)) {
-    if (!app_->step()) {
+    const bool ok = app_->step();
+
+    if (ok) {
+      {
+        std::lock_guard<std::mutex> lock(sync_mutex_);
+        new_data_ = true;
+      }
+      sync_cv_.notify_one();
+    } else {
       RCLCPP_WARN_THROTTLE(
         rclcpp::get_logger("IIWAHardwareInterface"),
-        *rclcpp::Clock::make_shared(), 2000,
-        "FRI: step() вернул false (соединение потеряно?)");
+        throttle_clock_, 2000,
+        "FRI: step() вернул false, возможно потеряли соединение");
     }
   }
 
-  RCLCPP_INFO(rclcpp::get_logger("IIWAHardwareInterface"), "FRI-поток завершён");
+  RCLCPP_INFO(rclcpp::get_logger("IIWAHardwareInterface"), "FRI поток завершён");
 }
 
-// on_deactivate — останавливаем FRI-поток и закрываем UDP
 CallbackReturn IIWAHardwareInterface::on_deactivate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(rclcpp::get_logger("IIWAHardwareInterface"), "Деактивация...");
 
   if (!simulate_) {
     fri_running_.store(false, std::memory_order_relaxed);
-    if (fri_thread_.joinable()) {
-      fri_thread_.join();
-    }
+    // Сначала закрываем сокет — это разблокирует recvfrom() в FRI-потоке.
+    // Только потом join(). Иначе join() зависнет навсегда.
     if (app_) {
       app_->disconnect();
+    }
+    // Разбудить read(), если он ждёт на cv — иначе RT-поток завис в wait_for()
+    sync_cv_.notify_all();
+
+    if (fri_thread_.joinable()) {
+      fri_thread_.join();
     }
     RCLCPP_INFO(rclcpp::get_logger("IIWAHardwareInterface"), "FRI отключён");
   }
 
-  // Обнуляем хэндлы — они невалидны вне ACTIVE-состояния
   for (size_t i = 0; i < N_JOINTS; ++i) {
     h_pos_[i] = h_vel_[i] = h_eff_[i] = h_ext_[i] = nullptr;
     h_cmd_pos_[i] = h_cmd_eff_[i] = nullptr;
@@ -213,14 +217,13 @@ CallbackReturn IIWAHardwareInterface::on_deactivate(const rclcpp_lifecycle::Stat
   return CallbackReturn::SUCCESS;
 }
 
-// read() — копируем данные FRI → интерфейсы состояния.
-// Вызывается ros2_control перед каждым шагом контроллера.
-// set_state(..., false) = non-blocking try_lock, RT-безопасно.
+// read() ждёт сигнала от FRI-потока, а не читает «что успело» —
+// это гарантирует, что каждый контрольный цикл обрабатывает ровно один FRI-пакет,
+// устраняя рассинхрон двух независимых 200-Гц клоков.
 hardware_interface::return_type IIWAHardwareInterface::read(
   const rclcpp::Time &, const rclcpp::Duration & period)
 {
   if (simulate_) {
-    // Эхируем команды как состояние
     for (size_t i = 0; i < N_JOINTS; ++i) {
       double pos = 0.0;
       get_command(h_cmd_pos_[i], pos, false);
@@ -232,20 +235,31 @@ hardware_interface::return_type IIWAHardwareInterface::read(
     return hardware_interface::return_type::OK;
   }
 
+  // Ждём следующего FRI-пакета. Таймаут = 2× FRI-цикл на случай потери связи.
+  // В норме wait_for() возвращается почти сразу — FRI-поток уже сигналил.
+  {
+    std::unique_lock<std::mutex> lock(sync_mutex_);
+    sync_cv_.wait_for(lock, std::chrono::milliseconds(10),
+      [this] { return new_data_ || !fri_running_.load(std::memory_order_relaxed); });
+    new_data_ = false;
+  }
+
+  if (!fri_running_.load(std::memory_order_relaxed)) {
+    return hardware_interface::return_type::OK;
+  }
+
   const auto snap = fri_client_->getStateSnapshot();
 
   for (size_t i = 0; i < N_JOINTS; ++i) {
     const double pos = snap.measured_pos[i];
 
-    // Численное дифференцирование + EMA-фильтр (alpha=0.2).
-    // Сглаживает шум квантования энкодера и алиасинг при update_rate > FRI-rate.
     constexpr double kAlpha = 0.2;
-    const double dt      = period.seconds();
+    const double dt = period.seconds();
     const double vel_raw = (dt > 1e-9) ? (pos - prev_pos_[i]) / dt : 0.0;
-    vel_filtered_[i]     = kAlpha * vel_raw + (1.0 - kAlpha) * vel_filtered_[i];
-    prev_pos_[i]         = pos;
+    vel_filtered_[i] = kAlpha * vel_raw + (1.0 - kAlpha) * vel_filtered_[i];
+    prev_pos_[i] = pos;
 
-    set_state(h_pos_[i], pos,              false);
+    set_state(h_pos_[i], pos, false);
     set_state(h_vel_[i], vel_filtered_[i], false);
     set_state(h_eff_[i], snap.measured_tau[i], false);
     set_state(h_ext_[i], snap.external_tau[i], false);
@@ -254,9 +268,6 @@ hardware_interface::return_type IIWAHardwareInterface::read(
   return hardware_interface::return_type::OK;
 }
 
-// write() — копируем команды контроллера → FRI.
-// Вызывается ros2_control после шага контроллера.
-// get_command(..., false) = non-blocking, RT-безопасно.
 hardware_interface::return_type IIWAHardwareInterface::write(
   const rclcpp::Time &, const rclcpp::Duration &)
 {
@@ -270,8 +281,6 @@ hardware_interface::return_type IIWAHardwareInterface::write(
     get_command(h_cmd_eff_[i], tau_cmd[i], false);
   }
 
-  // Передаём в FRIClient — применятся в следующем command()-цикле.
-  // FRIClient сам удерживает последнюю безопасную позицию, если сессия неактивна.
   fri_client_->setTargetJointPositions(pos_cmd);
   fri_client_->setTargetJointTorques(tau_cmd);
 

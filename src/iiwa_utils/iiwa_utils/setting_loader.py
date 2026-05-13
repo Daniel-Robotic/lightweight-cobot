@@ -15,6 +15,7 @@ class RobotCfg:
     port: int
     command_mode: str
     description: str
+    fri_cycle_ms: int
 
 
 @dataclass(frozen=True)
@@ -56,11 +57,11 @@ class ControllerCfg:
 
 @dataclass(frozen=True)
 class PlanningCfg:
-    pose_link: str          # TCP-линк для декартовых целей
-    planning_group: str     # Группа планирования из SRDF
-    default_frame: str      # Система отсчёта по умолчанию
-    default_planner: str    # Планировщик по умолчанию
-    planning_attempts: int  # Число попыток планирования
+    pose_link: str
+    planning_group: str
+    default_frame: str
+    default_planner: str
+    planning_attempts: int
 
 
 @dataclass(frozen=True)
@@ -246,6 +247,7 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         port=int(require(robot_raw, "port")),
         command_mode=str(require(robot_raw, "command_mode")),
         description=resolve_path(str(require(robot_raw, "description")), settings_dir),
+        fri_cycle_ms=int(robot_raw.get("fri_cycle_ms", 5)),
     )
 
     # digital_twin
