@@ -3,7 +3,7 @@ robot:
   ip: "192.170.10.2"
   port: 30200
   command_mode: "position" # torque, position
-  fri_cycle_ms: 5          # период FRI-цикла: 5 мс (200 Гц) или 10 мс (100 Гц)
+  fri_cycle_ms: 10          # период FRI-цикла: 5 мс (200 Гц) или 10 мс (100 Гц)
   description: pkg://iiwa_description/urdf/iiwa7.urdf.xacro
 
 

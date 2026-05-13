@@ -21,6 +21,8 @@ def _setup_controllers(context, *args, **kwargs):
     simulate = LaunchConfiguration("simulate").perform(context).lower() in ("true", "1", "yes")
     command_mode = LaunchConfiguration("command_mode").perform(context)
     fri_cycle_ms = int(LaunchConfiguration("fri_cycle_ms").perform(context))
+    # JTC rate = FRI rate (1:1): каждый цикл JTC читает свежее состояние от FRI.
+    # При 2:1 нечётные JTC-циклы видят устаревший снапшот → чередование скорости 0/v → писк.
     update_rate = 1000 // fri_cycle_ms
 
     xacro_args = {"initial_positions_file": initial_positions_file}

@@ -2,9 +2,7 @@
 
 #include <array>
 #include <atomic>
-#include <condition_variable>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -64,14 +62,12 @@ private:
   std::unique_ptr<KUKA::FRI::UdpConnection> connection_;
   std::unique_ptr<KUKA::FRI::ClientApplication> app_;
 
-  // FRI-поток: step() блокируется в recvfrom() до прихода UDP-пакета.
-  // После каждого успешного шага сигналит sync_cv_, чтобы read() забрал свежий снимок.
-  // Это устраняет рассинхрон двух независимых клоков: read() всегда ждёт нового пакета.
+  // FRI работает в отдельном потоке: step() блокируется в recvfrom() и не жрёт CPU.
+  // read() лишь читает готовый снимок — без блокировки RT-потока.
+  // Соотношение update_rate:FRI_rate = 2:1 → JTC работает вдвое быстрее FRI,
+  // как при fri_cycle_ms=10. Это естественно «усредняет» команды и убирает дребезг.
   std::thread fri_thread_;
   std::atomic<bool> fri_running_{false};
-  std::mutex sync_mutex_;
-  std::condition_variable sync_cv_;
-  bool new_data_{false};
   void friThreadFunc();
 
   // Хэндлы интерфейсов состояния, заполняются в on_activate

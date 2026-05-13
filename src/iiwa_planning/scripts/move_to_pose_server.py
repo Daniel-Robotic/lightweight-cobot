@@ -96,9 +96,7 @@ class IiwaMotionServer(Node):
         params.planning_time = plan_time
         params.planning_attempts = self._planning_attempts
         params.max_velocity_scaling_factor = velocity_scale
-        # Ускорение отдельно от скорости: при равных значениях старт/стоп слишком резкий.
-        # По умолчанию — 30% от заданной скорости, но не выше 0.2 абсолютно.
-        params.max_acceleration_scaling_factor = accel_scale if accel_scale is not None else min(velocity_scale * 0.3, 0.2)
+        params.max_acceleration_scaling_factor = accel_scale if accel_scale is not None else velocity_scale
         return params
 
     def _plan_and_execute(self, plan_params: PlanRequestParameters, goal_handle):

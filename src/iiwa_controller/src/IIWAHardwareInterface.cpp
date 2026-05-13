@@ -160,25 +160,15 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
   return CallbackReturn::SUCCESS;
 }
 
-// FRI-поток: крутит step() в ритме UDP-пакетов от Sunrise.
-// После каждого успешного шага сигналит read() через condition_variable.
-// Такая схема синхронизирует контрольный цикл с FRI-циклом:
-//   read() всегда получает данные именно того пакета, что только что пришёл,
-//   а не «какой-то из двух независимых потоков успел первый».
+// Отдельный поток для FRI: step() блокируется в recvfrom() пока не придёт UDP-пакет,
+// потом вызывает нужный callback и отправляет ответ роботу.
+// read() лишь читает готовый снимок — без блокировки RT-потока и без нарушения периода.
 void IIWAHardwareInterface::friThreadFunc()
 {
   RCLCPP_INFO(rclcpp::get_logger("IIWAHardwareInterface"), "FRI поток запущен");
 
   while (fri_running_.load(std::memory_order_relaxed)) {
-    const bool ok = app_->step();
-
-    if (ok) {
-      {
-        std::lock_guard<std::mutex> lock(sync_mutex_);
-        new_data_ = true;
-      }
-      sync_cv_.notify_one();
-    } else {
+    if (!app_->step()) {
       RCLCPP_WARN_THROTTLE(
         rclcpp::get_logger("IIWAHardwareInterface"),
         throttle_clock_, 2000,
@@ -195,14 +185,12 @@ CallbackReturn IIWAHardwareInterface::on_deactivate(const rclcpp_lifecycle::Stat
 
   if (!simulate_) {
     fri_running_.store(false, std::memory_order_relaxed);
-    // Сначала закрываем сокет — это разблокирует recvfrom() в FRI-потоке.
-    // Только потом join(). Иначе join() зависнет навсегда.
+    // Сначала закрываем сокет, это разблокирует recvfrom() в FRI-потоке.
+    // Только после этого ждём завершения потока. Если сделать наоборот,
+    // join() зависнет навсегда потому что поток заблокирован в recvfrom().
     if (app_) {
       app_->disconnect();
     }
-    // Разбудить read(), если он ждёт на cv — иначе RT-поток завис в wait_for()
-    sync_cv_.notify_all();
-
     if (fri_thread_.joinable()) {
       fri_thread_.join();
     }
@@ -217,9 +205,9 @@ CallbackReturn IIWAHardwareInterface::on_deactivate(const rclcpp_lifecycle::Stat
   return CallbackReturn::SUCCESS;
 }
 
-// read() ждёт сигнала от FRI-потока, а не читает «что успело» —
-// это гарантирует, что каждый контрольный цикл обрабатывает ровно один FRI-пакет,
-// устраняя рассинхрон двух независимых 200-Гц клоков.
+// read() не блокируется — берёт последний снимок от FRI-потока через мьютекс.
+// Период JTC остаётся стабильным: при update_rate=400 и fri_cycle_ms=5 соотношение 2:1,
+// идентичное рабочей конфигурации fri_cycle_ms=10 + update_rate=200.
 hardware_interface::return_type IIWAHardwareInterface::read(
   const rclcpp::Time &, const rclcpp::Duration & period)
 {
@@ -232,19 +220,6 @@ hardware_interface::return_type IIWAHardwareInterface::read(
       set_state(h_eff_[i], 0.0, false);
       set_state(h_ext_[i], 0.0, false);
     }
-    return hardware_interface::return_type::OK;
-  }
-
-  // Ждём следующего FRI-пакета. Таймаут = 2× FRI-цикл на случай потери связи.
-  // В норме wait_for() возвращается почти сразу — FRI-поток уже сигналил.
-  {
-    std::unique_lock<std::mutex> lock(sync_mutex_);
-    sync_cv_.wait_for(lock, std::chrono::milliseconds(10),
-      [this] { return new_data_ || !fri_running_.load(std::memory_order_relaxed); });
-    new_data_ = false;
-  }
-
-  if (!fri_running_.load(std::memory_order_relaxed)) {
     return hardware_interface::return_type::OK;
   }
 

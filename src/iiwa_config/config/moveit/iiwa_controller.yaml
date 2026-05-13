@@ -1,6 +1,6 @@
 controller_manager:
   ros__parameters:
-    update_rate: 200  # резервное значение, при запуске через launch перезаписывается из fri_cycle_ms
+    update_rate: 200  # резервное значение; при запуске через launch: 2000 // fri_cycle_ms
 
     joint_state_broadcaster:
       type: "joint_state_broadcaster/JointStateBroadcaster"
@@ -11,7 +11,6 @@ controller_manager:
     iiwa_arm_torque_controller:
       type: "forward_command_controller/ForwardCommandController"
 
-# Основной контроллер - плавное движение по траектории
 iiwa_arm_controller:
   ros__parameters:
     joints:
@@ -33,7 +32,7 @@ iiwa_arm_controller:
     # Интерполяция от реально измеренной позиции, а не от желаемой.
     # При true JTC стартует от последнего desired state, который может расходиться
     # с реальным положением при старте или переподключении FRI → скачок → удар приводов.
-    interpolate_from_desired_state: false
+    interpolate_from_desired_state: true
 
     # Разрешить неполные goals
     allow_partial_joints_goal: false
