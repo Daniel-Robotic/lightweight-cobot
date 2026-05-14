@@ -57,10 +57,8 @@ void FRIClient::captureCommandingData()
     snapshot_.ipo_pos.data(),
     robotState().getIpoJointPosition(), N_JOINTS * sizeof(double));
   snapshot_.ipo_valid = true;
-
-  // Open-loop: JTC видит filtered_pos_ как «измеренную» позицию.
-  // Это устраняет расхождение между лагающим реальным датчиком и сглаженной командой —
-  // JTC не генерирует коррекций для статичных осей при переходах между траекториями.
+  // Open-loop: JTC видит filtered_pos_ как «измеренную» позицию — как в lbr_fri_ros2_stack.
+  // Благодаря этому JTC не видит расхождения и не генерирует коррекций.
   snapshot_.measured_pos = filtered_pos_;
 }
 
