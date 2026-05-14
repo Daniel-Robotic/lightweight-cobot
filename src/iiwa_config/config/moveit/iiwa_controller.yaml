@@ -11,6 +11,9 @@ controller_manager:
     iiwa_arm_torque_controller:
       type: "forward_command_controller/ForwardCommandController"
 
+    iiwa_joint_position_controller:
+      type: "iiwa_controller/IIWAJointPositionController"
+
 iiwa_arm_controller:
   ros__parameters:
     joints:
@@ -55,6 +58,17 @@ iiwa_arm_controller:
     #   joint5: { trajectory: 0, goal: 0.01 }
     #   joint6: { trajectory: 0, goal: 0.01 }
     #   joint7: { trajectory: 0, goal: 0.01 }
+
+iiwa_joint_position_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - joint7
 
 # Torque контроллер - прямое управление моментом
 # Активировать только при command_mode:=torque в launch файле

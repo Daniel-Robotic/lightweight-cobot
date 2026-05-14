@@ -56,6 +56,7 @@ private:
   int fri_port_{30200};
   bool simulate_{false};
   std::string cmd_mode_str_{"position"};
+  double joint_position_tau_{0.04};  // постоянная времени фильтра позиций [с]
 
   // Объекты FRI SDK
   std::unique_ptr<FRIClient> fri_client_;

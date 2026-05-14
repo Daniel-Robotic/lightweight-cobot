@@ -41,13 +41,15 @@ CallbackReturn IIWAHardwareInterface::on_init(
   fri_port_ = std::stoi(getParam(info, "fri_port", "30200"));
   simulate_ = (getParam(info, "simulate", "false") == "true");
   cmd_mode_str_ = getParam(info, "command_mode", "position");
+  joint_position_tau_ = std::stod(getParam(info, "joint_position_tau", "0.04"));
 
   RCLCPP_INFO(
     rclcpp::get_logger("IIWAHardwareInterface"),
-    "on_init: ip=%s port=%d simulate=%s mode=%s",
+    "on_init: ip=%s port=%d simulate=%s mode=%s tau=%.3f",
     robot_ip_.c_str(), fri_port_,
     simulate_ ? "true" : "false",
-    cmd_mode_str_.c_str());
+    cmd_mode_str_.c_str(),
+    joint_position_tau_);
 
   if (info.joints.size() != N_JOINTS) {
     RCLCPP_FATAL(
@@ -114,7 +116,7 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
     return CallbackReturn::SUCCESS;
   }
 
-  fri_client_ = std::make_unique<FRIClient>(parseCommandMode(cmd_mode_str_));
+  fri_client_ = std::make_unique<FRIClient>(parseCommandMode(cmd_mode_str_), joint_position_tau_);
   // 100 мс таймаут: если закрытие сокета не разблокирует recvfrom() мгновенно,
   // поток всё равно выйдет через одну итерацию.
   connection_ = std::make_unique<KUKA::FRI::UdpConnection>(100);

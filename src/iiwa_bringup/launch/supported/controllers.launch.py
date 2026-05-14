@@ -21,14 +21,17 @@ def _setup_controllers(context, *args, **kwargs):
     simulate = LaunchConfiguration("simulate").perform(context).lower() in ("true", "1", "yes")
     command_mode = LaunchConfiguration("command_mode").perform(context)
     fri_cycle_ms = int(LaunchConfiguration("fri_cycle_ms").perform(context))
+    joint_position_tau = LaunchConfiguration("joint_position_tau").perform(context)
     # JTC rate = FRI rate (1:1): каждый цикл JTC читает свежее состояние от FRI.
     # При 2:1 нечётные JTC-циклы видят устаревший снапшот → чередование скорости 0/v → писк.
     update_rate = 1000 // fri_cycle_ms
 
     xacro_args = {"initial_positions_file": initial_positions_file}
-    
+
     if simulate:
         xacro_args["simulate"] = "true"
+    else:
+        xacro_args["joint_position_tau"] = joint_position_tau
 
     robot_description = converter.load_robot_description(
         model_path=description,
@@ -143,5 +146,6 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("command_mode", default_value="position"),
         DeclareLaunchArgument("fri_cycle_ms", default_value="5"),
+        DeclareLaunchArgument("joint_position_tau", default_value="0.04"),
         OpaqueFunction(function=_setup_controllers),
     ])

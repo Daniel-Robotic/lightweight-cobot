@@ -8,10 +8,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(ament_cmake REQUIRED)
+find_package(controller_interface REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(realtime_tools REQUIRED)
+find_package(std_msgs REQUIRED)
 
 # FRI SDK
 set(FRI_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/libFRI)
@@ -45,10 +48,11 @@ target_compile_options(fri_client_sdk PRIVATE -fpermissive -w)
 set_target_properties(fri_client_sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(fri_client_sdk PUBLIC pthread)
 
-# Плагин hardware interface
+# Плагины hardware interface + controller
 add_library(${PROJECT_NAME} SHARED
   src/FRIClient.cpp
   src/IIWAHardwareInterface.cpp
+  src/IIWAJointPositionController.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -58,15 +62,23 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
   fri_client_sdk
+  controller_interface::controller_interface
   hardware_interface::hardware_interface
   pluginlib::pluginlib
   rclcpp::rclcpp
   rclcpp_lifecycle::rclcpp_lifecycle
+  realtime_tools::realtime_tools
+  ${std_msgs_TARGETS}
 )
 
 pluginlib_export_plugin_description_file(
   hardware_interface
   iiwa_hardware_interface_plugin.xml
+)
+
+pluginlib_export_plugin_description_file(
+  controller_interface
+  iiwa_controller_plugin.xml
 )
 
 # Установка — только библиотека и заголовки, без config/launch/urdf
@@ -85,6 +97,6 @@ ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
 ament_export_targets(export_${PROJECT_NAME})
 ament_export_dependencies(
-  hardware_interface pluginlib rclcpp rclcpp_lifecycle)
+  controller_interface hardware_interface pluginlib rclcpp rclcpp_lifecycle realtime_tools std_msgs)
 
 ament_package()

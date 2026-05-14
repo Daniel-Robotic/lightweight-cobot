@@ -20,10 +20,12 @@ static const char * friStateName(KUKA::FRI::ESessionState s)
   }
 }
 
-FRIClient::FRIClient(CommandMode mode) : cmd_mode_(mode)
+FRIClient::FRIClient(CommandMode mode, double joint_position_tau)
+: cmd_mode_(mode), joint_position_tau_(joint_position_tau)
 {
   target_pos_.fill(0.0);
   target_tau_.fill(0.0);
+  filtered_pos_.fill(0.0);
 }
 
 // Вызывается только в Monitor-состояниях.
@@ -73,10 +75,12 @@ void FRIClient::waitForCommand()
   std::lock_guard<std::mutex> lock(data_mutex_);
   captureCommandingData();
 
-  // Инициализируем цель IPO-позицией, иначе до первого write() будем посылать нули.
+  // Инициализируем цель и фильтр IPO-позицией.
+  // Фильтр стартует с IPO — это гарантирует нулевой скачок при переходе в COMMANDING_ACTIVE.
   std::memcpy(target_pos_.data(), snapshot_.ipo_pos.data(), N_JOINTS * sizeof(double));
+  std::memcpy(filtered_pos_.data(), snapshot_.ipo_pos.data(), N_JOINTS * sizeof(double));
 
-  robotCommand().setJointPosition(target_pos_.data());
+  robotCommand().setJointPosition(filtered_pos_.data());
 
   if (cmd_mode_ == CommandMode::TORQUE) {
     // Пока контроллер не синхронизирован, момент держим на нуле
@@ -91,7 +95,16 @@ void FRIClient::command()
   std::lock_guard<std::mutex> lock(data_mutex_);
   captureCommandingData();
 
-  robotCommand().setJointPosition(target_pos_.data());
+  // Экспоненциальный фильтр первого порядка: alpha = dt / (tau + dt).
+  // Сглаживает скачки команд от контроллера — устраняет писк и стук суставов.
+  // При tau=0.04 с и dt=0.005 с: alpha≈0.11 (11% новой команды за цикл).
+  const double dt = snapshot_.sample_time;
+  const double alpha = dt / (joint_position_tau_ + dt);
+  for (size_t i = 0; i < N_JOINTS; ++i) {
+    filtered_pos_[i] = alpha * target_pos_[i] + (1.0 - alpha) * filtered_pos_[i];
+  }
+
+  robotCommand().setJointPosition(filtered_pos_.data());
 
   if (cmd_mode_ == CommandMode::TORQUE) {
     // В режиме TORQUE позиция работает как feedforward удержания, момент добавляется поверх.

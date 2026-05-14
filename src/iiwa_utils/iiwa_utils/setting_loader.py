@@ -16,6 +16,7 @@ class RobotCfg:
     command_mode: str
     description: str
     fri_cycle_ms: int
+    joint_position_tau: float
 
 
 @dataclass(frozen=True)
@@ -248,6 +249,7 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         command_mode=str(require(robot_raw, "command_mode")),
         description=resolve_path(str(require(robot_raw, "description")), settings_dir),
         fri_cycle_ms=int(robot_raw.get("fri_cycle_ms", 5)),
+        joint_position_tau=float(robot_raw.get("joint_position_tau", 0.04)),
     )
 
     # digital_twin
