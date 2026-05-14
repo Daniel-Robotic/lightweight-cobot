@@ -248,7 +248,7 @@ class IiwaMotionServer(Node):
             return response
 
         plan_params = self._make_plan_params(
-            "ompl", "RRTConnectkConfigDefault", 10.0, velocity_scale
+            "pilz_industrial_motion_planner", "PTP", 2.0, velocity_scale
         )
         plan_result = self._arm.plan(single_plan_parameters=plan_params)
         if not plan_result:

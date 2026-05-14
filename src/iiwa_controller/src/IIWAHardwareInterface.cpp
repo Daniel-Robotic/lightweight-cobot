@@ -157,6 +157,8 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
     const auto snap = fri_client_->getStateSnapshot();
     prev_pos_ = snap.measured_pos;
     vel_filtered_.fill(0.0);
+    last_ts_sec_  = snap.time_stamp_sec;
+    last_ts_nsec_ = snap.time_stamp_nano_sec;
   }
 
   return CallbackReturn::SUCCESS;
@@ -211,7 +213,7 @@ CallbackReturn IIWAHardwareInterface::on_deactivate(const rclcpp_lifecycle::Stat
 // Период JTC остаётся стабильным: при update_rate=400 и fri_cycle_ms=5 соотношение 2:1,
 // идентичное рабочей конфигурации fri_cycle_ms=10 + update_rate=200.
 hardware_interface::return_type IIWAHardwareInterface::read(
-  const rclcpp::Time &, const rclcpp::Duration & period)
+  const rclcpp::Time &, const rclcpp::Duration &)
 {
   if (simulate_) {
     for (size_t i = 0; i < N_JOINTS; ++i) {
@@ -227,16 +229,29 @@ hardware_interface::return_type IIWAHardwareInterface::read(
 
   const auto snap = fri_client_->getStateSnapshot();
 
+  // Обновляем скорость только при свежем FRI-пакете.
+  // measured_pos в Commanding = filtered_pos_ (open-loop), поэтому скорость — это
+  // производная сглаженной команды: гладкий сигнал без шума датчика и без лага.
+  const bool fresh = (snap.time_stamp_sec  != last_ts_sec_ ||
+                      snap.time_stamp_nano_sec != last_ts_nsec_);
+  if (fresh) {
+    const double dt =
+      (static_cast<double>(snap.time_stamp_sec)       - static_cast<double>(last_ts_sec_)) +
+      (static_cast<double>(snap.time_stamp_nano_sec)  - static_cast<double>(last_ts_nsec_)) * 1e-9;
+    if (dt > 0.0) {
+      for (size_t i = 0; i < N_JOINTS; ++i) {
+        vel_filtered_[i] = (snap.measured_pos[i] - prev_pos_[i]) / dt;
+      }
+    }
+    for (size_t i = 0; i < N_JOINTS; ++i) {
+      prev_pos_[i] = snap.measured_pos[i];
+    }
+    last_ts_sec_  = snap.time_stamp_sec;
+    last_ts_nsec_ = snap.time_stamp_nano_sec;
+  }
+
   for (size_t i = 0; i < N_JOINTS; ++i) {
-    const double pos = snap.measured_pos[i];
-
-    constexpr double kAlpha = 0.2;
-    const double dt = period.seconds();
-    const double vel_raw = (dt > 1e-9) ? (pos - prev_pos_[i]) / dt : 0.0;
-    vel_filtered_[i] = kAlpha * vel_raw + (1.0 - kAlpha) * vel_filtered_[i];
-    prev_pos_[i] = pos;
-
-    set_state(h_pos_[i], pos, false);
+    set_state(h_pos_[i], snap.measured_pos[i], false);
     set_state(h_vel_[i], vel_filtered_[i], false);
     set_state(h_eff_[i], snap.measured_tau[i], false);
     set_state(h_ext_[i], snap.external_tau[i], false);

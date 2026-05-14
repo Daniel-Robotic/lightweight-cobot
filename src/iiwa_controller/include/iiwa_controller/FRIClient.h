@@ -21,13 +21,15 @@ enum class CommandMode
 // и так же за один lock читается из read() в потоке управления.
 struct IIWAStateSnapshot
 {
-  std::array<double, 7> measured_pos{}; // измеренные позиции суставов [рад]
+  std::array<double, 7> measured_pos{}; // в Commanding = filtered_pos_ (open-loop)
   std::array<double, 7> measured_tau{}; // измеренные моменты [Нм]
   std::array<double, 7> external_tau{}; // внешние моменты без компенсации модели [Нм]
   std::array<double, 7> ipo_pos{};      // позиция интерполятора [рад], только в Commanding
   double sample_time{0.005};            // период цикла FRI [с]
   KUKA::FRI::EConnectionQuality quality{KUKA::FRI::POOR};
   bool ipo_valid{false};                // в Monitor-режиме IPO недоступна
+  unsigned int time_stamp_sec{0};       // Unix-время пакета [с]
+  unsigned int time_stamp_nano_sec{0};  // наносекундная часть [нс]
 };
 
 class FRIClient : public KUKA::FRI::LBRClient

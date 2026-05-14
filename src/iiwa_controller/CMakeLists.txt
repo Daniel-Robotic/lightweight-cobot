@@ -52,7 +52,6 @@ target_link_libraries(fri_client_sdk PUBLIC pthread)
 add_library(${PROJECT_NAME} SHARED
   src/FRIClient.cpp
   src/IIWAHardwareInterface.cpp
-  src/IIWAJointPositionController.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -74,11 +73,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 pluginlib_export_plugin_description_file(
   hardware_interface
   iiwa_hardware_interface_plugin.xml
-)
-
-pluginlib_export_plugin_description_file(
-  controller_interface
-  iiwa_controller_plugin.xml
 )
 
 # Установка — только библиотека и заголовки, без config/launch/urdf

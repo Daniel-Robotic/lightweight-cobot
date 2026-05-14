@@ -81,9 +81,11 @@ private:
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_pos_;
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_eff_;
 
-  // Предыдущие позиции и скорости после EMA-фильтра
+  // Предыдущие позиции и скорость (обновляются только при свежем FRI-пакете)
   std::array<double, N_JOINTS> prev_pos_{};
   std::array<double, N_JOINTS> vel_filtered_{};
+  unsigned int last_ts_sec_{0};
+  unsigned int last_ts_nsec_{0};
 
   // Отдельный объект часов для RCLCPP_*_THROTTLE — не создаём временный в FRI-потоке
   rclcpp::Clock throttle_clock_{RCL_STEADY_TIME};

@@ -1,18 +1,12 @@
 controller_manager:
   ros__parameters:
-    update_rate: 200  # резервное значение; при запуске через launch: 2000 // fri_cycle_ms
+    update_rate: 200  # резервное значение; при запуске через launch: 1000 // fri_cycle_ms
 
     joint_state_broadcaster:
       type: "joint_state_broadcaster/JointStateBroadcaster"
 
     iiwa_arm_controller:
       type: "joint_trajectory_controller/JointTrajectoryController"
-
-    iiwa_arm_torque_controller:
-      type: "forward_command_controller/ForwardCommandController"
-
-    iiwa_joint_position_controller:
-      type: "iiwa_controller/IIWAJointPositionController"
 
 iiwa_arm_controller:
   ros__parameters:
@@ -34,8 +28,8 @@ iiwa_arm_controller:
 
     # Интерполяция от реально измеренной позиции, а не от желаемой.
     # При true JTC стартует от последнего desired state, который может расходиться
-    # с реальным положением при старте или переподключении FRI → скачок → удар приводов.
-    interpolate_from_desired_state: true
+    # с measured_pos (= filtered_pos_ в open-loop режиме) → скачок команды → удар приводов.
+    interpolate_from_desired_state: false
 
     # Разрешить неполные goals
     allow_partial_joints_goal: false
@@ -59,27 +53,3 @@ iiwa_arm_controller:
     #   joint6: { trajectory: 0, goal: 0.01 }
     #   joint7: { trajectory: 0, goal: 0.01 }
 
-iiwa_joint_position_controller:
-  ros__parameters:
-    joints:
-      - joint1
-      - joint2
-      - joint3
-      - joint4
-      - joint5
-      - joint6
-      - joint7
-
-# Torque контроллер - прямое управление моментом
-# Активировать только при command_mode:=torque в launch файле
-iiwa_arm_torque_controller:
-  ros__parameters:
-    joints:
-      - joint1
-      - joint2
-      - joint3
-      - joint4
-      - joint5
-      - joint6
-      - joint7
-    interface_name: effort

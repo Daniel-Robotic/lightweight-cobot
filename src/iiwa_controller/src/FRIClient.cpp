@@ -44,6 +44,8 @@ void FRIClient::captureMonitoringData()
   snapshot_.sample_time = robotState().getSampleTime();
   snapshot_.quality = robotState().getConnectionQuality();
   snapshot_.ipo_valid = false;
+  snapshot_.time_stamp_sec = robotState().getTimestampSec();
+  snapshot_.time_stamp_nano_sec = robotState().getTimestampNanoSec();
 }
 
 // Вызывается из Commanding-состояний (COMMANDING_WAIT и COMMANDING_ACTIVE).
@@ -55,6 +57,11 @@ void FRIClient::captureCommandingData()
     snapshot_.ipo_pos.data(),
     robotState().getIpoJointPosition(), N_JOINTS * sizeof(double));
   snapshot_.ipo_valid = true;
+
+  // Open-loop: JTC видит filtered_pos_ как «измеренную» позицию.
+  // Это устраняет расхождение между лагающим реальным датчиком и сглаженной командой —
+  // JTC не генерирует коррекций для статичных осей при переходах между траекториями.
+  snapshot_.measured_pos = filtered_pos_;
 }
 
 // Вызывается в MONITORING_WAIT и MONITORING_READY
@@ -93,13 +100,12 @@ void FRIClient::waitForCommand()
 void FRIClient::command()
 {
   std::lock_guard<std::mutex> lock(data_mutex_);
-  captureCommandingData();
 
-  // Экспоненциальный фильтр первого порядка: alpha = dt / (tau + dt).
-  // Сглаживает скачки команд от контроллера — устраняет писк и стук суставов.
-  // При tau=0.04 с и dt=0.005 с: alpha≈0.11 (11% новой команды за цикл).
-  const double dt = snapshot_.sample_time;
-  const double alpha = dt / (joint_position_tau_ + dt);
+  // EMA-фильтр применяется ДО захвата снимка — тогда snapshot_.measured_pos = filtered_pos_
+  // будет содержать то, что реально отправлено роботу в этом цикле (не прошлом).
+  // Это соответствует lbr_fri_ros2_stack: снимок захватывается post-EMA.
+  const double dt = robotState().getSampleTime();
+  const double alpha = (joint_position_tau_ > 0.0) ? dt / (joint_position_tau_ + dt) : 1.0;
   for (size_t i = 0; i < N_JOINTS; ++i) {
     filtered_pos_[i] = alpha * target_pos_[i] + (1.0 - alpha) * filtered_pos_[i];
   }
@@ -107,10 +113,11 @@ void FRIClient::command()
   robotCommand().setJointPosition(filtered_pos_.data());
 
   if (cmd_mode_ == CommandMode::TORQUE) {
-    // В режиме TORQUE позиция работает как feedforward удержания, момент добавляется поверх.
-    // Кука выбрасывает CommandInvalidException если отклонение позиции превышает 10 градусов.
     robotCommand().setTorque(target_tau_.data());
   }
+
+  // Захватываем снимок ПОСЛЕ EMA: measured_pos = filtered_pos_ = что робот только что получил.
+  captureCommandingData();
 }
 
 void FRIClient::onStateChange(
