@@ -36,8 +36,6 @@ protected:
     double      joint_position_tau{0.04};
     bool        open_loop{true};   // JTC sees filtered_pos, not measured_pos
     int         rt_prio{80};
-    bool        external_torque_safety_check{true};
-    double      external_torque_limit{2.0};  // [Nm] per joint, safety threshold
   };
 
   // ── Command interface handles ───────────────────────────────────────────────
@@ -151,11 +149,9 @@ public:
   SystemInterface() = default;
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
-  controller_interface::CallbackReturn on_init(
+  hardware_interface::CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams & params) override;
 
-  // Per-joint: external_torque, commanded_torque, ipo_joint_position
-  // Auxiliary: sample_time, session_state, connection_quality, time_stamp_*
   std::vector<hardware_interface::InterfaceDescription>
   export_unlisted_state_interface_descriptions() override;
 
@@ -163,20 +159,16 @@ public:
     const std::vector<std::string> & start_interfaces,
     const std::vector<std::string> & stop_interfaces) override;
 
-  // on_configure: opens the UDP socket (FRI does not need the robot yet)
-  controller_interface::CallbackReturn on_configure(
+  hardware_interface::CallbackReturn on_configure(
     const rclcpp_lifecycle::State & previous_state) override;
 
-  // on_activate: starts the FRI thread, waits for COMMANDING_WAIT
-  controller_interface::CallbackReturn on_activate(
+  hardware_interface::CallbackReturn on_activate(
     const rclcpp_lifecycle::State & previous_state) override;
 
-  // on_deactivate: stops the FRI thread
-  controller_interface::CallbackReturn on_deactivate(
+  hardware_interface::CallbackReturn on_deactivate(
     const rclcpp_lifecycle::State & previous_state) override;
 
-  // on_cleanup: closes the UDP socket
-  controller_interface::CallbackReturn on_cleanup(
+  hardware_interface::CallbackReturn on_cleanup(
     const rclcpp_lifecycle::State & previous_state) override;
 
   hardware_interface::return_type read(
@@ -191,9 +183,6 @@ protected:
   // Returns true when the robot leaves COMMANDING_ACTIVE unexpectedly.
   bool exit_commanding_active_(KUKA::FRI::ESessionState previous,
                                KUKA::FRI::ESessionState current);
-
-  // Safety check: abort if any external torque exceeds the configured limit.
-  bool external_torque_safe_(const IIWAStateSnapshot & snap) const;
 
   void friThreadFunc();
 

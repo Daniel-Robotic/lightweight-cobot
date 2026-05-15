@@ -2,6 +2,8 @@
 string name
 # Velocity scaling 0.0–1.0
 float32 speed
+# Acceleration scaling 0.0–1.0 (0.0 = same as speed)
+float32 accel_scale
 ---
 bool success
 string message

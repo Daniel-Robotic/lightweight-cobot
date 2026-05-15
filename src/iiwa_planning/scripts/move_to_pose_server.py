@@ -235,8 +235,12 @@ class IiwaMotionServer(Node):
     def _handle_named(self, request: MoveToNamedPose.Request, response: MoveToNamedPose.Response):
         name = request.name.strip()
         velocity_scale = max(0.01, min(1.0, float(request.speed)))
+        raw_accel = float(request.accel_scale)
+        accel_scale = max(0.01, min(1.0, raw_accel)) if raw_accel > 0.0 else velocity_scale
 
-        self.get_logger().info(f"[named] name='{name}'  speed={velocity_scale:.2f}")
+        self.get_logger().info(
+            f"[named] name='{name}'  speed={velocity_scale:.2f}  accel={accel_scale:.2f}"
+        )
 
         self._arm.set_start_state_to_current_state()
         try:
@@ -248,7 +252,7 @@ class IiwaMotionServer(Node):
             return response
 
         plan_params = self._make_plan_params(
-            "pilz_industrial_motion_planner", "PTP", 2.0, velocity_scale
+            "pilz_industrial_motion_planner", "PTP", 2.0, velocity_scale, accel_scale
         )
         plan_result = self._arm.plan(single_plan_parameters=plan_params)
         if not plan_result:
@@ -257,10 +261,15 @@ class IiwaMotionServer(Node):
             self.get_logger().error(response.message)
             return response
 
-        self._moveit.execute(plan_result.trajectory, controllers=[])
-        response.success = True
-        response.message = f"Переместился в '{name}'"
-        self.get_logger().info(response.message)
+        exec_result = self._moveit.execute(plan_result.trajectory, controllers=[])
+        if exec_result:
+            response.success = True
+            response.message = f"Переместился в '{name}'"
+            self.get_logger().info(response.message)
+        else:
+            response.success = False
+            response.message = f"Выполнение траектории для '{name}' прервано (hardware fault?)"
+            self.get_logger().error(response.message)
         return response
 
     def _handle_stop(self, request: Trigger.Request, response: Trigger.Response):

@@ -11,8 +11,6 @@
     <!-- iiwa_controller_v2: новые параметры. Убери эти строки при откате на v1 -->
     <xacro:arg name="open_loop" default="true"/>
     <xacro:arg name="rt_prio" default="80"/>
-    <xacro:arg name="external_torque_safety_check" default="true"/>
-    <xacro:arg name="external_torque_limit" default="2.0"/>
 
     <xacro:property name="initial_positions"
                     value="${xacro.load_yaml('$(arg initial_positions_file)')['initial_positions']}"/>
@@ -163,8 +161,6 @@
                 <!-- новые параметры v2: -->
                 <param name="open_loop">$(arg open_loop)</param>
                 <param name="rt_prio">$(arg rt_prio)</param>
-                <param name="external_torque_safety_check">$(arg external_torque_safety_check)</param>
-                <param name="external_torque_limit">$(arg external_torque_limit)</param>
 
                 <!-- ── v1 (закомментировано) ─────────────────────────────
                 <plugin>iiwa_controller/IIWAHardwareInterface</plugin>

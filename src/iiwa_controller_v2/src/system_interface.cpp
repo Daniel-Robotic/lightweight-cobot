@@ -288,12 +288,6 @@ hardware_interface::return_type SystemInterface::read(
   }
   previous_session_state_ = current_state;
 
-  // External torque safety check
-  if (parameters_.external_torque_safety_check && !external_torque_safe_(snap)) {
-    RCLCPP_ERROR(rclcpp::get_logger(LOG),
-      "External torque exceeded safety limit (%.1f Nm). Stopping.", parameters_.external_torque_limit);
-    return hardware_interface::return_type::ERROR;
-  }
 
   compute_velocity_(snap);
   state_if_handles_.push(snap, velocity_);
@@ -343,10 +337,6 @@ bool SystemInterface::parse_parameters_()
     parameters_.joint_position_tau    = std::stod(getParam(info, "joint_position_tau", "0.04"));
     parameters_.open_loop             = (getParam(info, "open_loop", "true") == "true");
     parameters_.rt_prio               = std::stoi(getParam(info, "rt_prio", "80"));
-    parameters_.external_torque_safety_check =
-      (getParam(info, "external_torque_safety_check", "true") == "true");
-    parameters_.external_torque_limit =
-      std::stod(getParam(info, "external_torque_limit", "2.0"));
 
     if (parameters_.fri_port < 30200 || parameters_.fri_port > 30209) {
       RCLCPP_ERROR(rclcpp::get_logger(LOG),
@@ -364,16 +354,6 @@ bool SystemInterface::exit_commanding_active_(
   KUKA::FRI::ESessionState previous, KUKA::FRI::ESessionState current)
 {
   return previous == KUKA::FRI::COMMANDING_ACTIVE && current != KUKA::FRI::COMMANDING_ACTIVE;
-}
-
-bool SystemInterface::external_torque_safe_(const IIWAStateSnapshot & snap) const
-{
-  for (std::size_t i = 0; i < FRIClient::N_JOINTS; ++i) {
-    if (std::abs(snap.external_tau[i]) > parameters_.external_torque_limit) {
-      return false;
-    }
-  }
-  return true;
 }
 
 void SystemInterface::compute_velocity_(const IIWAStateSnapshot & snap)
