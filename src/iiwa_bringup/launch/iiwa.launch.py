@@ -172,6 +172,7 @@ def _runtime_setup(context, *args, **kwargs):
             "controller_timer": str(settings.digital_twin.webots.controller_timer),
             "fri_cycle_ms": str(settings.robot.fri_cycle_ms),
             "joint_position_tau": str(settings.robot.joint_position_tau),
+            "controller": settings.robot.active_controller,
         }
 
     controllers_launch = IncludeLaunchDescription(

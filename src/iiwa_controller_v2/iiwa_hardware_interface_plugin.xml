@@ -1,0 +1,13 @@
+<library path="iiwa_controller_v2">
+  <class
+    name="iiwa_controller_v2/SystemInterface"
+    type="iiwa_controller_v2::SystemInterface"
+    base_class_type="hardware_interface::SystemInterface">
+    <description>
+      ROS2 hardware interface for KUKA iiwa7 via FRI (v2).
+      Supports position and torque command modes.
+      Exposes extended state interfaces: external_torque, commanded_torque,
+      ipo_joint_position, sample_time, session_state, connection_quality, timestamps.
+    </description>
+  </class>
+</library>

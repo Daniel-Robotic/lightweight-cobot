@@ -20,10 +20,9 @@ def _setup_controllers(context, *args, **kwargs):
     controller_path = LaunchConfiguration("controller_path").perform(context)
     simulate = LaunchConfiguration("simulate").perform(context).lower() in ("true", "1", "yes")
     command_mode = LaunchConfiguration("command_mode").perform(context)
+    controller = LaunchConfiguration("controller").perform(context)  # "jtc" | "forward"
     fri_cycle_ms = int(LaunchConfiguration("fri_cycle_ms").perform(context))
     joint_position_tau = LaunchConfiguration("joint_position_tau").perform(context)
-    # JTC rate = FRI rate (1:1): каждый цикл JTC читает свежее состояние от FRI.
-    # При 2:1 нечётные JTC-циклы видят устаревший снапшот → чередование скорости 0/v → писк.
     update_rate = 1000 // fri_cycle_ms
 
     xacro_args = {"initial_positions_file": initial_positions_file}
@@ -106,12 +105,21 @@ def _setup_controllers(context, *args, **kwargs):
             ],
         )
 
-        jtc_args = ["iiwa_arm_controller", "--controller-manager", "/controller_manager"]
-        torque_args = ["iiwa_arm_torque_controller", "--controller-manager", "/controller_manager"]
+        cm = ["--controller-manager", "/controller_manager"]
 
-        if command_mode == "torque":
+        # JTC: активен если controller=jtc (и command_mode=position), иначе --inactive
+        jtc_args = ["iiwa_arm_controller"] + cm
+        if command_mode == "torque" or controller == "forward":
             jtc_args += ["--inactive"]
-        else:
+
+        # ForwardCommandController: активен если controller=forward, иначе --inactive
+        forward_args = ["forward_position_controller"] + cm
+        if controller != "forward":
+            forward_args += ["--inactive"]
+
+        # TorqueController: активен если command_mode=torque и controller=jtc
+        torque_args = ["iiwa_arm_torque_controller"] + cm
+        if not (command_mode == "torque" and controller == "jtc"):
             torque_args += ["--inactive"]
 
         jtc = Node(
@@ -119,6 +127,13 @@ def _setup_controllers(context, *args, **kwargs):
             executable="spawner",
             output="screen",
             arguments=jtc_args,
+        )
+
+        forward_controller = Node(
+            package="controller_manager",
+            executable="spawner",
+            output="screen",
+            arguments=forward_args,
         )
 
         torque_controller = Node(
@@ -131,7 +146,7 @@ def _setup_controllers(context, *args, **kwargs):
         jtc_after_jsb = RegisterEventHandler(
             OnProcessExit(
                 target_action=jsb,
-                on_exit=[jtc, torque_controller],
+                on_exit=[jtc, forward_controller, torque_controller],
             )
         )
 
@@ -147,5 +162,6 @@ def generate_launch_description():
         DeclareLaunchArgument("command_mode", default_value="position"),
         DeclareLaunchArgument("fri_cycle_ms", default_value="5"),
         DeclareLaunchArgument("joint_position_tau", default_value="0.04"),
+        DeclareLaunchArgument("controller", default_value="jtc"),
         OpaqueFunction(function=_setup_controllers),
     ])

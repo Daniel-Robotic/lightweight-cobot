@@ -8,6 +8,19 @@ controller_manager:
     iiwa_arm_controller:
       type: "joint_trajectory_controller/JointTrajectoryController"
 
+    forward_position_controller:
+      type: "forward_command_controller/ForwardCommandController"
+
+joint_state_broadcaster:
+  ros__parameters:
+    interfaces:
+      - position
+      - velocity
+      - effort
+      - external_torque
+      - commanded_torque
+      - ipo_joint_position
+
 iiwa_arm_controller:
   ros__parameters:
     joints:
@@ -26,25 +39,16 @@ iiwa_arm_controller:
       - position
       - velocity
 
-    # Интерполяция от реально измеренной позиции, а не от желаемой.
-    # При true JTC стартует от последнего desired state, который может расходиться
-    # с measured_pos (= filtered_pos_ в open-loop режиме) → скачок команды → удар приводов.
     interpolate_from_desired_state: false
-
-    # Разрешить неполные goals
     allow_partial_joints_goal: false
-
-    # Полная остановка в конечной точке.
-    # При true и команде через топик JTC уходит в осцилляцию у цели.
     allow_nonzero_velocity_at_trajectory_end: false
 
-    state_publish_rate: 100.0 # Гц публикации /joint_states
-    action_monitor_rate: 20.0 # Гц мониторинга action goal
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
 
-    # Допуски — насколько точно робот должен попасть в цель
     # constraints:
-    #   stopped_velocity_tolerance: 0.01  # рад/с — считаем остановившимся
-    #   goal_time: 1.0 # сек — доп. время на достижение цели
+    #   stopped_velocity_tolerance: 0.01
+    #   goal_time: 1.0
     #   joint1: { trajectory: 0, goal: 0.01 }
     #   joint2: { trajectory: 0, goal: 0.01 }
     #   joint3: { trajectory: 0, goal: 0.01 }
@@ -53,3 +57,14 @@ iiwa_arm_controller:
     #   joint6: { trajectory: 0, goal: 0.01 }
     #   joint7: { trajectory: 0, goal: 0.01 }
 
+forward_position_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - joint7
+    interface_name: position
