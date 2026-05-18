@@ -15,10 +15,15 @@
   <depend>moveit_ros_planning_interface</depend>
   <depend>moveit_core</depend>
   <depend>moveit_ros_planning</depend>
+  <depend>moveit_planners_ompl</depend>
+  <depend>pilz_industrial_motion_planner</depend>
+  <depend>moveit_planners_chomp</depend>
   <depend>moveit_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>std_srvs</depend>
   <depend>moveit_py</depend>
   <depend>tf_transformations</depend>
+  <depend>python3-scipy</depend>
   <depend>iiwa_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>

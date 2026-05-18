@@ -159,5 +159,7 @@ chmod +x doc/build_docs.sh
 <!-- iiwa controller - docker -->
 <!-- Lightweight cobot -->
 ```bash
+docker build -t evilfisru/lwc:... -f docker/jazzy/.../Dockerfile .
+
 docker run -it --rm --network host evilfisru/lwa:jazzy-lwa7-noble
 ```

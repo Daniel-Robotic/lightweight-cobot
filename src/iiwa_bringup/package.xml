@@ -13,6 +13,7 @@
   <exec_depend>iiwa_utils</exec_depend>
   <exec_depend>iiwa_config</exec_depend>
   <exec_depend>iiwa_description</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
 
   <!-- ROS 2 infrastructure -->
   <exec_depend>launch</exec_depend>
@@ -32,6 +33,7 @@
 
   <!-- Webots -->
   <exec_depend>webots_ros2_driver</exec_depend>
+  <exec_depend>webots_ros2_control</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
