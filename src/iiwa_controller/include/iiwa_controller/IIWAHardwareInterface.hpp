@@ -61,6 +61,9 @@ private:
   bool simulate_{false};
   std::string cmd_mode_str_{"position"};
   double joint_position_tau_{0.04};
+  // EMA-фильтр скорости: сглаживает одиночные выбросы конечных разностей.
+  // joint_velocity_tau = 0 отключает фильтр (raw finite difference).
+  double joint_velocity_tau_{0.01};
 
   // Объекты FRI SDK
   std::unique_ptr<FRIClient> fri_client_;
@@ -83,9 +86,10 @@ private:
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_pos_;
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_eff_;
 
-  // Вычисление скорости конечными разностями
+  // Вычисление скорости: конечные разности + EMA-фильтр
   std::array<double, N_JOINTS> prev_pos_{};
-  std::array<double, N_JOINTS> velocity_{};
+  std::array<double, N_JOINTS> velocity_{};        // отфильтрованная скорость, публикуется в JTC
+  std::array<double, N_JOINTS> velocity_raw_{};    // сырая скорость до фильтра
   unsigned int last_ts_sec_{0};
   unsigned int last_ts_nsec_{0};
   bool velocity_initialized_{false};

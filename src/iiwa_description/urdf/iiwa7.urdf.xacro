@@ -8,6 +8,7 @@
     <xacro:arg name="fri_port" default="30200"/>
     <xacro:arg name="command_mode" default="position"/>
     <xacro:arg name="joint_position_tau" default="0.04"/>
+    <xacro:arg name="joint_velocity_tau" default="0.01"/>
 
     <xacro:property name="initial_positions"
                     value="${xacro.load_yaml('$(arg initial_positions_file)')['initial_positions']}"/>
@@ -148,6 +149,7 @@
                 <param name="simulate">false</param>
                 <param name="command_mode">$(arg command_mode)</param>
                 <param name="joint_position_tau">$(arg joint_position_tau)</param>
+                <param name="joint_velocity_tau">$(arg joint_velocity_tau)</param>
             </hardware>
 
             <joint name="joint1">

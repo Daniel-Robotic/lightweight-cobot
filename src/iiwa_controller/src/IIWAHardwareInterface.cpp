@@ -43,18 +43,20 @@ CallbackReturn IIWAHardwareInterface::on_init(
 
   const auto & info = params.hardware_info;
 
-  robot_ip_           = getParam(info, "robot_ip", "192.170.10.2");
-  fri_port_           = std::stoi(getParam(info, "fri_port", "30200"));
-  simulate_           = (getParam(info, "simulate", "false") == "true");
-  cmd_mode_str_       = getParam(info, "command_mode", "position");
-  joint_position_tau_ = std::stod(getParam(info, "joint_position_tau", "0.04"));
+  robot_ip_            = getParam(info, "robot_ip", "192.170.10.2");
+  fri_port_            = std::stoi(getParam(info, "fri_port", "30200"));
+  simulate_            = (getParam(info, "simulate", "false") == "true");
+  cmd_mode_str_        = getParam(info, "command_mode", "position");
+  joint_position_tau_  = std::stod(getParam(info, "joint_position_tau", "0.04"));
+  joint_velocity_tau_  = std::stod(getParam(info, "joint_velocity_tau", "0.01"));
 
   RCLCPP_INFO(rclcpp::get_logger(LOG),
-    "on_init: ip=%s port=%d simulate=%s mode=%s tau=%.3f",
+    "on_init: ip=%s port=%d simulate=%s mode=%s pos_tau=%.3f vel_tau=%.3f",
     robot_ip_.c_str(), fri_port_,
     simulate_ ? "true" : "false",
     cmd_mode_str_.c_str(),
-    joint_position_tau_);
+    joint_position_tau_,
+    joint_velocity_tau_);
 
   if (info.joints.size() != N_JOINTS) {
     RCLCPP_FATAL(rclcpp::get_logger(LOG),
@@ -64,6 +66,7 @@ CallbackReturn IIWAHardwareInterface::on_init(
 
   prev_pos_.fill(0.0);
   velocity_.fill(0.0);
+  velocity_raw_.fill(0.0);
   return CallbackReturn::SUCCESS;
 }
 
@@ -231,7 +234,10 @@ void IIWAHardwareInterface::friThreadFunc()
 }
 
 // ── compute_velocity_ ──────────────────────────────────────────────────────────
-// Конечные разности с int64-вычитанием для точности при больших Unix-timestamp'ах.
+// Конечные разности + EMA-фильтр.
+// int64-вычитание timestamp'ов предотвращает потерю точности при больших Unix-значениях.
+// EMA-фильтр (joint_velocity_tau) убирает одиночные выбросы, которые видит JTC как
+// скачки состояния и компенсирует агрессивными командами → хруст двигателей.
 
 void IIWAHardwareInterface::compute_velocity_(const IIWAStateSnapshot & snap)
 {
@@ -240,6 +246,7 @@ void IIWAHardwareInterface::compute_velocity_(const IIWAStateSnapshot & snap)
     last_ts_sec_  = snap.time_stamp_sec;
     last_ts_nsec_ = snap.time_stamp_nano_sec;
     velocity_.fill(0.0);
+    velocity_raw_.fill(0.0);
     velocity_initialized_ = true;
     return;
   }
@@ -260,10 +267,18 @@ void IIWAHardwareInterface::compute_velocity_(const IIWAStateSnapshot & snap)
   static constexpr double kVelDeadband = 1e-4;
 
   if (dt > 0.0) {
+    // EMA alpha для фильтра скорости: tau=0 → alpha=1 (без фильтра)
+    const double vel_alpha = (joint_velocity_tau_ > 0.0)
+      ? dt / (joint_velocity_tau_ + dt)
+      : 1.0;
+
     for (size_t i = 0; i < N_JOINTS; ++i) {
       const double raw     = (snap.measured_pos[i] - prev_pos_[i]) / dt;
       const double clamped = std::clamp(raw, -kMaxVel[i], kMaxVel[i]);
-      velocity_[i] = (std::abs(clamped) < kVelDeadband) ? 0.0 : clamped;
+      velocity_raw_[i] = (std::abs(clamped) < kVelDeadband) ? 0.0 : clamped;
+
+      // EMA: velocity_[i] = alpha * raw + (1 - alpha) * prev_filtered
+      velocity_[i] = vel_alpha * velocity_raw_[i] + (1.0 - vel_alpha) * velocity_[i];
     }
   }
 
