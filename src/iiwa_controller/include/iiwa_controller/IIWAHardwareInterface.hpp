@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <thread>
@@ -34,13 +35,16 @@ public:
   CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams & params) override;
 
-  // external_torque не объявлен в URDF, поэтому регистрируем его здесь как unlisted.
-  // Стандартные интерфейсы (position, velocity, effort) базовый класс берёт из URDF сам.
+  // external_torque не объявлен в URDF — регистрируем вручную как unlisted.
   std::vector<hardware_interface::InterfaceDescription>
   export_unlisted_state_interface_descriptions() override;
 
+  // Полный lifecycle: configure открывает сокет, activate запускает поток,
+  // deactivate останавливает поток, cleanup освобождает FRI-объекты.
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
   CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
   CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
 
   hardware_interface::return_type read(
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
@@ -56,17 +60,15 @@ private:
   int fri_port_{30200};
   bool simulate_{false};
   std::string cmd_mode_str_{"position"};
-  double joint_position_tau_{0.04};  // постоянная времени фильтра позиций [с]
+  double joint_position_tau_{0.04};
 
   // Объекты FRI SDK
   std::unique_ptr<FRIClient> fri_client_;
   std::unique_ptr<KUKA::FRI::UdpConnection> connection_;
   std::unique_ptr<KUKA::FRI::ClientApplication> app_;
 
-  // FRI работает в отдельном потоке: step() блокируется в recvfrom() и не жрёт CPU.
+  // FRI работает в отдельном потоке: step() блокируется в recvfrom().
   // read() лишь читает готовый снимок — без блокировки RT-потока.
-  // Соотношение update_rate:FRI_rate = 2:1 → JTC работает вдвое быстрее FRI,
-  // как при fri_cycle_ms=10. Это естественно «усредняет» команды и убирает дребезг.
   std::thread fri_thread_;
   std::atomic<bool> fri_running_{false};
   void friThreadFunc();
@@ -81,13 +83,17 @@ private:
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_pos_;
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_eff_;
 
-  // Предыдущие позиции и скорость (обновляются только при свежем FRI-пакете)
+  // Вычисление скорости конечными разностями
   std::array<double, N_JOINTS> prev_pos_{};
-  std::array<double, N_JOINTS> vel_filtered_{};
+  std::array<double, N_JOINTS> velocity_{};
   unsigned int last_ts_sec_{0};
   unsigned int last_ts_nsec_{0};
+  bool velocity_initialized_{false};
+  void compute_velocity_(const IIWAStateSnapshot & snap);
 
-  // Отдельный объект часов для RCLCPP_*_THROTTLE — не создаём временный в FRI-потоке
+  // Отслеживание сессии FRI для обнаружения потери управления
+  KUKA::FRI::ESessionState previous_session_state_{KUKA::FRI::IDLE};
+
   rclcpp::Clock throttle_clock_{RCL_STEADY_TIME};
 
   CommandMode parseCommandMode(const std::string & mode_str) const;

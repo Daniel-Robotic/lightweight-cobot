@@ -8,9 +8,6 @@
     <xacro:arg name="fri_port" default="30200"/>
     <xacro:arg name="command_mode" default="position"/>
     <xacro:arg name="joint_position_tau" default="0.04"/>
-    <!-- iiwa_controller_v2: новые параметры. Убери эти строки при откате на v1 -->
-    <!-- <xacro:arg name="open_loop" default="true"/>
-    <xacro:arg name="rt_prio" default="80"/> -->
 
     <xacro:property name="initial_positions"
                     value="${xacro.load_yaml('$(arg initial_positions_file)')['initial_positions']}"/>
@@ -145,32 +142,6 @@
 
         <ros2_control name="iiwaFRIControl" type="system">
             <hardware>
-                <!-- ════════════════════════════════════════════════════════
-                     АКТИВНЫЙ ПЛАГИН: iiwa_controller_v2
-                     Чтобы вернуть v1 — раскомментируй блок v1 ниже
-                     и закомментируй блок v2.
-                     ════════════════════════════════════════════════════════ -->
-
-                <!-- ── v2 (активен) ──────────────────────────────────────── -->
-                <!-- <plugin>iiwa_controller_v2/SystemInterface</plugin> -->
-                <!-- <param name="robot_ip">$(arg robot_ip)</param> -->
-                <!-- <param name="fri_port">$(arg fri_port)</param> -->
-                <!-- <param name="simulate">false</param> -->
-                <!-- <param name="command_mode">$(arg command_mode)</param> -->
-                <!-- <param name="joint_position_tau">$(arg joint_position_tau)</param> -->
-                <!-- новые параметры v2: -->
-                <!-- <param name="open_loop">$(arg open_loop)</param> -->
-                <!-- <param name="rt_prio">$(arg rt_prio)</param> -->
-
-                <!-- ── v1 (закомментировано) ─────────────────────────────
-                <plugin>iiwa_controller/IIWAHardwareInterface</plugin>
-                <param name="robot_ip">$(arg robot_ip)</param>
-                <param name="fri_port">$(arg fri_port)</param>
-                <param name="simulate">false</param>
-                <param name="command_mode">$(arg command_mode)</param>
-                <param name="joint_position_tau">$(arg joint_position_tau)</param>
-                ─────────────────────────────────────────────────────────── -->
-            
                 <plugin>iiwa_controller/IIWAHardwareInterface</plugin>
                 <param name="robot_ip">$(arg robot_ip)</param>
                 <param name="fri_port">$(arg fri_port)</param>
@@ -185,8 +156,8 @@
                     <param name="max"> 2.97</param>
                 </command_interface>
                 <command_interface name="effort">
-                    <param name="min">-320</param>
-                    <param name="max"> 320</param>
+                    <param name="min">-200</param>
+                    <param name="max"> 200</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint1']}</param>
@@ -201,8 +172,8 @@
                     <param name="max"> 2.09</param>
                 </command_interface>
                 <command_interface name="effort">
-                    <param name="min">-320</param>
-                    <param name="max"> 320</param>
+                    <param name="min">-200</param>
+                    <param name="max"> 200</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint2']}</param>
@@ -217,8 +188,8 @@
                     <param name="max"> 2.97</param>
                 </command_interface>
                 <command_interface name="effort">
-                    <param name="min">-320</param>
-                    <param name="max"> 320</param>
+                    <param name="min">-200</param>
+                    <param name="max"> 200</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint3']}</param>
@@ -233,8 +204,8 @@
                     <param name="max"> 2.09</param>
                 </command_interface>
                 <command_interface name="effort">
-                    <param name="min">-320</param>
-                    <param name="max"> 320</param>
+                    <param name="min">-200</param>
+                    <param name="max"> 200</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint4']}</param>
@@ -249,8 +220,8 @@
                     <param name="max"> 2.97</param>
                 </command_interface>
                 <command_interface name="effort">
-                    <param name="min">-320</param>
-                    <param name="max"> 320</param>
+                    <param name="min">-200</param>
+                    <param name="max"> 200</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint5']}</param>
@@ -265,8 +236,8 @@
                     <param name="max"> 2.09</param>
                 </command_interface>
                 <command_interface name="effort">
-                    <param name="min">-320</param>
-                    <param name="max"> 320</param>
+                    <param name="min">-200</param>
+                    <param name="max"> 200</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint6']}</param>
@@ -281,8 +252,8 @@
                     <param name="max"> 3.05</param>
                 </command_interface>
                 <command_interface name="effort">
-                    <param name="min">-320</param>
-                    <param name="max"> 320</param>
+                    <param name="min">-200</param>
+                    <param name="max"> 200</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint7']}</param>

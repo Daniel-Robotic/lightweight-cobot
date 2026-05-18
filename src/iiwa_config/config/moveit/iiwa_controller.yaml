@@ -18,8 +18,10 @@ joint_state_broadcaster:
       - velocity
       - effort
       - external_torque
-      - commanded_torque
-      - ipo_joint_position
+      # commanded_torque и ipo_joint_position доступны только при активном v2
+      # при переключении на v2 — раскомментировать:
+      # - commanded_torque
+      # - ipo_joint_position
 
 iiwa_arm_controller:
   ros__parameters:

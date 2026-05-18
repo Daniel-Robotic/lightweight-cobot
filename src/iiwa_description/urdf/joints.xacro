@@ -9,53 +9,60 @@
         <child link="base_link"/>
     </joint>
 
-    <!-- joint1 -->
+    <!-- joint1: ±170° hard, ±165° soft, k_velocity=10 -->
     <xacro:revolute_joint jname="joint1" parent="base_link" child="link1"
-                        xyz="0 0 0.3375" rpy="0 0 0" axis="0 0 -1"
-                        lower="-2.97" upper="2.97" effort="500" 
-                        velocity="1.71" damping="0.5"/>
+                        xyz="0 0 0.3375" rpy="0 0 0" axis="0 0 1"
+                        lower="-2.97" upper="2.97" effort="200"
+                        velocity="1.71" damping="10.0" friction="0.1"
+                        soft_lower="-2.8827" soft_upper="2.8827" k_velocity="10"/>
 
 
-    <!-- joint2 -->
+    <!-- joint2: ±119° hard, ±114° soft -->
     <xacro:revolute_joint jname="joint2" parent="link1" child="link2"
                         xyz="0 0 0" rpy="-1.5708 0 0" axis="0 0 1"
-                        lower="-2.09" upper="2.09" effort="500" 
-                        velocity="1.71" damping="0.5"/>
+                        lower="-2.09" upper="2.09" effort="200"
+                        velocity="1.71" damping="10.0" friction="0.1"
+                        soft_lower="-2.0027" soft_upper="2.0027" k_velocity="10"/>
 
 
-    <!-- joint3 -->
+    <!-- joint3: ±170° hard, ±165° soft -->
     <xacro:revolute_joint jname="joint3" parent="link2" child="link3"
                         xyz="0 -0.3993 0" rpy="1.5708 0 0" axis="0 0 -1"
-                        lower="-2.97" upper="2.97" effort="500" 
-                        velocity="1.75" damping="0.5"/>
+                        lower="-2.97" upper="2.97" effort="200"
+                        velocity="1.75" damping="10.0" friction="0.1"
+                        soft_lower="-2.8827" soft_upper="2.8827" k_velocity="10"/>
 
 
-    <!-- joint4 -->
+    <!-- joint4: ±119° hard, ±114° soft -->
     <xacro:revolute_joint jname="joint4" parent="link3" child="link4"
                         xyz="0 0 0" rpy="-1.5708 0 0" axis="0 0 -1"
-                        lower="-2.09" upper="2.09" effort="500" 
-                        velocity="2.27" damping="0.5"/>
+                        lower="-2.09" upper="2.09" effort="200"
+                        velocity="2.27" damping="10.0" friction="0.1"
+                        soft_lower="-2.0027" soft_upper="2.0027" k_velocity="10"/>
 
 
-    <!-- joint5 -->
+    <!-- joint5: ±170° hard, ±165° soft -->
     <xacro:revolute_joint jname="joint5" parent="link4" child="link5"
                         xyz="0 -0.3993 0" rpy="1.5708 0 0" axis="0 0 -1"
-                        lower="-2.97" upper="2.97" effort="500" 
-                        velocity="2.44" damping="0.5"/>
+                        lower="-2.97" upper="2.97" effort="200"
+                        velocity="2.44" damping="10.0" friction="0.1"
+                        soft_lower="-2.8827" soft_upper="2.8827" k_velocity="10"/>
 
 
-    <!-- joint6 -->
+    <!-- joint6: ±119° hard, ±114° soft -->
     <xacro:revolute_joint jname="joint6" parent="link5" child="link6"
                         xyz="0 0 0" rpy="-1.5708 0 0" axis="0 0 1"
-                        lower="-2.09" upper="2.09" effort="500" 
-                        velocity="3.14" damping="0.5"/>
+                        lower="-2.09" upper="2.09" effort="200"
+                        velocity="3.14" damping="10.0" friction="0.1"
+                        soft_lower="-2.0027" soft_upper="2.0027" k_velocity="10"/>
 
 
-    <!-- joint7 -->
+    <!-- joint7: ±174° hard, ±169° soft -->
     <xacro:revolute_joint jname="joint7" parent="link6" child="link7"
                         xyz="0 -0.126 0" rpy="1.5708 0 0" axis="0 0 1"
-                        lower="-3.05" upper="3.05" effort="500" 
-                        velocity="3.14" damping="0.5"/>
+                        lower="-3.05" upper="3.05" effort="200"
+                        velocity="3.14" damping="10.0" friction="0.1"
+                        soft_lower="-2.9627" soft_upper="2.9627" k_velocity="10"/>
 
     <joint name="tools_joint" type="fixed">
         <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>

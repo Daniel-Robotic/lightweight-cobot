@@ -4,7 +4,7 @@ robot:
   port: 30200
   command_mode: "position" # torque, position
   fri_cycle_ms: 5          # период FRI-цикла: 5 мс (200 Гц) или 10 мс (100 Гц)
-  joint_position_tau: 0.15   # EMA фильтр позиций: 0 = выкл (без лага → без overshoot при торможении)
+  joint_position_tau: 0.04   # EMA фильтр позиций: 0 = выкл (без лага → без overshoot при торможении)
   active_controller: "jtc"  # "jtc" = MoveIt/JointTrajectoryController, "forward" = ForwardCommandController
   description: pkg://iiwa_description/urdf/iiwa7.urdf.xacro
 
