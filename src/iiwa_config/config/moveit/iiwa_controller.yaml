@@ -39,7 +39,7 @@ iiwa_arm_controller:
       - position
       - velocity
 
-    interpolate_from_desired_state: false
+    interpolate_from_desired_state: true
     allow_partial_joints_goal: false
     allow_nonzero_velocity_at_trajectory_end: false
 

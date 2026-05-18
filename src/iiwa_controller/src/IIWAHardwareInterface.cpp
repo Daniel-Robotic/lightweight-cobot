@@ -1,6 +1,7 @@
 #include "iiwa_controller/IIWAHardwareInterface.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 #include "hardware_interface/hardware_info.hpp"
@@ -238,9 +239,17 @@ hardware_interface::return_type IIWAHardwareInterface::read(
     const double dt =
       (static_cast<double>(snap.time_stamp_sec)       - static_cast<double>(last_ts_sec_)) +
       (static_cast<double>(snap.time_stamp_nano_sec)  - static_cast<double>(last_ts_nsec_)) * 1e-9;
+
+    // iiwa7 physical velocity limits [rad/s], used to clamp impossible spikes
+    static constexpr std::array<double, N_JOINTS> kMaxVel =
+      {1.71, 1.71, 1.75, 2.27, 2.44, 3.14, 3.14};
+    static constexpr double kVelDeadband = 1e-4;
+
     if (dt > 0.0) {
       for (size_t i = 0; i < N_JOINTS; ++i) {
-        vel_filtered_[i] = (snap.measured_pos[i] - prev_pos_[i]) / dt;
+        const double raw = (snap.measured_pos[i] - prev_pos_[i]) / dt;
+        const double clamped = std::clamp(raw, -kMaxVel[i], kMaxVel[i]);
+        vel_filtered_[i] = (std::abs(clamped) < kVelDeadband) ? 0.0 : clamped;
       }
     }
     for (size_t i = 0; i < N_JOINTS; ++i) {

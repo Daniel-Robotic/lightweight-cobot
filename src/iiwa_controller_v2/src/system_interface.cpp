@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <thread>
 
 #include "hardware_interface/types/hardware_component_interface_params.hpp"
@@ -375,10 +376,23 @@ void SystemInterface::compute_velocity_(const IIWAStateSnapshot & snap)
     return;
   }
 
-  const double dt = (ts_sec + ts_nsec * 1e-9) - (last_ts_sec_ + last_ts_nsec_ * 1e-9);
+  // Use integer subtraction to avoid floating-point precision loss with large Unix timestamps
+  const double dt =
+    static_cast<double>(static_cast<int64_t>(snap.time_stamp_sec) -
+                        static_cast<int64_t>(static_cast<unsigned int>(last_ts_sec_))) +
+    (ts_nsec - last_ts_nsec_) * 1e-9;
+
+  // iiwa7 max joint velocity [rad/s], used to clamp impossible spikes
+  static constexpr std::array<double, FRIClient::N_JOINTS> kMaxVel =
+    {1.71, 1.71, 1.75, 2.27, 2.44, 3.14, 3.14};
+  static constexpr double kVelDeadband = 1e-4;  // zero out near-stop residuals
+
   if (dt > 0.0) {
     for (std::size_t i = 0; i < FRIClient::N_JOINTS; ++i) {
-      velocity_[i] = (snap.measured_pos[i] - last_pos_[i]) / dt;
+      const double raw = (snap.measured_pos[i] - last_pos_[i]) / dt;
+      // Clamp to physical limit and apply zero deadband
+      const double clamped = std::clamp(raw, -kMaxVel[i], kMaxVel[i]);
+      velocity_[i] = (std::abs(clamped) < kVelDeadband) ? 0.0 : clamped;
     }
   }
 

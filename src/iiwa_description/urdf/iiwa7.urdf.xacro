@@ -9,8 +9,8 @@
     <xacro:arg name="command_mode" default="position"/>
     <xacro:arg name="joint_position_tau" default="0.04"/>
     <!-- iiwa_controller_v2: новые параметры. Убери эти строки при откате на v1 -->
-    <xacro:arg name="open_loop" default="true"/>
-    <xacro:arg name="rt_prio" default="80"/>
+    <!-- <xacro:arg name="open_loop" default="true"/>
+    <xacro:arg name="rt_prio" default="80"/> -->
 
     <xacro:property name="initial_positions"
                     value="${xacro.load_yaml('$(arg initial_positions_file)')['initial_positions']}"/>
@@ -152,15 +152,15 @@
                      ════════════════════════════════════════════════════════ -->
 
                 <!-- ── v2 (активен) ──────────────────────────────────────── -->
-                <plugin>iiwa_controller_v2/SystemInterface</plugin>
-                <param name="robot_ip">$(arg robot_ip)</param>
-                <param name="fri_port">$(arg fri_port)</param>
-                <param name="simulate">false</param>
-                <param name="command_mode">$(arg command_mode)</param>
-                <param name="joint_position_tau">$(arg joint_position_tau)</param>
+                <!-- <plugin>iiwa_controller_v2/SystemInterface</plugin> -->
+                <!-- <param name="robot_ip">$(arg robot_ip)</param> -->
+                <!-- <param name="fri_port">$(arg fri_port)</param> -->
+                <!-- <param name="simulate">false</param> -->
+                <!-- <param name="command_mode">$(arg command_mode)</param> -->
+                <!-- <param name="joint_position_tau">$(arg joint_position_tau)</param> -->
                 <!-- новые параметры v2: -->
-                <param name="open_loop">$(arg open_loop)</param>
-                <param name="rt_prio">$(arg rt_prio)</param>
+                <!-- <param name="open_loop">$(arg open_loop)</param> -->
+                <!-- <param name="rt_prio">$(arg rt_prio)</param> -->
 
                 <!-- ── v1 (закомментировано) ─────────────────────────────
                 <plugin>iiwa_controller/IIWAHardwareInterface</plugin>
@@ -170,6 +170,13 @@
                 <param name="command_mode">$(arg command_mode)</param>
                 <param name="joint_position_tau">$(arg joint_position_tau)</param>
                 ─────────────────────────────────────────────────────────── -->
+            
+                <plugin>iiwa_controller/IIWAHardwareInterface</plugin>
+                <param name="robot_ip">$(arg robot_ip)</param>
+                <param name="fri_port">$(arg fri_port)</param>
+                <param name="simulate">false</param>
+                <param name="command_mode">$(arg command_mode)</param>
+                <param name="joint_position_tau">$(arg joint_position_tau)</param>
             </hardware>
 
             <joint name="joint1">
