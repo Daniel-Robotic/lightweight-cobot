@@ -155,3 +155,9 @@ chmod +x doc/build_docs.sh
 ./build_docs.sh build # То же самое явно
 ./build_docs.sh serve # Live-preview с авто-перезагрузкой
 ```
+
+<!-- iiwa controller - docker -->
+<!-- Lightweight cobot -->
+```bash
+docker run -it --rm --network host evilfisru/lwa:jazzy-lwa7-noble
+```
