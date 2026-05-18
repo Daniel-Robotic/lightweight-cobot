@@ -163,3 +163,9 @@ docker build -t evilfisru/lwc:... -f docker/jazzy/.../Dockerfile .
 
 docker run -it --rm --network host evilfisru/lwa:jazzy-lwa7-noble
 ```
+
+# release - src/build/log удаляются (по умолчанию)
+`docker build -t my-image .`
+
+# dev - src остаётся для отладки
+`docker build --build-arg BUILD_TYPE=dev -t my-image .`
