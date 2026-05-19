@@ -5,8 +5,6 @@ ARG BUILD_TYPE=release
 
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ENV WEBOTS_HOME=/usr/local/webots
-ENV LIBGL_ALWAYS_SOFTWARE=1
-ENV GALLIUM_DRIVER=llvmpipe
 
 # X11 utilities and Mesa software renderer
 RUN apt-get update && apt-get install -y --no-install-recommends \
