@@ -18,10 +18,10 @@ INSTALL_DIR="${COBOT_INSTALL_DIR:-$HOME/.lwc/ros2_iiwa7}"
 # Определяем интерактивный режим: при запуске через curl | bash stdin не является терминалом
 if [ -t 0 ]; then IS_INTERACTIVE=true; else IS_INTERACTIVE=false; fi
 
-log_info()    { echo -e "${CYAN}[*]${NC} $1"; }
+log_info() { echo -e "${CYAN}[*]${NC} $1"; }
 log_success() { echo -e "${GREEN}[ok]${NC} $1"; }
-log_warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
-log_error()   { echo -e "${RED}[err]${NC} $1"; exit 1; }
+log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
+log_error() { echo -e "${RED}[err]${NC} $1"; exit 1; }
 
 print_banner() {
     echo ""
@@ -82,8 +82,6 @@ check_docker() {
         return
     fi
     log_info "Installing Docker via get.docker.com..."
-    # Скачиваем установщик во временный файл, а не запускаем через pipe —
-    # так видны ошибки сети отдельно от ошибок самого установщика
     local _installer
     _installer="$(mktemp /tmp/lwc-docker.XXXXXX.sh)"
     if ! curl -fsSL https://get.docker.com -o "$_installer"; then
@@ -116,7 +114,6 @@ install_uv() {
         return
     fi
     log_info "Installing uv..."
-    # Два отдельных файла: лог и установщик — чтобы различать ошибки скачивания и установки
     local _log _installer
     _log="$(mktemp /tmp/lwc-uv.XXXXXX.log)"
     _installer="$(mktemp /tmp/lwc-uv-installer.XXXXXX.sh)"
@@ -149,7 +146,6 @@ check_python() {
         log_success "$ver found"
         return
     fi
-    # uv умеет скачивать и изолировать нужную версию Python без sudo
     log_info "Installing Python $PYTHON_VERSION via uv..."
     "$UV_CMD" python install "$PYTHON_VERSION" || log_error "Failed to install Python $PYTHON_VERSION"
     log_success "Python $PYTHON_VERSION installed"
@@ -176,7 +172,6 @@ resolve_install_dir() {
 install_cobot() {
     log_info "Installing cobot CLI..."
     cd "$INSTALL_DIR"
-    # uv tool install создаёт изолированное окружение и кладёт бинарник cobot в ~/.local/bin
     "$UV_CMD" tool install --python "$PYTHON_VERSION" --editable . \
         || log_error "Failed to install cobot"
     log_success "cobot installed"
@@ -194,8 +189,8 @@ setup_path() {
     if [[ ":$PATH:" != *":$bin_dir:"* ]]; then
         echo "" >> "$shell_rc"
         echo "export PATH=\"$bin_dir:\$PATH\"" >> "$shell_rc"
+        # Обновляем PATH внутри скрипта — нужно чтобы cobot setup сработал ниже
         export PATH="$bin_dir:$PATH"
-        log_warn "Run 'source $shell_rc' or open a new terminal to use 'cobot'"
     fi
     command -v cobot &>/dev/null && log_success "cobot -> $(command -v cobot)"
 }
@@ -209,25 +204,17 @@ print_success() {
     echo ""
 }
 
-ask_run_setup() {
-    # В неинтерактивном режиме (curl | bash) пропускаем вопрос
-    if [ "$IS_INTERACTIVE" = false ]; then
-        log_info "Run 'cobot setup' to configure the framework"
-        return
-    fi
+run_setup() {
+    log_info "Running cobot setup..."
+    cobot setup
 
-    printf "Run setup now? [y/N] "
-    read -r answer
-    case "$answer" in
-        [yY]|[yY][eE][sS])
-            cobot setup
-            ;;
-        *)
-            echo ""
-            echo "To configure the framework, run: cobot setup"
-            echo ""
-            ;;
-    esac
+    if [ "$IS_INTERACTIVE" = false ]; then
+        echo ""
+        echo "  To apply PATH changes in this terminal, run:"
+        echo "    source ~/.bashrc   (bash)"
+        echo "    source ~/.zshrc    (zsh)"
+        echo ""
+    fi
 }
 
 main() {
@@ -241,7 +228,7 @@ main() {
     install_cobot
     setup_path
     print_success
-    ask_run_setup
+    run_setup
 }
 
 main
