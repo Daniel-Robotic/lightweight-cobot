@@ -21,6 +21,7 @@ sudo apt install -y ros-${ROS_DISTRO}-webots-ros2 \
                     ros-${ROS_DISTRO}-ros2-controllers \
                     ros-${ROS_DISTRO}-moveit \
                     ros-${ROS_DISTRO}-moveit-py \
+                    ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
                     ros-${ROS_DISTRO}-ament-cmake-clang-format \
                     ros-${ROS_DISTRO}-rosbag2-storage-mcap \
                     ros-${ROS_DISTRO}-librealsense2 \

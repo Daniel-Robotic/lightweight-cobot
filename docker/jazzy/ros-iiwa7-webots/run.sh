@@ -4,7 +4,7 @@
 #   ./run.sh                          — interactive shell
 #   ./run.sh ros2 launch iiwa_bringup webots_spawn.launch.py ...
 
-IMAGE="${WEBOTS_IMAGE:-evilfisru/lwc:jazzy-webots}"
+IMAGE="${WEBOTS_IMAGE:-evilfisru/lwc:webots-jazzy}"
 
 # Allow local Docker processes to connect to the X server
 xhost +local:docker > /dev/null
@@ -12,6 +12,7 @@ xhost +local:docker > /dev/null
 docker run -it --rm \
     --name ros-webots \
     --network host \
+    -e USER=root \
     -e DISPLAY="${DISPLAY}" \
     -e QT_X11_NO_MITSHM=1 \
     -e LIBGL_ALWAYS_SOFTWARE=1 \

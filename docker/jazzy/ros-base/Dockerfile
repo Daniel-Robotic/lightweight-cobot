@@ -1,4 +1,5 @@
-FROM evilfisru/ros:jazzy-core-noble
+ARG IMAGE=evilfisru/ros:core-jazzy
+FROM ${IMAGE}
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
     build-essential \

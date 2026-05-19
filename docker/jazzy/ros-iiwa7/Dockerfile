@@ -1,4 +1,6 @@
-FROM evilfisru/ros:jazzy-base-noble
+ARG IMAGE=evilfisru/ros:base-jazzy
+FROM ${IMAGE}
+
 ARG BUILD_TYPE=release
 
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
@@ -15,7 +17,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /ros2_ws
 
-COPY src/iiwa_* src/
+COPY src/iiwa_bringup src/iiwa_bringup
+COPY src/iiwa_config src/iiwa_config
+COPY src/iiwa_controller src/iiwa_controller
+COPY src/iiwa_description src/iiwa_description
+COPY src/iiwa_msgs src/iiwa_msgs
+COPY src/iiwa_planning src/iiwa_planning
+COPY src/iiwa_utils src/iiwa_utils
 
 RUN apt-get update && \
     rosdep install --from-paths src -i -r -y && \

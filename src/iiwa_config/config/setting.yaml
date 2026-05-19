@@ -3,7 +3,7 @@ robot:
   ip: "192.170.10.2"
   port: 30200
   command_mode: "position" # torque, position
-  fri_cycle_ms: 5          # период FRI-цикла: 5 мс (200 Гц) или 10 мс (100 Гц)
+  fri_cycle_ms: 10          # период FRI-цикла: 5 мс (200 Гц) или 10 мс (100 Гц)
   joint_position_tau: 0.04   # EMA фильтр позиций [с]: сглаживает команды перед отправкой в FRI
   joint_velocity_tau: 0.01   # EMA фильтр скорости [с]: убирает выбросы конечных разностей
   active_controller: "jtc"  # "jtc" = MoveIt/JointTrajectoryController, "forward" = ForwardCommandController
