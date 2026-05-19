@@ -18,10 +18,23 @@ INSTALL_DIR="${COBOT_INSTALL_DIR:-$HOME/.lwc/ros2_iiwa7}"
 # Определяем интерактивный режим: при запуске через curl | bash stdin не является терминалом
 if [ -t 0 ]; then IS_INTERACTIVE=true; else IS_INTERACTIVE=false; fi
 
-log_info() { echo -e "${CYAN}[*]${NC} $1"; }
+log_info()    { echo -e "${CYAN}[*]${NC} $1"; }
 log_success() { echo -e "${GREEN}[ok]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-log_error() { echo -e "${RED}[err]${NC} $1"; exit 1; }
+log_warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
+log_error()   { echo -e "${RED}[err]${NC} $1"; exit 1; }
+
+# Запускает команду тихо, показывает вывод только при ошибке
+run_quiet() {
+    local _log
+    _log="$(mktemp /tmp/lwc-cmd.XXXXXX.log)"
+    if "$@" > "$_log" 2>&1; then
+        rm -f "$_log"
+    else
+        cat "$_log" >&2
+        rm -f "$_log"
+        return 1
+    fi
+}
 
 print_banner() {
     echo ""
@@ -53,9 +66,9 @@ detect_os() {
 # Устанавливает системные пакеты через найденный пакетный менеджер
 pkg_install() {
     case "$PKG_MANAGER" in
-        apt)    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends "$@" ;;
-        dnf)    sudo dnf install -y "$@" ;;
-        pacman) sudo pacman -S --noconfirm "$@" ;;
+        apt)    run_quiet sudo apt-get update -qq && run_quiet sudo apt-get install -y --no-install-recommends "$@" ;;
+        dnf)    run_quiet sudo dnf install -y "$@" ;;
+        pacman) run_quiet sudo pacman -S --noconfirm "$@" ;;
         *)      log_error "Cannot auto-install $* — unknown package manager" ;;
     esac
 }
@@ -69,7 +82,7 @@ check_git() {
     log_info "Installing git..."
     case "$OS" in
         linux) pkg_install git ;;
-        macos) xcode-select --install 2>/dev/null || brew install git ;;
+        macos) run_quiet xcode-select --install 2>/dev/null || run_quiet brew install git ;;
     esac
     command -v git &>/dev/null || log_error "Failed to install git"
     log_success "git $(git --version | awk '{print $3}') installed"
@@ -81,16 +94,18 @@ check_docker() {
         log_success "Docker $(docker --version | awk '{print $3}' | tr -d ',') found"
         return
     fi
-    log_info "Installing Docker via get.docker.com..."
+    log_info "Installing Docker..."
+    # Скачиваем установщик во временный файл, а не запускаем через pipe —
+    # так видны ошибки сети отдельно от ошибок самого установщика
     local _installer
     _installer="$(mktemp /tmp/lwc-docker.XXXXXX.sh)"
     if ! curl -fsSL https://get.docker.com -o "$_installer"; then
         rm -f "$_installer"
         log_error "Failed to download Docker installer"
     fi
-    sh "$_installer"
+    run_quiet sh "$_installer" || { rm -f "$_installer"; log_error "Docker installation failed"; }
     rm -f "$_installer"
-    command -v docker &>/dev/null || log_error "Docker installation failed"
+    command -v docker &>/dev/null || log_error "Docker not found after installation"
     log_success "Docker $(docker --version | awk '{print $3}' | tr -d ',') installed"
     # Добавляем пользователя в группу docker, чтобы не требовался sudo
     if [ "$(id -u)" -ne 0 ] && command -v usermod &>/dev/null; then
@@ -114,6 +129,7 @@ install_uv() {
         return
     fi
     log_info "Installing uv..."
+    # Два отдельных файла: лог и установщик — чтобы различать ошибки скачивания и установки
     local _log _installer
     _log="$(mktemp /tmp/lwc-uv.XXXXXX.log)"
     _installer="$(mktemp /tmp/lwc-uv-installer.XXXXXX.sh)"
@@ -121,7 +137,7 @@ install_uv() {
         cat "$_log" >&2; rm -f "$_log" "$_installer"
         log_error "Failed to download uv installer"
     fi
-    if sh "$_installer" >>"$_log" 2>&1; then
+    if sh "$_installer" >> "$_log" 2>&1; then
         rm -f "$_installer"
         for candidate in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
             [ -x "$candidate" ] && UV_CMD="$candidate" && break
@@ -146,8 +162,9 @@ check_python() {
         log_success "$ver found"
         return
     fi
+    # uv умеет скачивать и изолировать нужную версию Python без sudo
     log_info "Installing Python $PYTHON_VERSION via uv..."
-    "$UV_CMD" python install "$PYTHON_VERSION" || log_error "Failed to install Python $PYTHON_VERSION"
+    run_quiet "$UV_CMD" python install "$PYTHON_VERSION" || log_error "Failed to install Python $PYTHON_VERSION"
     log_success "Python $PYTHON_VERSION installed"
 }
 
@@ -160,19 +177,20 @@ resolve_install_dir() {
         log_info "Repo: $INSTALL_DIR"
     else
         # Иначе клонируем в ~/.lwc/ros2_iiwa7
-        log_info "Cloning into $INSTALL_DIR..."
+        log_info "Cloning repo..."
         mkdir -p "$(dirname "$INSTALL_DIR")"
-        
         # TODO: Убрать ветку dev и юзать main после мержа
-        git clone --branch dev "$REPO_URL" "$INSTALL_DIR"
-        log_success "Repo cloned"
+        run_quiet git clone --branch dev "$REPO_URL" "$INSTALL_DIR" \
+            || log_error "Failed to clone repo"
+        log_success "Repo cloned to $INSTALL_DIR"
     fi
 }
 
 install_cobot() {
     log_info "Installing cobot CLI..."
     cd "$INSTALL_DIR"
-    "$UV_CMD" tool install --python "$PYTHON_VERSION" --editable . \
+    # uv tool install создаёт изолированное окружение и кладёт бинарник cobot в ~/.local/bin
+    run_quiet "$UV_CMD" tool install --python "$PYTHON_VERSION" --editable . \
         || log_error "Failed to install cobot"
     log_success "cobot installed"
 }
@@ -205,9 +223,21 @@ print_success() {
 }
 
 run_setup() {
+    # Явная проверка — PATH мог не подхватиться если uv положил бинарник в нестандартное место
+    if ! command -v cobot &>/dev/null; then
+        log_warn "cobot not found on PATH, trying full path..."
+        local cobot_bin="$HOME/.local/bin/cobot"
+        if [ -x "$cobot_bin" ]; then
+            export PATH="$HOME/.local/bin:$PATH"
+        else
+            log_error "cobot binary not found — try: source ~/.bashrc && cobot setup"
+        fi
+    fi
+
     log_info "Running cobot setup..."
     cobot setup
 
+    # curl | bash: дочерний процесс не может обновить терминал родителя
     if [ "$IS_INTERACTIVE" = false ]; then
         echo ""
         echo "  To apply PATH changes in this terminal, run:"
