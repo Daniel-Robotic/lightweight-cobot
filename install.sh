@@ -196,7 +196,7 @@ resolve_install_dir() {
 
     log_info "Cloning repo into $INSTALL_DIR..."
     mkdir -p "$(dirname "$INSTALL_DIR")"
-    git clone --branch dev "$REPO_URL" "$INSTALL_DIR" </dev/null \
+    git clone --depth 1 --branch dev "$REPO_URL" "$INSTALL_DIR" </dev/null \
         || log_error "Failed to clone repo from $REPO_URL"
     log_success "Repo cloned to $INSTALL_DIR"
 }
