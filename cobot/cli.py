@@ -1,11 +1,13 @@
 import argparse
 import sys
 
+from cobot.commands import delete as cmd_delete
 from cobot.commands import docker_setup as cmd_docker_setup
 from cobot.commands import doc_setup as cmd_doc_setup
 from cobot.commands import local_setup as cmd_local_setup
 from cobot.commands import robot_setup as cmd_robot_setup
 from cobot.commands import setup as cmd_setup
+from cobot.commands import update as cmd_update
 
 # Command groups shown in --help output.
 # Add new commands here when introducing other categories.
@@ -16,6 +18,10 @@ _GROUPS = [
         ("docker-setup", "build or pull Docker images for KUKA iiwa7"),
         ("doc-setup",    "deploy or stop the MkDocs documentation server"),
         ("robot-setup",  "configure cobot-setting.yaml interactively"),
+    ]),
+    ("Management", [
+        ("update", "pull latest changes from the remote git branch and reinstall cobot"),
+        ("delete", "remove the project, Docker images, containers, and optionally ROS2"),
     ]),
 ]
 
@@ -74,3 +80,5 @@ def _register_commands(subparsers):
     cmd_docker_setup.register(subparsers)
     cmd_doc_setup.register(subparsers)
     cmd_robot_setup.register(subparsers)
+    cmd_update.register(subparsers)
+    cmd_delete.register(subparsers)

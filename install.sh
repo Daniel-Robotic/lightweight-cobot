@@ -41,7 +41,6 @@ print_banner() {
     echo -e "${BOLD}"
     echo "┌─────────────────────────────────────────────────────────┐"
     echo "│               Lightweight Cobot installer               │"
-    echo "│             KUKA iiwa7 ROS2 Control Framework           │"
     echo "└─────────────────────────────────────────────────────────┘"
     echo -e "${NC}"
 }
@@ -171,19 +170,34 @@ check_python() {
 resolve_install_dir() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
-    # Если рядом со скриптом есть setup.py — значит мы уже внутри репозитория
-    if [ -f "$script_dir/setup.py" ]; then
+
+    # Running directly from inside the cloned repo (not via curl|bash)
+    if [ -f "$script_dir/setup.py" ] && [ -d "$script_dir/.git" ]; then
         INSTALL_DIR="$script_dir"
-        log_info "Repo: $INSTALL_DIR"
-    else
-        # Иначе клонируем в ~/.lwc/ros2_iiwa7
-        log_info "Cloning repo..."
-        mkdir -p "$(dirname "$INSTALL_DIR")"
-        # TODO: Убрать ветку dev и юзать main после мержа
-        run_quiet git clone --branch dev "$REPO_URL" "$INSTALL_DIR" \
-            || log_error "Failed to clone repo"
-        log_success "Repo cloned to $INSTALL_DIR"
+        log_info "Using existing repo: $INSTALL_DIR"
+        return
     fi
+
+    # Repo already cloned — pull instead of re-clone
+    if [ -d "$INSTALL_DIR/.git" ]; then
+        log_info "Repo already exists at $INSTALL_DIR — pulling latest..."
+        git -C "$INSTALL_DIR" pull --ff-only origin dev \
+            && log_success "Repo updated" \
+            || log_warn "Could not pull latest — using existing version"
+        return
+    fi
+
+    # Directory exists but is not a git repo (broken/partial) — remove it
+    if [ -d "$INSTALL_DIR" ]; then
+        log_warn "Removing incomplete directory $INSTALL_DIR..."
+        rm -rf "$INSTALL_DIR"
+    fi
+
+    log_info "Cloning repo into $INSTALL_DIR..."
+    mkdir -p "$(dirname "$INSTALL_DIR")"
+    git clone --branch dev "$REPO_URL" "$INSTALL_DIR" \
+        || log_error "Failed to clone repo from $REPO_URL"
+    log_success "Repo cloned to $INSTALL_DIR"
 }
 
 install_cobot() {
@@ -215,10 +229,12 @@ setup_path() {
 
 print_success() {
     echo ""
-    echo -e "${GREEN}${BOLD}Done!${NC}"
+    echo -e "${GREEN}${BOLD}Installation complete!${NC}"
     echo ""
-    echo "  cobot setup    - first-time setup"
-    echo "  cobot --help   - list all commands"
+    echo "  Next steps:"
+    echo ""
+    echo -e "  ${CYAN}cobot setup${NC}         — install ROS2, build the project and configure the robot"
+    echo -e "  ${CYAN}cobot --help${NC}        — show all available commands"
     echo ""
 }
 
