@@ -6,6 +6,7 @@ build/
 venv
 .venv
 .claude
+__pycache__
 
-
+*.egg-info
 **.FCBak

@@ -2,7 +2,7 @@
 
 # Configure the Docker image and the MkDocs directory
 DOCKER_IMAGE="squidfunk/mkdocs-material"
-MKDOCS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/iiwa-ros-doc" && pwd)"
+MKDOCS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lwc-doc" && pwd)"
 
 # Define color codes for logging
 RED='\033[0;31m'
