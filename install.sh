@@ -155,10 +155,12 @@ install_uv() {
 
 check_python() {
     log_info "Checking Python $PYTHON_VERSION..."
-    if "$UV_CMD" python find "$PYTHON_VERSION" </dev/null &>/dev/null; then
+    local py_path
+    py_path="$("$UV_CMD" python find "$PYTHON_VERSION" </dev/null 2>/dev/null)" || true
+    if [ -n "$py_path" ]; then
         local ver
-        ver="$("$UV_CMD" python find "$PYTHON_VERSION" </dev/null | xargs -I{} {} --version 2>&1)"
-        log_success "$ver found"
+        ver="$("$py_path" --version 2>&1)" || true
+        log_success "${ver:-Python $PYTHON_VERSION} found"
         return
     fi
     log_info "Installing Python $PYTHON_VERSION via uv..."
