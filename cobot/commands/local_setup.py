@@ -80,52 +80,56 @@ def _setup_locale(write: Write) -> None:
 
 def _add_ros2_repo(write: Write) -> None:
     write("[cyan][*][/cyan] Adding ROS2 apt repository...")
-    _run_quiet(["sudo", "apt-get", "update", "-qq"])
+
+    # Best-effort update before installing prereqs (ignore errors from broken repos)
+    subprocess.run(["sudo", "apt-get", "update", "-qq"], capture_output=True)
+
     _run_logged(
         ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
-         "software-properties-common", "curl"],
+         "software-properties-common", "curl", "gnupg"],
         write, _APT_ENV,
     )
     _run_quiet(["sudo", "add-apt-repository", "-y", "universe"])
 
-    if not _ROS_KEYRING.exists():
-        write("[cyan][*][/cyan] Downloading ROS2 signing key...")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".gpg") as tmp:
-            tmp_path = tmp.name
-        try:
-            urllib.request.urlretrieve(_ROS_KEY_URL, tmp_path)
-            _run_quiet(["sudo", "cp", tmp_path, str(_ROS_KEYRING)])
-        finally:
-            os.unlink(tmp_path)
+    # Always re-download and dearmor the key to fix any previous bad install
+    write("[cyan][*][/cyan] Downloading ROS2 signing key...")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".key") as tmp:
+        tmp_path = tmp.name
+    try:
+        urllib.request.urlretrieve(_ROS_KEY_URL, tmp_path)
+        _run_quiet(["sudo", "gpg", "--dearmor", "--yes", "-o", str(_ROS_KEYRING), tmp_path])
+    finally:
+        os.unlink(tmp_path)
+    write("[green][ok][/green] Signing key installed")
 
-    if not _ROS_SOURCES.exists():
-        arch = subprocess.check_output(["dpkg", "--print-architecture"], text=True).strip()
-        codename = subprocess.check_output(
-            ["bash", "-c", ". /etc/os-release && echo $UBUNTU_CODENAME"], text=True
-        ).strip()
-        sources_line = (
-            f"deb [arch={arch} signed-by={_ROS_KEYRING}] "
-            f"http://packages.ros.org/ros2/ubuntu {codename} main\n"
-        )
-        proc = subprocess.run(
-            ["sudo", "tee", str(_ROS_SOURCES)],
-            input=sources_line, capture_output=True, text=True,
-        )
-        if proc.returncode != 0:
-            raise RuntimeError(f"Failed to write {_ROS_SOURCES}")
+    arch = subprocess.check_output(["dpkg", "--print-architecture"], text=True).strip()
+    codename = subprocess.check_output(
+        ["bash", "-c", ". /etc/os-release && echo $UBUNTU_CODENAME"], text=True
+    ).strip()
+    sources_line = (
+        f"deb [arch={arch} signed-by={_ROS_KEYRING}] "
+        f"http://packages.ros.org/ros2/ubuntu {codename} main\n"
+    )
+    proc = subprocess.run(
+        ["sudo", "tee", str(_ROS_SOURCES)],
+        input=sources_line, capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"Failed to write {_ROS_SOURCES}")
 
-    _run_quiet(["sudo", "apt-get", "update", "-qq"])
+    write("[cyan][*][/cyan] Updating apt cache...")
+    _run_logged(["sudo", "apt-get", "update", "-q"], write, _APT_ENV)
     write("[green][ok][/green] ROS2 repository ready")
 
 
 def _install_ros2_jazzy(write: Write) -> None:
-    write("[cyan][*][/cyan] Installing ros-jazzy-ros-base and ros-dev-tools...")
+    write("[cyan][*][/cyan] Installing ros-jazzy-desktop and ros-dev-tools...")
     _run_logged(
-        ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
-         "ros-jazzy-ros-base", "ros-dev-tools"],
+        ["sudo", "apt-get", "install", "-y",
+         "ros-jazzy-desktop", "ros-dev-tools"],
         write, _APT_ENV,
     )
-    write("[green][ok][/green] ROS2 Jazzy installed")
+    write("[green][ok][/green] ROS2 Jazzy Desktop installed")
 
 
 def _install_colcon(write: Write) -> None:
