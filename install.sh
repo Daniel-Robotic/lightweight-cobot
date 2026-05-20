@@ -196,9 +196,17 @@ resolve_install_dir() {
 
     log_info "Cloning repo into $INSTALL_DIR..."
     mkdir -p "$(dirname "$INSTALL_DIR")"
-    git clone --depth 1 --branch dev "$REPO_URL" "$INSTALL_DIR" </dev/null \
-        || log_error "Failed to clone repo from $REPO_URL"
-    log_success "Repo cloned to $INSTALL_DIR"
+    local attempt=1
+    while [ $attempt -le 5 ]; do
+        if git clone --depth 1 --branch dev "$REPO_URL" "$INSTALL_DIR" </dev/null; then
+            log_success "Repo cloned to $INSTALL_DIR"
+            return
+        fi
+        log_warn "Clone failed (attempt $attempt/5), retrying..."
+        rm -rf "$INSTALL_DIR"
+        attempt=$((attempt + 1))
+    done
+    log_error "Failed to clone repo after 5 attempts"
 }
 
 install_cobot() {
