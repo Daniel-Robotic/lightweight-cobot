@@ -12,8 +12,13 @@
 
 set -e
 
-IMAGE="${WEBOTS_IMAGE:-evilfisru/lwc:webots-jazzy}"
+IMAGE="${WEBOTS_IMAGE:-evilfisru/lwc:webots-jazzy-dev}"
 GPU_MODE="software"
+
+# Resolve the project root (two levels above this script: docker/jazzy/ros-iiwa7-webots → project root)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+CONFIG_FILE="${PROJECT_ROOT}/cobot-setting.yaml"
 
 # Parse --gpu flag
 if [[ "${1}" == "--gpu" ]]; then
@@ -58,5 +63,6 @@ docker run -it --rm \
     -e QT_X11_NO_MITSHM=1 \
     "${RENDER_FLAGS[@]}" \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+    ${CONFIG_FILE:+-v "${CONFIG_FILE}:/ros2_ws/cobot-setting.yaml:ro"} \
     "${IMAGE}" \
     "$@"

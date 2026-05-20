@@ -2,6 +2,7 @@ import argparse
 
 from cobot.commands.doc_setup import run as _doc_setup
 from cobot.commands.docker_setup import run as _docker_setup
+from cobot.commands.robot_setup import run as _robot_setup
 
 
 def register(subparsers):
@@ -12,3 +13,4 @@ def register(subparsers):
 def run(args: argparse.Namespace) -> None:
     _doc_setup(args)
     _docker_setup(args)
+    _robot_setup(args)

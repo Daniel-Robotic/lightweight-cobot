@@ -22,6 +22,11 @@ Screen {
     margin-top: 1;
     margin-bottom: 1;
 }
+#note {
+    color: $text-muted;
+    text-style: dim;
+    margin-bottom: 1;
+}
 RadioSet {
     height: auto;
     border: none;
@@ -40,16 +45,19 @@ class PickScreen(Screen[Optional[str]]):
         Binding("escape", "abort", "Cancel"),
     ]
 
-    def __init__(self, step: str, question: str, options: List[str], default: str):
+    def __init__(self, step: str, question: str, options: List[str], default: str, note: str = ""):
         super().__init__()
         self._step = step
         self._question = question
         self._options = options
         self._default = default
+        self._note = note
 
     def compose(self) -> ComposeResult:
         yield Static(self._step, id="step")
         yield Static(self._question, id="question")
+        if self._note:
+            yield Static(self._note, id="note")
         with RadioSet(id="choices"):
             for opt in self._options:
                 yield RadioButton(opt, value=(opt == self._default))
@@ -72,15 +80,18 @@ class InputScreen(Screen[Optional[str]]):
         Binding("escape", "abort", "Cancel"),
     ]
 
-    def __init__(self, step: str, question: str, default: str):
+    def __init__(self, step: str, question: str, default: str, note: str = ""):
         super().__init__()
         self._step = step
         self._question = question
         self._default = default
+        self._note = note
 
     def compose(self) -> ComposeResult:
         yield Static(self._step, id="step")
         yield Static(self._question, id="question")
+        if self._note:
+            yield Static(self._note, id="note")
         yield Input(id="value", value=self._default)
         yield Footer()
 
