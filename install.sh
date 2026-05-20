@@ -27,7 +27,7 @@ log_error()   { echo -e "${RED}[err]${NC} $1"; exit 1; }
 run_quiet() {
     local _log
     _log="$(mktemp /tmp/lwc-cmd.XXXXXX.log)"
-    if "$@" > "$_log" 2>&1; then
+    if "$@" </dev/null >"$_log" 2>&1; then
         rm -f "$_log"
     else
         cat "$_log" >&2
@@ -155,13 +155,12 @@ install_uv() {
 
 check_python() {
     log_info "Checking Python $PYTHON_VERSION..."
-    if "$UV_CMD" python find "$PYTHON_VERSION" &>/dev/null; then
+    if "$UV_CMD" python find "$PYTHON_VERSION" </dev/null &>/dev/null; then
         local ver
-        ver="$("$UV_CMD" python find "$PYTHON_VERSION" | xargs -I{} {} --version 2>&1)"
+        ver="$("$UV_CMD" python find "$PYTHON_VERSION" </dev/null | xargs -I{} {} --version 2>&1)"
         log_success "$ver found"
         return
     fi
-    # uv умеет скачивать и изолировать нужную версию Python без sudo
     log_info "Installing Python $PYTHON_VERSION via uv..."
     run_quiet "$UV_CMD" python install "$PYTHON_VERSION" || log_error "Failed to install Python $PYTHON_VERSION"
     log_success "Python $PYTHON_VERSION installed"
@@ -181,7 +180,7 @@ resolve_install_dir() {
     # Repo already cloned — pull instead of re-clone
     if [ -d "$INSTALL_DIR/.git" ]; then
         log_info "Repo already exists at $INSTALL_DIR — pulling latest..."
-        git -C "$INSTALL_DIR" pull --ff-only origin dev \
+        git -C "$INSTALL_DIR" pull --ff-only origin dev </dev/null \
             && log_success "Repo updated" \
             || log_warn "Could not pull latest — using existing version"
         return
@@ -195,7 +194,7 @@ resolve_install_dir() {
 
     log_info "Cloning repo into $INSTALL_DIR..."
     mkdir -p "$(dirname "$INSTALL_DIR")"
-    git clone --branch dev "$REPO_URL" "$INSTALL_DIR" \
+    git clone --branch dev "$REPO_URL" "$INSTALL_DIR" </dev/null \
         || log_error "Failed to clone repo from $REPO_URL"
     log_success "Repo cloned to $INSTALL_DIR"
 }
