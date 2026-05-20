@@ -2,20 +2,15 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, Optional
 
-from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from textual.app import App
 
-from cobot.tui import SCREEN_CSS, InputScreen
-
-_console = Console()
+from cobot.tui import SCREEN_CSS, InputScreen, LogScreen
 
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 _DOC_DIR = _PROJECT_DIR / "doc" / "lwc-doc"
@@ -23,150 +18,183 @@ _IMAGE_NAME = "lwc-docs"
 _CONTAINER_NAME = "lwc-docs"
 _DEFAULT_PORT = "8000"
 
-
-
-class _Wizard(App[Optional[str]]):
-    CSS = SCREEN_CSS
-
-    def on_mount(self) -> None:
-        self.push_screen(
-            InputScreen("Step 1 of 1", "Port to serve documentation on:", _DEFAULT_PORT),
-            self._got_port,
-        )
-
-    def _got_port(self, v: Optional[str]) -> None:
-        if v is None:
-            self.exit(None)
-            return
-        port = v.strip() or _DEFAULT_PORT
-        if not port.isdigit():
-            self.exit(_DEFAULT_PORT)
-        else:
-            self.exit(port)
+Write = Callable[[str], None]
 
 
 
 def _docker(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["docker", *args],
-        capture_output=capture,
-        text=True,
-    )
+    return subprocess.run(["docker", *args], capture_output=capture, text=True)
 
 
 def _is_running() -> bool:
-    result = _docker(
-        "ps", "--filter", f"name={_CONTAINER_NAME}", "--format", "{{.Names}}",
-        capture=True,
-    )
-    return _CONTAINER_NAME in result.stdout
+    r = _docker("ps", "--filter", f"name={_CONTAINER_NAME}", "--format", "{{.Names}}", capture=True)
+    return _CONTAINER_NAME in r.stdout
 
 
 def _image_exists() -> bool:
-    result = _docker("images", "-q", _IMAGE_NAME, capture=True)
-    return bool(result.stdout.strip())
+    return bool(_docker("images", "-q", _IMAGE_NAME, capture=True).stdout.strip())
 
 
-def _build_docs_image() -> bool:
-    _console.print("[dim]Installing MkDocs plugins into the image (this runs once)...[/dim]")
+def _build_docs_image(write: Write) -> bool:
+    write("[cyan][*][/cyan] Building documentation image (runs once)...")
     env = {**os.environ, "DOCKER_BUILDKIT": "0"}
     proc = subprocess.Popen(
         ["docker", "build", "-t", _IMAGE_NAME, str(_DOC_DIR)],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, env=env,
     )
-
-    captured: List[str] = []
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("  [bold cyan]lwc-docs[/bold cyan]"),
-        BarColumn(bar_width=32),
-        TaskProgressColumn(),
-        console=_console,
-        transient=False,
-    ) as prog:
-        task = prog.add_task("", total=100)
-        total = 1
-        for line in proc.stdout:
-            captured.append(line)
-            m = re.match(r"Step (\d+)/(\d+) :", line)
-            if m:
-                step, total = int(m.group(1)), int(m.group(2))
-                prog.update(task, completed=step / total * 100)
-        prog.update(task, completed=100)
-
+    for line in proc.stdout:
+        s = line.rstrip()
+        if s:
+            write(s)
     proc.wait()
     if proc.returncode != 0:
-        _console.print("\n[red]Image build failed:[/red]")
-        _console.print("".join(captured), highlight=False)
+        write("[red]Image build failed.[/red]")
         return False
+    write("[green][ok][/green] Documentation image ready")
     return True
 
 
 
-def _cmd_up() -> None:
-    if _is_running():
-        _console.print(f"[green]Docs are already running at:[/green] http://localhost:{_DEFAULT_PORT}")
-        _console.print("  Stop with: [bold]cobot doc-setup down[/bold]")
-        return
+def _task_up(screen: LogScreen, port: str) -> None:
+    try:
+        if _is_running():
+            screen.write(f"[green]Docs already running at:[/green] http://localhost:{port}")
+            screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
+            screen.finish(True)
+            return
 
-    if not _DOC_DIR.exists():
-        _console.print(f"[red]Doc directory not found:[/red] {_DOC_DIR}")
-        sys.exit(1)
+        if not _DOC_DIR.exists():
+            screen.write(f"[red]Doc directory not found:[/red] {_DOC_DIR}")
+            screen.finish(False)
+            return
 
-    port = _Wizard().run()
-    if port is None:
-        return
+        if not _image_exists():
+            if not _build_docs_image(screen.write):
+                screen.finish(False)
+                return
+        else:
+            screen.write("[dim]Documentation image already built, skipping.[/dim]")
 
-    _console.print()
+        screen.write("\n[cyan][*][/cyan] Starting MkDocs server...")
+        result = _docker(
+            "run", "-d", "--name", _CONTAINER_NAME, "--rm",
+            "-p", f"{port}:8000",
+            "-v", f"{_DOC_DIR}:/docs",
+            _IMAGE_NAME, "serve", "--dev-addr=0.0.0.0:8000",
+            capture=True,
+        )
+        if result.returncode != 0:
+            screen.write(f"[red]Failed to start container.[/red]\n{result.stderr}")
+            screen.finish(False)
+            return
 
-    if not _image_exists():
-        _console.print("[bold]Building documentation image...[/bold]")
-        if not _build_docs_image():
-            sys.exit(1)
-        _console.print()
-    else:
-        _console.print("[dim]Documentation image already built, skipping...[/dim]\n")
+        screen.write(f"\n[green]Docs running at:[/green] http://localhost:{port}")
+        screen.write("  Edit files in [bold]doc/lwc-doc/docs/[/bold] — reloads automatically.")
+        screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
+        screen.finish(True)
 
-    _console.print("[bold]Starting MkDocs server...[/bold]")
-    _console.print(f"[dim]Mounting {_DOC_DIR} into container on port {port}...[/dim]")
-
-    result = _docker(
-        "run", "-d",
-        "--name", _CONTAINER_NAME,
-        "--rm",
-        "-p", f"{port}:8000",
-        "-v", f"{_DOC_DIR}:/docs",
-        _IMAGE_NAME,
-        "serve", "--dev-addr=0.0.0.0:8000",
-    )
-    if result.returncode != 0:
-        _console.print("[red]Failed to start container.[/red]")
-        sys.exit(1)
-
-    _console.print(f"\n[green]Docs running at:[/green] http://localhost:{port}")
-    _console.print("  Edit files in [bold]doc/lwc-doc/docs/[/bold] — the site reloads automatically.")
-    _console.print("  Stop with: [bold]cobot doc-setup down[/bold]")
+    except Exception as exc:
+        screen.write(f"[red]Error:[/red] {exc}")
+        screen.finish(False)
 
 
-def _cmd_down() -> None:
-    if not _is_running():
-        _console.print("[yellow]Docs container is not running.[/yellow]")
-        return
+def _task_down(screen: LogScreen) -> None:
+    try:
+        if not _is_running():
+            screen.write("[yellow]Docs container is not running.[/yellow]")
+            screen.finish(True)
+            return
+        screen.write("[cyan][*][/cyan] Stopping documentation server...")
+        _docker("stop", _CONTAINER_NAME)
+        screen.write("[green][ok][/green] Container stopped.")
+        screen.finish(True)
+    except Exception as exc:
+        screen.write(f"[red]Error:[/red] {exc}")
+        screen.finish(False)
 
-    _console.print("[bold]Stopping documentation server...[/bold]")
-    _docker("stop", _CONTAINER_NAME)
-    _console.print("[green]Done.[/green] Container removed.")
+
+def _task_rebuild(screen: LogScreen, port: str) -> None:
+    try:
+        if _is_running():
+            screen.write("[cyan][*][/cyan] Stopping existing container...")
+            _docker("stop", _CONTAINER_NAME)
+            screen.write("[green][ok][/green] Stopped.")
+
+        if _image_exists():
+            screen.write("[cyan][*][/cyan] Removing old image...")
+            _docker("rmi", "-f", _IMAGE_NAME)
+            screen.write("[green][ok][/green] Image removed.")
+
+        if not _build_docs_image(screen.write):
+            screen.finish(False)
+            return
+
+        screen.write("\n[cyan][*][/cyan] Starting MkDocs server...")
+        result = _docker(
+            "run", "-d", "--name", _CONTAINER_NAME, "--rm",
+            "-p", f"{port}:8000",
+            "-v", f"{_DOC_DIR}:/docs",
+            _IMAGE_NAME, "serve", "--dev-addr=0.0.0.0:8000",
+            capture=True,
+        )
+        if result.returncode != 0:
+            screen.write(f"[red]Failed to start container.[/red]\n{result.stderr}")
+            screen.finish(False)
+            return
+
+        screen.write(f"\n[green]Docs running at:[/green] http://localhost:{port}")
+        screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
+        screen.finish(True)
+
+    except Exception as exc:
+        screen.write(f"[red]Error:[/red] {exc}")
+        screen.finish(False)
 
 
+class _DocApp(App[None]):
+    CSS = SCREEN_CSS
 
-def _cmd_rebuild() -> None:
-    _cmd_down()
-    result = _docker("rmi", "-f", _IMAGE_NAME, capture=True)
-    if result.returncode != 0:
-        _console.print("[yellow]No image to remove, building fresh.[/yellow]")
-    _cmd_up()
+    def __init__(self, action: str):
+        super().__init__()
+        self._action = action
+
+    def on_mount(self) -> None:
+        if self._action == "down":
+            self.push_screen(
+                LogScreen("Documentation server", _task_down),
+                lambda _: self.exit(),
+            )
+        elif self._action == "rebuild":
+            self.push_screen(
+                InputScreen("Step 1 of 1", "Port to serve documentation on:", _DEFAULT_PORT),
+                self._got_port_rebuild,
+            )
+        else:
+            self.push_screen(
+                InputScreen("Step 1 of 1", "Port to serve documentation on:", _DEFAULT_PORT),
+                self._got_port_up,
+            )
+
+    def _got_port_up(self, port: Optional[str]) -> None:
+        if port is None:
+            self.exit()
+            return
+        p = (port.strip() or _DEFAULT_PORT) if port.isdigit() or not port.strip() else _DEFAULT_PORT
+        self.push_screen(
+            LogScreen("Documentation server", lambda s: _task_up(s, p)),
+            lambda _: self.exit(),
+        )
+
+    def _got_port_rebuild(self, port: Optional[str]) -> None:
+        if port is None:
+            self.exit()
+            return
+        p = (port.strip() or _DEFAULT_PORT) if port.isdigit() or not port.strip() else _DEFAULT_PORT
+        self.push_screen(
+            LogScreen("Documentation server — rebuild", lambda s: _task_rebuild(s, p)),
+            lambda _: self.exit(),
+        )
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -183,13 +211,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def run(args: argparse.Namespace) -> None:
     if not shutil.which("docker"):
-        _console.print("[red]Error:[/red] Docker is not installed or not on PATH.")
+        from rich.console import Console
+        Console().print("[red]Error:[/red] Docker is not installed or not on PATH.")
         sys.exit(1)
 
     action = getattr(args, "action", "up")
-    if action == "down":
-        _cmd_down()
-    elif action == "rebuild":
-        _cmd_rebuild()
-    else:
-        _cmd_up()
+    _DocApp(action).run()

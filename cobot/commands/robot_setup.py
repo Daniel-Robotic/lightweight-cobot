@@ -6,13 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Tuple
 
-from rich.console import Console
 from ruamel.yaml import YAML
-from textual.app import App
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.screen import Screen
+from textual.widgets import Footer, Static
 
 from cobot.tui import SCREEN_CSS, InputScreen, PickScreen
 
-_console = Console()
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 _CONFIG_PATH = _PROJECT_DIR / "cobot-setting.yaml"
 
@@ -20,17 +21,13 @@ _yaml = YAML()
 _yaml.preserve_quotes = True
 
 
-# ---------------------------------------------------------------------------
-# Field descriptors
-# ---------------------------------------------------------------------------
-
 @dataclass
 class _Field:
     key: str               # dot-separated path within the block, e.g. "webots.world"
     question: str
     default: Any
     note: str = ""
-    options: Optional[List[str]] = None  # if set → PickScreen, else → InputScreen
+    options: Optional[List[str]] = None  # if set - PickScreen, else - InputScreen
 
     def label(self) -> str:
         return self.key.split(".")[-1]
@@ -42,10 +39,6 @@ class _Block:
     title: str             # shown in "Configure <title>?" prompt
     fields: List[_Field]
 
-
-# ---------------------------------------------------------------------------
-# Block definitions — bottom to top order
-# ---------------------------------------------------------------------------
 
 _BLOCKS: List[_Block] = [
     _Block(
@@ -117,10 +110,6 @@ _BLOCKS: List[_Block] = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Wizard app
-# ---------------------------------------------------------------------------
-
 def _coerce(value: str, original: Any) -> Any:
     """Try to preserve the original YAML scalar type."""
     if isinstance(original, bool):
@@ -157,7 +146,20 @@ def _set_nested(mapping: Any, path: str, value: Any) -> None:
     cur[keys[-1]] = _coerce(value, original)
 
 
-class _Wizard(App[bool]):
+class _SavedScreen(Screen[None]):
+    BINDINGS = [Binding("enter,escape", "close", "Close")]
+
+    def compose(self) -> ComposeResult:
+        yield Static("Done", id="step")
+        yield Static(f"Configuration saved to {_CONFIG_PATH.name}", id="question")
+        yield Static("Press Enter to close.", id="note")
+        yield Footer()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class _Wizard(App[None]):
     CSS = SCREEN_CSS
 
     def __init__(self, data: Any):
@@ -172,13 +174,11 @@ class _Wizard(App[bool]):
     def on_mount(self) -> None:
         self._next_block()
 
-    # ------------------------------------------------------------------
-    # Block-level flow
-    # ------------------------------------------------------------------
 
     def _next_block(self) -> None:
         if self._block_idx >= len(self._blocks):
-            self.exit(True)
+            _save_config(self._data)
+            self.push_screen(_SavedScreen(), lambda _: self.exit())
             return
         block = self._blocks[self._block_idx]
         total = len(self._blocks)
@@ -195,7 +195,7 @@ class _Wizard(App[bool]):
 
     def _got_block_choice(self, v: Optional[str], block: _Block) -> None:
         if v is None:
-            self.exit(False)
+            self.exit()
             return
         self._block_idx += 1
         if v == "Yes":
@@ -206,9 +206,6 @@ class _Wizard(App[bool]):
         else:
             self._next_block()
 
-    # ------------------------------------------------------------------
-    # Field-level flow
-    # ------------------------------------------------------------------
 
     def _next_field(self) -> None:
         if not self._pending_fields:
@@ -240,7 +237,7 @@ class _Wizard(App[bool]):
 
     def _got_field(self, v: Optional[str], f: _Field) -> None:
         if v is None:
-            self.exit(False)
+            self.exit()
             return
         block = self._current_block
         _set_nested(self._data[block.yaml_key], f.key, v)
@@ -248,9 +245,6 @@ class _Wizard(App[bool]):
         self._next_field()
 
 
-# ---------------------------------------------------------------------------
-# YAML read / write
-# ---------------------------------------------------------------------------
 
 def _load_config() -> Any:
     with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
@@ -262,10 +256,6 @@ def _save_config(data: Any) -> None:
         _yaml.dump(data, fh)
 
 
-# ---------------------------------------------------------------------------
-# CLI entry points
-# ---------------------------------------------------------------------------
-
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("robot-setup", help="Configure cobot-setting.yaml interactively")
     p.set_defaults(func=run)
@@ -273,18 +263,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def run(args: argparse.Namespace) -> None:
     if not _CONFIG_PATH.exists():
-        _console.print(f"[red]Config not found:[/red] {_CONFIG_PATH}")
+        from rich.console import Console
+        Console().print(f"[red]Config not found:[/red] {_CONFIG_PATH}")
         sys.exit(1)
 
     data = _load_config()
-    ok = _Wizard(data).run()
-    if not ok:
-        _console.print("[yellow]Setup cancelled.[/yellow]")
-        return
-
-    _save_config(data)
-    _console.print(f"\n[green]Configuration saved:[/green] {_CONFIG_PATH}")
-    _console.print(
-        "  Start the robot container with: [bold]cobot robot-setup[/bold] "
-        "then run [bold]./docker/jazzy/ros-iiwa7-webots/run.sh[/bold]"
-    )
+    _Wizard(data).run()

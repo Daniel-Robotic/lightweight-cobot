@@ -13,7 +13,7 @@ BOLD='\033[1m'
 
 PYTHON_VERSION="3.11"
 REPO_URL="https://gitverse.ru/daniel-robotics/lightweight-cobot.git"
-INSTALL_DIR="${COBOT_INSTALL_DIR:-$HOME/.lwc/ros2_iiwa7}"
+INSTALL_DIR="${COBOT_INSTALL_DIR:-$HOME/.lwc}"
 
 # Определяем интерактивный режим: при запуске через curl | bash stdin не является терминалом
 if [ -t 0 ]; then IS_INTERACTIVE=true; else IS_INTERACTIVE=false; fi

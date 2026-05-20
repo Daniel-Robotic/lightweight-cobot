@@ -4,32 +4,30 @@ import argparse
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import urllib.request
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
-from rich.console import Console
 from textual.app import App
 
-from cobot.tui import SCREEN_CSS, PickScreen
+from cobot.tui import SCREEN_CSS, LogScreen, PickScreen
 from cobot.commands.docker_setup import run as _docker_setup
 
-_console = Console()
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 
 _ROS_KEYRING = Path("/usr/share/keyrings/ros-archive-keyring.gpg")
 _ROS_SOURCES = Path("/etc/apt/sources.list.d/ros2.list")
 _ROS_KEY_URL = "https://raw.githubusercontent.com/ros/rosdistro/master/ros.key"
+_APT_ENV = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
 
 
 def _detect_ubuntu_2404() -> bool:
-    os_release = Path("/etc/os-release")
-    if not os_release.exists():
+    path = Path("/etc/os-release")
+    if not path.exists():
         return False
     info: dict[str, str] = {}
-    for line in os_release.read_text().splitlines():
+    for line in path.read_text().splitlines():
         if "=" in line:
             k, _, v = line.partition("=")
             info[k.strip()] = v.strip().strip('"')
@@ -40,142 +38,159 @@ def _detect_ros2_jazzy() -> bool:
     return Path("/opt/ros/jazzy").is_dir()
 
 
-def _run(cmd: List[str]) -> None:
-    result = subprocess.run(cmd)
+Write = Callable[[str], None]
+
+
+def _run_quiet(cmd: List[str]) -> None:
+    result = subprocess.run(cmd, capture_output=True)
     if result.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(cmd)}")
+        raise RuntimeError(f"Exit {result.returncode}: {cmd[0]}")
 
 
-def _check_output(cmd: List[str]) -> str:
-    return subprocess.check_output(cmd, text=True).strip()
+def _run_logged(cmd: List[str], write: Write, env: dict | None = None, cwd=None) -> None:
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env or os.environ,
+        cwd=cwd,
+    )
+    for line in proc.stdout:
+        s = line.rstrip()
+        if s:
+            write(s)
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Exit {proc.returncode}: {cmd[0]}")
 
 
-def _step(msg: str) -> None:
-    _console.print(f"[cyan][*][/cyan] {msg}")
-
-
-def _ok(msg: str) -> None:
-    _console.print(f"[green][ok][/green] {msg}")
-
-
-def _apt_install(*packages: str) -> None:
-    _run(["sudo", "apt-get", "install", "-y", "--no-install-recommends", *packages])
-
-
-def _setup_locale() -> None:
-    _step("Checking locale...")
-    result = subprocess.run(["locale"], capture_output=True, text=True)
-    if "UTF-8" in result.stdout:
-        _ok("UTF-8 locale active")
+def _setup_locale(write: Write) -> None:
+    write("[cyan][*][/cyan] Checking locale...")
+    if "UTF-8" in subprocess.run(["locale"], capture_output=True, text=True).stdout:
+        write("[green][ok][/green] UTF-8 locale active")
         return
-    _run(["sudo", "apt-get", "update", "-qq"])
-    _apt_install("locales")
-    _run(["sudo", "locale-gen", "en_US.UTF-8"])
-    _run(["sudo", "update-locale", "LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8"])
-    _ok("Locale configured")
+    write("[cyan][*][/cyan] Configuring UTF-8 locale...")
+    _run_quiet(["sudo", "apt-get", "update", "-qq"])
+    _run_logged(["sudo", "apt-get", "install", "-y", "--no-install-recommends", "locales"], write, _APT_ENV)
+    _run_logged(["sudo", "locale-gen", "en_US.UTF-8"], write)
+    _run_quiet(["sudo", "update-locale", "LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8"])
+    write("[green][ok][/green] Locale configured")
 
 
-def _add_ros2_repo() -> None:
-    _step("Adding ROS2 apt repository...")
-    _run(["sudo", "apt-get", "update", "-qq"])
-    _apt_install("software-properties-common", "curl")
-    _run(["sudo", "add-apt-repository", "-y", "universe"])
+def _add_ros2_repo(write: Write) -> None:
+    write("[cyan][*][/cyan] Adding ROS2 apt repository...")
+    _run_quiet(["sudo", "apt-get", "update", "-qq"])
+    _run_logged(
+        ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
+         "software-properties-common", "curl"],
+        write, _APT_ENV,
+    )
+    _run_quiet(["sudo", "add-apt-repository", "-y", "universe"])
 
     if not _ROS_KEYRING.exists():
-        _step("Downloading ROS2 signing key...")
+        write("[cyan][*][/cyan] Downloading ROS2 signing key...")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".gpg") as tmp:
             tmp_path = tmp.name
         try:
             urllib.request.urlretrieve(_ROS_KEY_URL, tmp_path)
-            _run(["sudo", "cp", tmp_path, str(_ROS_KEYRING)])
+            _run_quiet(["sudo", "cp", tmp_path, str(_ROS_KEYRING)])
         finally:
             os.unlink(tmp_path)
 
     if not _ROS_SOURCES.exists():
-        arch = _check_output(["dpkg", "--print-architecture"])
-        codename = _check_output(
-            ["bash", "-c", ". /etc/os-release && echo $UBUNTU_CODENAME"]
-        )
+        arch = subprocess.check_output(["dpkg", "--print-architecture"], text=True).strip()
+        codename = subprocess.check_output(
+            ["bash", "-c", ". /etc/os-release && echo $UBUNTU_CODENAME"], text=True
+        ).strip()
         sources_line = (
             f"deb [arch={arch} signed-by={_ROS_KEYRING}] "
             f"http://packages.ros.org/ros2/ubuntu {codename} main\n"
         )
         proc = subprocess.run(
             ["sudo", "tee", str(_ROS_SOURCES)],
-            input=sources_line,
-            capture_output=True,
-            text=True,
+            input=sources_line, capture_output=True, text=True,
         )
         if proc.returncode != 0:
             raise RuntimeError(f"Failed to write {_ROS_SOURCES}")
 
-    _run(["sudo", "apt-get", "update", "-qq"])
-    _ok("ROS2 repository ready")
+    _run_quiet(["sudo", "apt-get", "update", "-qq"])
+    write("[green][ok][/green] ROS2 repository ready")
 
 
-def _install_ros2_jazzy() -> None:
-    _step("Installing ros-jazzy-ros-base + ros-dev-tools...")
-    _apt_install("ros-jazzy-ros-base", "ros-dev-tools")
-    _ok("ROS2 Jazzy installed")
+def _install_ros2_jazzy(write: Write) -> None:
+    write("[cyan][*][/cyan] Installing ros-jazzy-ros-base and ros-dev-tools...")
+    _run_logged(
+        ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
+         "ros-jazzy-ros-base", "ros-dev-tools"],
+        write, _APT_ENV,
+    )
+    write("[green][ok][/green] ROS2 Jazzy installed")
 
 
-def _install_colcon() -> None:
+def _install_colcon(write: Write) -> None:
     if shutil.which("colcon"):
-        _ok("colcon already available")
+        write("[green][ok][/green] colcon already available")
         return
-    _step("Installing colcon...")
-    _apt_install("python3-colcon-common-extensions")
-    _ok("colcon installed")
+    write("[cyan][*][/cyan] Installing colcon...")
+    _run_logged(
+        ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
+         "python3-colcon-common-extensions"],
+        write, _APT_ENV,
+    )
+    write("[green][ok][/green] colcon installed")
 
 
-def _setup_shell_rc() -> None:
+def _setup_shell_rc(write: Write) -> None:
     shell_name = Path(os.environ.get("SHELL", "/bin/bash")).name
     rc = Path.home() / (".zshrc" if shell_name == "zsh" else ".bashrc")
     source_line = "source /opt/ros/jazzy/setup.bash"
     if rc.exists() and source_line in rc.read_text():
-        _ok(f"ROS2 setup already in {rc.name}")
+        write(f"[green][ok][/green] ROS2 setup already in {rc.name}")
         return
     with rc.open("a") as f:
         f.write(f"\n# ROS2 Jazzy\n{source_line}\n")
-    _ok(f"Added ROS2 setup to ~/{rc.name}")
+    write(f"[green][ok][/green] Added ROS2 setup to ~/{rc.name}")
 
 
-def _install_jazzy() -> None:
-    _console.print("\n[bold]Installing ROS2 Jazzy...[/bold]\n")
+def _task_install_jazzy(screen: LogScreen) -> None:
     try:
-        _setup_locale()
-        _add_ros2_repo()
-        _install_ros2_jazzy()
-        _install_colcon()
-        _setup_shell_rc()
-    except (subprocess.CalledProcessError, RuntimeError) as exc:
-        _console.print(f"\n[red]Installation failed:[/red] {exc}")
-        sys.exit(1)
-    _console.print(
-        "\n[green]ROS2 Jazzy installed.[/green] "
-        "Restart the terminal, then run [bold]cobot local-setup[/bold] again to build."
-    )
+        screen.write("[bold]Installing ROS2 Jazzy[/bold]\n")
+        _setup_locale(screen.write)
+        _add_ros2_repo(screen.write)
+        _install_ros2_jazzy(screen.write)
+        _install_colcon(screen.write)
+        _setup_shell_rc(screen.write)
+        screen.write(
+            "\nRestart the terminal, then run [bold]cobot local-setup[/bold] again to build."
+        )
+        screen.finish(True)
+    except Exception as exc:
+        screen.write(f"\n[red]Error:[/red] {exc}")
+        screen.finish(False)
 
 
-def _build_project() -> None:
-    if not shutil.which("colcon"):
-        _console.print("[red]Error:[/red] colcon not found. Source ROS2 first:")
-        _console.print("  [bold]source /opt/ros/jazzy/setup.bash[/bold]")
-        sys.exit(1)
+def _task_build(screen: LogScreen) -> None:
+    try:
+        if not shutil.which("colcon"):
+            screen.write("[red]colcon not found.[/red]")
+            screen.write("Source ROS2 first:  [bold]source /opt/ros/jazzy/setup.bash[/bold]")
+            screen.finish(False)
+            return
+        screen.write("[bold]Building project with colcon[/bold]\n")
+        _run_logged(
+            ["colcon", "build", "--symlink-install"],
+            screen.write,
+            cwd=_PROJECT_DIR,
+        )
+        screen.write("\nActivate workspace:  [bold]source install/setup.bash[/bold]")
+        screen.finish(True)
+    except Exception as exc:
+        screen.write(f"\n[red]Error:[/red] {exc}")
+        screen.finish(False)
 
-    _console.print("\n[bold]Building project with colcon...[/bold]\n")
-    result = subprocess.run(
-        ["colcon", "build", "--symlink-install"],
-        cwd=_PROJECT_DIR,
-    )
-    if result.returncode != 0:
-        _console.print("\n[red]Build failed.[/red]")
-        sys.exit(result.returncode)
-    _console.print("\n[green]Build complete.[/green]")
-    _console.print("  Activate workspace:  [bold]source install/setup.bash[/bold]")
 
-
-class _AskInstallJazzy(App[Optional[str]]):
+class _InstallJazzyApp(App[None]):
     CSS = SCREEN_CSS
 
     def on_mount(self) -> None:
@@ -186,11 +201,30 @@ class _AskInstallJazzy(App[Optional[str]]):
                 ["Yes, install ROS2 Jazzy", "No, skip"],
                 "Yes, install ROS2 Jazzy",
             ),
-            self.exit,
+            self._on_choice,
+        )
+
+    def _on_choice(self, choice: Optional[str]) -> None:
+        if choice is None or choice.startswith("No"):
+            self.exit()
+            return
+        self.push_screen(
+            LogScreen("Installing ROS2 Jazzy", _task_install_jazzy),
+            lambda _: self.exit(),
         )
 
 
-class _AskDockerSetup(App[Optional[str]]):
+class _BuildApp(App[None]):
+    CSS = SCREEN_CSS
+
+    def on_mount(self) -> None:
+        self.push_screen(
+            LogScreen("Building project", _task_build),
+            lambda _: self.exit(),
+        )
+
+
+class _DockerPromptApp(App[bool]):
     CSS = SCREEN_CSS
 
     def on_mount(self) -> None:
@@ -201,55 +235,26 @@ class _AskDockerSetup(App[Optional[str]]):
                 ["Yes, run docker-setup", "No, exit"],
                 "Yes, run docker-setup",
             ),
-            self.exit,
+            lambda v: self.exit(v is not None and v.startswith("Yes")),
         )
-
-
-def _flow_ubuntu_without_ros() -> None:
-    _console.print(
-        "\n[yellow]Warning:[/yellow] ROS2 Jazzy is not installed "
-        "(/opt/ros/jazzy not found).\n"
-    )
-    answer = _AskInstallJazzy().run()
-    if answer is None or answer.startswith("No"):
-        _console.print("[yellow]Skipped ROS2 installation.[/yellow]")
-        return
-    _install_jazzy()
-
-
-def _flow_not_ubuntu(args: argparse.Namespace) -> None:
-    _console.print(
-        "\n[yellow]Warning:[/yellow] Ubuntu 24.04 not detected. "
-        "Native build is not supported on this OS.\n"
-    )
-    answer = _AskDockerSetup().run()
-    if answer is None or answer.startswith("No"):
-        _console.print("[yellow]Exiting without changes.[/yellow]")
-        return
-
-    _docker_setup(args)
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "local-setup",
-        help="Build the project locally (requires Ubuntu 24.04 and ROS2 Jazzy)",
+        help="Install ROS2 Jazzy natively and build the project with colcon",
     )
     p.set_defaults(func=run)
 
 
 def run(args: argparse.Namespace) -> None:
-    _console.print("[bold]Checking environment...[/bold]")
-
     if not _detect_ubuntu_2404():
-        _flow_not_ubuntu(args)
+        if _DockerPromptApp().run():
+            _docker_setup(args)
         return
-
-    _console.print("[green]  Ubuntu 24.04[/green]  ✓")
 
     if not _detect_ros2_jazzy():
-        _flow_ubuntu_without_ros()
+        _InstallJazzyApp().run()
         return
 
-    _console.print("[green]  ROS2 Jazzy[/green]    ✓\n")
-    _build_project()
+    _BuildApp().run()
