@@ -67,8 +67,14 @@ class PickScreen(Screen[Optional[str]]):
         self.query_one(RadioSet).focus()
 
     def action_submit(self) -> None:
-        btn = self.query_one("#choices", RadioSet).pressed_button
-        self.dismiss(str(btn.label) if btn else self._default)
+        radio_set = self.query_one("#choices", RadioSet)
+        buttons = list(radio_set.query(RadioButton))
+        idx = getattr(radio_set, "_selected", None)
+        if idx is not None and 0 <= idx < len(buttons):
+            self.dismiss(str(buttons[idx].label))
+        else:
+            btn = radio_set.pressed_button
+            self.dismiss(str(btn.label) if btn else self._default)
 
     def action_abort(self) -> None:
         self.app.exit(None)

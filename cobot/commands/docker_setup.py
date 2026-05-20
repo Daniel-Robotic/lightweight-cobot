@@ -84,7 +84,15 @@ class _Wizard(App[Optional[_Config]]):
             return
         self._state["source"] = "build" if v == "Build locally" else "pull"
         self.push_screen(
-            PickScreen("Step 3 of 5", "What to install:", ["Controller only", "Controller and Webots"], "Controller only"),
+            PickScreen(
+                "Step 3 of 5",
+                "What to install:",
+                [
+                    "Controller only — ros-core, ros-base, ros-iiwa7",
+                    "Controller with Webots — ros-core, ros-base, ros-iiwa7-webots",
+                ],
+                "Controller only — ros-core, ros-base, ros-iiwa7",
+            ),
             self._got_variant,
         )
 
@@ -92,7 +100,7 @@ class _Wizard(App[Optional[_Config]]):
         if v is None:
             self.exit(None)
             return
-        self._state["variant"] = "webots" if v == "Controller and Webots" else "controller"
+        self._state["variant"] = "webots" if v.startswith("Controller with Webots") else "controller"
         self.push_screen(
             PickScreen("Step 4 of 5", "Build type:", ["release", "dev"], "release"),
             self._got_build_type,

@@ -3,6 +3,7 @@ import sys
 
 from cobot.commands import docker_setup as cmd_docker_setup
 from cobot.commands import doc_setup as cmd_doc_setup
+from cobot.commands import local_setup as cmd_local_setup
 from cobot.commands import robot_setup as cmd_robot_setup
 from cobot.commands import setup as cmd_setup
 
@@ -10,7 +11,8 @@ from cobot.commands import setup as cmd_setup
 # Add new commands here when introducing other categories.
 _GROUPS = [
     ("Setup", [
-        ("setup",        "run doc-setup + docker-setup + robot-setup in one go"),
+        ("setup",        "first-time setup: docs, build environment, robot config"),
+        ("local-setup",  "install ROS2 Jazzy natively and build the project with colcon"),
         ("docker-setup", "build or pull Docker images for KUKA iiwa7"),
         ("doc-setup",    "deploy or stop the MkDocs documentation server"),
         ("robot-setup",  "configure cobot-setting.yaml interactively"),
@@ -68,6 +70,7 @@ def main():
 
 def _register_commands(subparsers):
     cmd_setup.register(subparsers)
+    cmd_local_setup.register(subparsers)
     cmd_docker_setup.register(subparsers)
     cmd_doc_setup.register(subparsers)
     cmd_robot_setup.register(subparsers)
