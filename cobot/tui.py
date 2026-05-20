@@ -6,7 +6,7 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import Footer, Input, RadioButton, RadioSet, RichLog, Static
+from textual.widgets import Footer, Input, LoadingIndicator, RadioButton, RadioSet, RichLog, Static
 
 SCREEN_CSS = """
 Screen {
@@ -40,6 +40,10 @@ LogScreen #log {
     height: 1fr;
     border: none;
     padding: 0 1;
+    margin-top: 1;
+}
+LogScreen #loading {
+    height: 1;
     margin-top: 1;
 }
 LogScreen #hint {
@@ -140,6 +144,7 @@ class LogScreen(Screen[bool]):
     def compose(self) -> ComposeResult:
         yield Static(self._title, id="step")
         yield RichLog(id="log", highlight=True, markup=True, wrap=True)
+        yield LoadingIndicator(id="loading")
         yield Static("", id="hint")
         yield Footer()
 
@@ -160,6 +165,7 @@ class LogScreen(Screen[bool]):
 
     def _do_finish(self, success: bool) -> None:
         self._finished = True
+        self.query_one("#loading", LoadingIndicator).display = False
         msg = (
             "[green]Done![/green]  Press [bold]Enter[/bold] to close."
             if success

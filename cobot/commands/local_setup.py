@@ -41,10 +41,17 @@ def _detect_ros2_jazzy() -> bool:
 Write = Callable[[str], None]
 
 
-def _run_quiet(cmd: List[str]) -> None:
-    result = subprocess.run(cmd, capture_output=True)
+def _run_quiet(cmd: List[str], write: Write | None = None, env: dict | None = None, cwd=None) -> None:
+    result = subprocess.run(
+        cmd, capture_output=True, text=True,
+        env=env or os.environ, cwd=cwd,
+    )
     if result.returncode != 0:
-        raise RuntimeError(f"Exit {result.returncode}: {cmd[0]}")
+        if write:
+            for line in (result.stdout + result.stderr).splitlines():
+                if line.strip():
+                    write(line)
+        raise RuntimeError(f"Command failed: {cmd[0]}")
 
 
 def _run_logged(cmd: List[str], write: Write, env: dict | None = None, cwd=None) -> None:
@@ -62,7 +69,7 @@ def _run_logged(cmd: List[str], write: Write, env: dict | None = None, cwd=None)
             write(s)
     proc.wait()
     if proc.returncode != 0:
-        raise RuntimeError(f"Exit {proc.returncode}: {cmd[0]}")
+        raise RuntimeError(f"Command failed: {cmd[0]}")
 
 
 def _setup_locale(write: Write) -> None:
@@ -71,10 +78,10 @@ def _setup_locale(write: Write) -> None:
         write("[green][ok][/green] UTF-8 locale active")
         return
     write("[cyan][*][/cyan] Configuring UTF-8 locale...")
-    _run_quiet(["sudo", "apt-get", "update", "-qq"])
-    _run_logged(["sudo", "apt-get", "install", "-y", "--no-install-recommends", "locales"], write, _APT_ENV)
-    _run_logged(["sudo", "locale-gen", "en_US.UTF-8"], write)
-    _run_quiet(["sudo", "update-locale", "LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8"])
+    _run_quiet(["sudo", "apt-get", "update", "-qq"], write)
+    _run_quiet(["sudo", "apt-get", "install", "-y", "--no-install-recommends", "locales"], write, _APT_ENV)
+    _run_quiet(["sudo", "locale-gen", "en_US.UTF-8"], write)
+    _run_quiet(["sudo", "update-locale", "LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8"], write)
     write("[green][ok][/green] Locale configured")
 
 
@@ -84,12 +91,12 @@ def _add_ros2_repo(write: Write) -> None:
     # Best-effort update before installing prereqs (ignore errors from broken repos)
     subprocess.run(["sudo", "apt-get", "update", "-qq"], capture_output=True)
 
-    _run_logged(
+    _run_quiet(
         ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
          "software-properties-common", "curl", "gnupg"],
         write, _APT_ENV,
     )
-    _run_quiet(["sudo", "add-apt-repository", "-y", "universe"])
+    _run_quiet(["sudo", "add-apt-repository", "-y", "universe"], write)
 
     # Always re-download and dearmor the key to fix any previous bad install
     write("[cyan][*][/cyan] Downloading ROS2 signing key...")
@@ -118,13 +125,13 @@ def _add_ros2_repo(write: Write) -> None:
         raise RuntimeError(f"Failed to write {_ROS_SOURCES}")
 
     write("[cyan][*][/cyan] Updating apt cache...")
-    _run_logged(["sudo", "apt-get", "update", "-q"], write, _APT_ENV)
+    _run_quiet(["sudo", "apt-get", "update", "-q"], write, _APT_ENV)
     write("[green][ok][/green] ROS2 repository ready")
 
 
 def _install_ros2_jazzy(write: Write) -> None:
     write("[cyan][*][/cyan] Installing ros-jazzy-desktop and ros-dev-tools...")
-    _run_logged(
+    _run_quiet(
         ["sudo", "apt-get", "install", "-y",
          "ros-jazzy-desktop", "ros-dev-tools"],
         write, _APT_ENV,
@@ -137,7 +144,7 @@ def _install_colcon(write: Write) -> None:
         write("[green][ok][/green] colcon already available")
         return
     write("[cyan][*][/cyan] Installing colcon...")
-    _run_logged(
+    _run_quiet(
         ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
          "python3-colcon-common-extensions"],
         write, _APT_ENV,

@@ -53,17 +53,14 @@ def _task_update(screen: LogScreen) -> None:
 
         # Pull
         screen.write("\n[cyan][*][/cyan] Pulling changes...")
-        proc = subprocess.Popen(
+        pull = subprocess.run(
             ["git", "pull", "origin", branch],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, cwd=_PROJECT_DIR,
+            capture_output=True, text=True, cwd=_PROJECT_DIR,
         )
-        for line in proc.stdout:
-            s = line.rstrip()
-            if s:
-                screen.write(s)
-        proc.wait()
-        if proc.returncode != 0:
+        if pull.returncode != 0:
+            for line in (pull.stdout + pull.stderr).splitlines():
+                if line.strip():
+                    screen.write(line)
             screen.write("[red]Pull failed.[/red]")
             screen.finish(False)
             return

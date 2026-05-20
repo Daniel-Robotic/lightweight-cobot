@@ -38,17 +38,14 @@ def _image_exists() -> bool:
 def _build_docs_image(write: Write) -> bool:
     write("[cyan][*][/cyan] Building documentation image (runs once)...")
     env = {**os.environ, "DOCKER_BUILDKIT": "0"}
-    proc = subprocess.Popen(
+    result = subprocess.run(
         ["docker", "build", "-t", _IMAGE_NAME, str(_DOC_DIR)],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, env=env,
+        capture_output=True, text=True, env=env,
     )
-    for line in proc.stdout:
-        s = line.rstrip()
-        if s:
-            write(s)
-    proc.wait()
-    if proc.returncode != 0:
+    if result.returncode != 0:
+        for line in (result.stdout + result.stderr).splitlines():
+            if line.strip():
+                write(line)
         write("[red]Image build failed.[/red]")
         return False
     write("[green][ok][/green] Documentation image ready")

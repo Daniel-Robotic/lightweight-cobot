@@ -44,18 +44,16 @@ class _Config:
     hub_repo: str
 
 
-def _stream(cmd: List[str], write: Write, env=None) -> bool:
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, env=env or os.environ,
+def _run_quiet(cmd: List[str], write: Write, env=None) -> bool:
+    result = subprocess.run(
+        cmd, capture_output=True, text=True,
+        env=env or os.environ,
     )
-    for line in proc.stdout:
-        s = line.rstrip()
-        if s:
-            write(s)
-    proc.wait()
-    return proc.returncode == 0
+    if result.returncode != 0:
+        for line in (result.stdout + result.stderr).splitlines():
+            if line.strip():
+                write(line)
+    return result.returncode == 0
 
 
 def _build_image(
@@ -73,7 +71,7 @@ def _build_image(
     if parent_tag:
         cmd += ["--build-arg", f"IMAGE={parent_tag}"]
     cmd.append(str(ctx))
-    ok = _stream(cmd, write, env)
+    ok = _run_quiet(cmd, write, env)
     if ok:
         write(f"[green][ok][/green] {name}")
     else:
@@ -83,7 +81,7 @@ def _build_image(
 
 def _pull_image(name: str, tag: str, write: Write) -> bool:
     write(f"[cyan][*][/cyan] Pulling [bold]{name}[/bold]  ({tag})...")
-    ok = _stream(["docker", "pull", tag], write)
+    ok = _run_quiet(["docker", "pull", tag], write)
     if ok:
         write(f"[green][ok][/green] {name}")
     else:
