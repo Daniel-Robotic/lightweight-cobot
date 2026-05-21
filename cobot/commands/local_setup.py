@@ -17,12 +17,19 @@ from cobot.commands.docker_setup import run as _docker_setup
 
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 
+# Paths used for the ROS2 apt repository signing key and sources list.
+# Пути для ключа подписи apt-репозитория ROS2 и файла sources list.
 _ROS_KEYRING = Path("/usr/share/keyrings/ros-archive-keyring.gpg")
 _ROS_SOURCES = Path("/etc/apt/sources.list.d/ros2.list")
 _ROS_KEY_URL = "https://raw.githubusercontent.com/ros/rosdistro/master/ros.key"
+
+# Suppress apt interactive prompts such as "restart services?".
+# Подавляем интерактивные запросы apt, например "перезапустить службы?".
 _APT_ENV = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
 
 
+# Check whether we are running on Ubuntu 24.04, which is required for ROS2 Jazzy.
+# Проверяем, запущены ли мы на Ubuntu 24.04, которая требуется для ROS2 Jazzy.
 def _detect_ubuntu_2404() -> bool:
     path = Path("/etc/os-release")
     if not path.exists():
@@ -35,6 +42,8 @@ def _detect_ubuntu_2404() -> bool:
     return info.get("ID") == "ubuntu" and info.get("VERSION_ID") == "24.04"
 
 
+# Check whether ROS2 Jazzy is already installed by looking for its directory.
+# Проверяем, установлен ли ROS2 Jazzy, проверяя наличие его директории.
 def _detect_ros2_jazzy() -> bool:
     return Path("/opt/ros/jazzy").is_dir()
 
@@ -42,6 +51,8 @@ def _detect_ros2_jazzy() -> bool:
 Write = Callable[[str], None]
 
 
+# Run a command and capture output. Print it to the log only if the command fails.
+# Запускаем команду и перехватываем вывод. Выводим в лог только если команда завершилась с ошибкой.
 def _run_quiet(cmd: List[str], write: Write | None = None, env: dict | None = None, cwd=None) -> None:
     result = subprocess.run(
         cmd, capture_output=True, text=True,
@@ -55,6 +66,8 @@ def _run_quiet(cmd: List[str], write: Write | None = None, env: dict | None = No
         raise RuntimeError(f"Command failed: {cmd[0]}")
 
 
+# Run a command and stream every output line to the log in real time.
+# Запускаем команду и транслируем каждую строку вывода в лог в реальном времени.
 def _run_logged(cmd: List[str], write: Write, env: dict | None = None, cwd=None) -> None:
     proc = subprocess.Popen(
         cmd,
@@ -80,6 +93,10 @@ def _run_apt_with_progress(
     env: dict | None = None,
 ) -> None:
     """Run an apt command and feed real percentage from APT::Status-Fd to on_progress(0-100)."""
+    # APT::Status-Fd makes apt write progress lines to a pipe descriptor instead of stdout.
+    # We read that pipe in a background thread so we can update the progress bar live.
+    # APT::Status-Fd заставляет apt писать строки прогресса в дескриптор канала, а не в stdout.
+    # Читаем этот канал в фоновом потоке, чтобы обновлять прогресс-бар в реальном времени.
     r_fd, w_fd = os.pipe()
     try:
         proc = subprocess.Popen(
@@ -91,6 +108,8 @@ def _run_apt_with_progress(
             pass_fds=(w_fd,),
         )
     finally:
+        # Close the write end in the parent process so the reader thread gets EOF when apt exits.
+        # Закрываем пишущий конец в родительском процессе, чтобы читающий поток получил EOF при выходе apt.
         os.close(w_fd)
 
     def _read_status() -> None:
@@ -116,10 +135,8 @@ def _run_apt_with_progress(
         raise RuntimeError(f"Command failed: {cmd[0]}")
 
 
-# ---------------------------------------------------------------------------
-# Installation steps
-# ---------------------------------------------------------------------------
-
+# Make sure the system has a UTF-8 locale, which ROS2 requires to work correctly.
+# Убеждаемся, что в системе есть локаль UTF-8, которая требуется ROS2 для корректной работы.
 def _setup_locale(write: Write) -> None:
     write("[cyan][*][/cyan] Checking locale...")
     if "UTF-8" in subprocess.run(["locale"], capture_output=True, text=True).stdout:
@@ -133,6 +150,8 @@ def _setup_locale(write: Write) -> None:
     write("[green][ok][/green] Locale configured")
 
 
+# Add the official ROS2 apt repository and its signing key so we can install ROS2 packages.
+# Добавляем официальный apt-репозиторий ROS2 и его ключ подписи, чтобы можно было установить пакеты ROS2.
 def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] = None) -> None:
     def _prog(p: float) -> None:
         if on_progress:
@@ -159,6 +178,8 @@ def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] 
     try:
         urllib.request.urlretrieve(_ROS_KEY_URL, tmp_path)
         _prog(60)
+        # Convert the ASCII-armored key to binary GPG format that apt understands.
+        # Конвертируем ключ из ASCII-armor формата в бинарный GPG, который понимает apt.
         _run_quiet(["sudo", "gpg", "--dearmor", "--yes", "-o", str(_ROS_KEYRING), tmp_path])
     finally:
         os.unlink(tmp_path)
@@ -192,6 +213,8 @@ def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] 
     _prog(100)
 
 
+# Install the full ROS2 Jazzy Desktop and the developer tools (colcon, rosdep, etc.).
+# Устанавливаем полный ROS2 Jazzy Desktop и инструменты разработчика (colcon, rosdep и т.д.).
 def _install_ros2_jazzy(write: Write, on_progress: Optional[Callable[[float], None]] = None) -> None:
     write("[cyan][*][/cyan] Installing ros-jazzy-desktop and ros-dev-tools...")
     _run_apt_with_progress(
@@ -203,6 +226,8 @@ def _install_ros2_jazzy(write: Write, on_progress: Optional[Callable[[float], No
     write("[green][ok][/green] ROS2 Jazzy Desktop installed")
 
 
+# Install colcon if it is not already available. It is used to build the project packages.
+# Устанавливаем colcon если он ещё не доступен. Он используется для сборки пакетов проекта.
 def _install_colcon(write: Write) -> None:
     if shutil.which("colcon"):
         write("[green][ok][/green] colcon already available")
@@ -216,6 +241,10 @@ def _install_colcon(write: Write) -> None:
     write("[green][ok][/green] colcon installed")
 
 
+# Add "source /opt/ros/jazzy/setup.bash" to the user's shell config file.
+# This makes ROS2 commands available in every new terminal session.
+# Добавляем "source /opt/ros/jazzy/setup.bash" в конфиг оболочки пользователя.
+# Это делает команды ROS2 доступными в каждой новой сессии терминала.
 def _setup_shell_rc(write: Write) -> None:
     shell_name = Path(os.environ.get("SHELL", "/bin/bash")).name
     rc = Path.home() / (".zshrc" if shell_name == "zsh" else ".bashrc")
@@ -228,10 +257,8 @@ def _setup_shell_rc(write: Write) -> None:
     write(f"[green][ok][/green] Added ROS2 setup to ~/{rc.name}")
 
 
-# ---------------------------------------------------------------------------
-# Background tasks (run inside LogScreen worker)
-# ---------------------------------------------------------------------------
-
+# Full ROS2 Jazzy installation split into 5 clearly visible steps with individual progress ranges.
+# Полная установка ROS2 Jazzy, разбитая на 5 наглядных шагов с отдельными диапазонами прогресса.
 def _task_install_jazzy(screen: LogScreen) -> None:
     try:
         # Step 1 — locale  (0 → 5 %)
@@ -275,6 +302,8 @@ def _task_install_jazzy(screen: LogScreen) -> None:
         screen.finish(False)
 
 
+# Build all project packages with colcon and track progress by counting finished packages.
+# Собираем все пакеты проекта с помощью colcon и отслеживаем прогресс по количеству завершённых пакетов.
 def _task_build(screen: LogScreen) -> None:
     try:
         if not shutil.which("colcon"):
@@ -283,7 +312,8 @@ def _task_build(screen: LogScreen) -> None:
             screen.finish(False)
             return
 
-        # Count packages so we can show X/total progress
+        # Count packages first so we can show X/total in the progress label.
+        # Сначала считаем пакеты, чтобы показывать X/всего в подписи прогресса.
         list_result = subprocess.run(
             ["colcon", "list"], capture_output=True, text=True, cwd=_PROJECT_DIR,
         )
@@ -296,6 +326,8 @@ def _task_build(screen: LogScreen) -> None:
         def _track(line: str) -> None:
             nonlocal built
             screen.write(line)
+            # colcon prints "Finished <<<" or "Failed <<<" when each package is done.
+            # colcon печатает "Finished <<<" или "Failed <<<" когда каждый пакет готов.
             if "Finished <<<" in line or "Failed <<<" in line:
                 built += 1
                 screen.set_progress(built / total * 100, f"{built} / {total} packages done")
@@ -310,10 +342,109 @@ def _task_build(screen: LogScreen) -> None:
         screen.finish(False)
 
 
-# ---------------------------------------------------------------------------
-# Textual apps
-# ---------------------------------------------------------------------------
+# Webots version that matches the Docker images used in this project.
+# Версия Webots, соответствующая Docker-образам используемым в этом проекте.
+_WEBOTS_VERSION = "2025a"
+_WEBOTS_DEB_URL = (
+    f"https://github.com/cyberbotics/webots/releases/download/"
+    f"R{_WEBOTS_VERSION}/webots_{_WEBOTS_VERSION}_amd64.deb"
+)
 
+
+def webots_installed() -> bool:
+    """Return True if Webots is available on PATH."""
+    return shutil.which("webots") is not None
+
+
+# Download the Webots .deb from GitHub and install it with apt.
+# Progress: download (0-65%), apt install (65-100%).
+# Скачиваем .deb Webots с GitHub и устанавливаем через apt.
+# Прогресс: скачивание (0-65%), установка apt (65-100%).
+def _task_install_webots(screen: LogScreen) -> None:
+    try:
+        screen.write(f"[bold]Installing Webots {_WEBOTS_VERSION}[/bold]\n")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            deb_path = Path(tmp) / f"webots_{_WEBOTS_VERSION}_amd64.deb"
+
+            screen.write(f"[dim]{_WEBOTS_DEB_URL}[/dim]\n")
+            screen.set_progress(0, "Downloading Webots...")
+
+            # urllib calls this hook periodically with how many bytes have been downloaded.
+            # urllib вызывает этот обратный вызов периодически с количеством скачанных байт.
+            def _hook(blocks: int, block_size: int, total: int) -> None:
+                if total > 0:
+                    pct = min(blocks * block_size / total * 65, 65)
+                    mb = blocks * block_size / 1_048_576
+                    total_mb = total / 1_048_576
+                    screen.set_progress(pct, f"Downloading... {mb:.0f} / {total_mb:.0f} MB")
+
+            urllib.request.urlretrieve(_WEBOTS_DEB_URL, deb_path, _hook)
+            screen.write("[green]Download complete.[/green]")
+            screen.set_progress(65, "Installing package...")
+
+            proc = subprocess.Popen(
+                ["sudo", "apt-get", "install", "-y", str(deb_path)],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True,
+            )
+            for line in proc.stdout:
+                s = line.rstrip()
+                if s:
+                    screen.write(s)
+            proc.wait()
+
+        if proc.returncode != 0:
+            screen.write("\n[red]Installation failed.[/red]")
+            screen.finish(False)
+            return
+
+        screen.set_progress(100, "Done")
+        screen.write("\n[green]Webots installed successfully.[/green]")
+        screen.finish(True)
+    except Exception as exc:
+        screen.write(f"\n[red]Error:[/red] {exc}")
+        screen.finish(False)
+
+
+# Minimal single-question app used between steps where a full wizard is not needed.
+# Минимальное приложение с одним вопросом, используемое между шагами где полный мастер не нужен.
+class _Ask(App[Optional[str]]):
+    CSS = SCREEN_CSS
+
+    def __init__(self, step: str, question: str, options: list, default: str):
+        super().__init__()
+        self._step = step
+        self._question = question
+        self._options = options
+        self._default = default
+
+    def on_mount(self) -> None:
+        self.push_screen(
+            PickScreen(self._step, self._question, self._options, self._default),
+            self.exit,
+        )
+
+
+def _ask(step: str, question: str, options: list, default: str) -> Optional[str]:
+    return _Ask(step, question, options, default).run()
+
+
+# Public app used by run.py to install Webots before launching locally.
+# Публичное приложение, используемое run.py для установки Webots перед локальным запуском.
+class WebotsInstallApp(App[bool]):
+    CSS = SCREEN_CSS
+
+    def on_mount(self) -> None:
+        self.push_screen(
+            LogScreen(f"Installing Webots {_WEBOTS_VERSION}", _task_install_webots, show_progress=True),
+            self.exit,
+        )
+
+
+
+# Ask the user if they want to install ROS2 Jazzy, then run the installer if they say yes.
+# Спрашиваем пользователя хочет ли он установить ROS2 Jazzy, и запускаем установщик если да.
 class _InstallJazzyApp(App[None]):
     CSS = SCREEN_CSS
 
@@ -338,6 +469,8 @@ class _InstallJazzyApp(App[None]):
         )
 
 
+# Run the colcon build without asking any questions - used when ROS2 is already installed.
+# Запускаем сборку colcon без лишних вопросов - используется когда ROS2 уже установлен.
 class _BuildApp(App[None]):
     CSS = SCREEN_CSS
 
@@ -348,6 +481,8 @@ class _BuildApp(App[None]):
         )
 
 
+# Shown when the OS is not Ubuntu 24.04. Offers to fall back to docker-setup instead.
+# Показывается когда ОС не Ubuntu 24.04. Предлагает перейти к docker-setup вместо этого.
 class _DockerPromptApp(App[bool]):
     CSS = SCREEN_CSS
 
@@ -363,9 +498,6 @@ class _DockerPromptApp(App[bool]):
         )
 
 
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
@@ -376,13 +508,33 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def run(args: argparse.Namespace) -> None:
+    # If this is not Ubuntu 24.04 we cannot install ROS2 Jazzy natively - offer Docker instead.
+    # Если это не Ubuntu 24.04 мы не можем установить ROS2 Jazzy нативно - предлагаем Docker вместо этого.
     if not _detect_ubuntu_2404():
         if _DockerPromptApp().run():
             _docker_setup(args)
         return
 
+    # ROS2 not installed yet - show the installer.
+    # After installation the user must restart the terminal, so we stop here.
+    # ROS2 ещё не установлен - показываем установщик.
+    # После установки пользователь должен перезапустить терминал, поэтому останавливаемся здесь.
     if not _detect_ros2_jazzy():
         _InstallJazzyApp().run()
         return
 
+    # ROS2 is ready - build the project.
+    # ROS2 готов - собираем проект.
     _BuildApp().run()
+
+    # Ask about Webots only after a successful build, and only if it is not already installed.
+    # Спрашиваем про Webots только после успешной сборки и только если он ещё не установлен.
+    if not webots_installed():
+        v = _ask(
+            "Optional: Webots",
+            f"Install Webots {_WEBOTS_VERSION} simulator? (can also be done later via cobot run)",
+            [f"Yes, install Webots {_WEBOTS_VERSION}", "No, skip"],
+            "No, skip",
+        )
+        if v and v.startswith("Yes"):
+            WebotsInstallApp().run()

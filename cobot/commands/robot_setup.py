@@ -17,10 +17,16 @@ from cobot.tui import SCREEN_CSS, InputScreen, PickScreen
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 _CONFIG_PATH = _PROJECT_DIR / "cobot-setting.yaml"
 
+# Use ruamel.yaml instead of PyYAML so comments and formatting in the config file are preserved.
+# Используем ruamel.yaml вместо PyYAML, чтобы комментарии и форматирование в конфиге сохранялись.
 _yaml = YAML()
 _yaml.preserve_quotes = True
 
 
+# One question inside a configuration block.
+# A field can either show a pick list (options) or a free-text input (no options).
+# Один вопрос внутри блока конфигурации.
+# Поле может показывать список вариантов (options) или поле для ввода текста (без options).
 @dataclass
 class _Field:
     key: str               # dot-separated path within the block, e.g. "webots.world"
@@ -33,6 +39,8 @@ class _Field:
         return self.key.split(".")[-1]
 
 
+# A group of related fields shown together under one "Configure X?" question.
+# Группа связанных полей, показываемая вместе под одним вопросом "Настроить X?".
 @dataclass
 class _Block:
     yaml_key: str          # top-level key in cobot-setting.yaml
@@ -40,6 +48,8 @@ class _Block:
     fields: List[_Field]
 
 
+# All configuration blocks. Each block maps to a top-level key in cobot-setting.yaml.
+# Все блоки конфигурации. Каждый блок соответствует ключу верхнего уровня в cobot-setting.yaml.
 _BLOCKS: List[_Block] = [
     _Block(
         yaml_key="foxglove",
@@ -101,17 +111,20 @@ _BLOCKS: List[_Block] = [
             _Field("active_controller", "Active ROS controller:", "jtc",
                    note="jtc = JointTrajectoryController (MoveIt), forward = ForwardCommandController",
                    options=["jtc", "forward"]),
-            _Field("joint_position_tau", "Position EMA filter τ (s):", "0.04",
+            _Field("joint_position_tau", "Position EMA filter tau (s):", "0.04",
                    note="Smooths position commands before sending to FRI"),
-            _Field("joint_velocity_tau", "Velocity EMA filter τ (s):", "0.01",
+            _Field("joint_velocity_tau", "Velocity EMA filter tau (s):", "0.01",
                    note="Removes spikes from finite-difference velocity estimation"),
         ],
     ),
 ]
 
 
+# Try to keep the original YAML type (bool, int, float) when saving a value back.
+# Trying to preserve type prevents "true" from becoming a plain string in the YAML file.
+# Пытаемся сохранить исходный тип YAML (bool, int, float) при записи значения обратно.
+# Сохранение типа предотвращает превращение "true" в обычную строку в YAML-файле.
 def _coerce(value: str, original: Any) -> Any:
-    """Try to preserve the original YAML scalar type."""
     if isinstance(original, bool):
         return value.lower() == "true"
     if isinstance(original, int):
@@ -127,6 +140,8 @@ def _coerce(value: str, original: Any) -> Any:
     return value
 
 
+# Read a value from a nested YAML mapping using a dot-separated key like "webots.transform".
+# Читаем значение из вложенного YAML-словаря по ключу с точками, например "webots.transform".
 def _get_nested(mapping: Any, path: str) -> Any:
     keys = path.split(".")
     cur = mapping
@@ -137,6 +152,8 @@ def _get_nested(mapping: Any, path: str) -> Any:
     return cur
 
 
+# Write a value into a nested YAML mapping using a dot-separated key.
+# Записываем значение в вложенный YAML-словарь по ключу с точками.
 def _set_nested(mapping: Any, path: str, value: Any) -> None:
     keys = path.split(".")
     cur = mapping
@@ -146,6 +163,8 @@ def _set_nested(mapping: Any, path: str, value: Any) -> None:
     cur[keys[-1]] = _coerce(value, original)
 
 
+# Shown after all blocks have been configured to confirm the file was saved.
+# Показывается после настройки всех блоков для подтверждения сохранения файла.
 class _SavedScreen(Screen[None]):
     BINDINGS = [Binding("enter,escape", "close", "Close")]
 
@@ -159,13 +178,17 @@ class _SavedScreen(Screen[None]):
         self.dismiss(None)
 
 
+# The main configuration wizard. Goes through each block in order.
+# For each block it first asks "Configure X?" then steps through all its fields.
+# Главный мастер конфигурации. Проходит по каждому блоку по порядку.
+# Для каждого блока сначала спрашивает "Настроить X?" а затем проходит по всем его полям.
 class _Wizard(App[None]):
     CSS = SCREEN_CSS
 
     def __init__(self, data: Any):
         super().__init__()
         self._data = data
-        self._blocks = list(_BLOCKS)  # copy so we can pop
+        self._blocks = list(_BLOCKS)
         self._block_idx = 0
         self._field_idx = 0
         self._current_block: Optional[_Block] = None
@@ -174,9 +197,10 @@ class _Wizard(App[None]):
     def on_mount(self) -> None:
         self._next_block()
 
-
     def _next_block(self) -> None:
         if self._block_idx >= len(self._blocks):
+            # All blocks done - save and show the confirmation screen.
+            # Все блоки пройдены - сохраняем и показываем экран подтверждения.
             _save_config(self._data)
             self.push_screen(_SavedScreen(), lambda _: self.exit())
             return
@@ -204,8 +228,9 @@ class _Wizard(App[None]):
             self._field_idx = 0
             self._next_field()
         else:
+            # Skip all fields in this block and jump to the next block.
+            # Пропускаем все поля этого блока и переходим к следующему.
             self._next_block()
-
 
     def _next_field(self) -> None:
         if not self._pending_fields:
@@ -220,7 +245,7 @@ class _Wizard(App[None]):
         field_num = self._field_idx
         total_fields = len(block.fields)
 
-        step = f"Block {block_num} of {total_blocks}  ·  Field {field_num} of {total_fields}"
+        step = f"Block {block_num} of {total_blocks}  -  Field {field_num} of {total_fields}"
 
         # Resolve current value from loaded YAML as the pre-filled default
         yaml_val = _get_nested(self._data[block.yaml_key], f.key)
@@ -241,16 +266,21 @@ class _Wizard(App[None]):
             return
         block = self._current_block
         _set_nested(self._data[block.yaml_key], f.key, v)
+        # Remove the field we just handled and move on to the next one.
+        # Удаляем только что обработанное поле и переходим к следующему.
         self._pending_fields.pop(0)
         self._next_field()
 
 
-
+# Load the config file preserving all comments and key order.
+# Загружаем конфиг-файл, сохраняя все комментарии и порядок ключей.
 def _load_config() -> Any:
     with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
         return _yaml.load(fh)
 
 
+# Write the modified config back to disk preserving comments and formatting.
+# Записываем изменённый конфиг обратно на диск, сохраняя комментарии и форматирование.
 def _save_config(data: Any) -> None:
     with open(_CONFIG_PATH, "w", encoding="utf-8") as fh:
         _yaml.dump(data, fh)

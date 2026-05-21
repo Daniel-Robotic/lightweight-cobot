@@ -14,6 +14,11 @@ from textual.app import App
 from cobot.tui import SCREEN_CSS, InputScreen, LogScreen
 
 _PROJECT_DIR = Path(__file__).parent.parent.parent
+
+# The documentation source lives inside the project. We mount it into the container so
+# MkDocs can pick up live edits without rebuilding the image.
+# Исходники документации находятся внутри проекта. Монтируем директорию в контейнер, чтобы
+# MkDocs мог подхватывать изменения вживую без пересборки образа.
 _DOC_DIR = _PROJECT_DIR / "doc" / "lwc-doc"
 _IMAGE_NAME = "lwc-docs"
 _CONTAINER_NAME = "lwc-docs"
@@ -22,24 +27,36 @@ _DEFAULT_PORT = "8000"
 Write = Callable[[str], None]
 
 
+# Thin wrapper around docker so we do not repeat ["docker", ...] everywhere.
+# Тонкая обёртка вокруг docker, чтобы не повторять ["docker", ...] везде.
 def _docker(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", *args], capture_output=capture, text=True)
 
 
+# Check whether the docs container is currently running.
+# Проверяем, запущен ли сейчас контейнер с документацией.
 def _is_running() -> bool:
     r = _docker("ps", "--filter", f"name={_CONTAINER_NAME}", "--format", "{{.Names}}", capture=True)
     return _CONTAINER_NAME in r.stdout
 
 
+# Check whether the docs Docker image has already been built.
+# Проверяем, был ли уже собран Docker-образ для документации.
 def _image_exists() -> bool:
     return bool(_docker("images", "-q", _IMAGE_NAME, capture=True).stdout.strip())
 
 
+# Build the MkDocs Docker image. Only needs to run once.
+# Progress comes from parsing "Step X/Y" lines in the docker build output.
+# Собираем Docker-образ MkDocs. Нужно сделать только один раз.
+# Прогресс получаем, парся строки "Step X/Y" из вывода docker build.
 def _build_docs_image(
     write: Write,
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> bool:
     write("[cyan][*][/cyan] Building documentation image (runs once)...")
+    # DOCKER_BUILDKIT=0 gives us "Step X/Y" lines that we can parse for progress.
+    # DOCKER_BUILDKIT=0 даёт нам строки "Step X/Y", которые можно парсить для прогресса.
     env = {**os.environ, "DOCKER_BUILDKIT": "0"}
     proc = subprocess.Popen(
         ["docker", "build", "-t", _IMAGE_NAME, str(_DOC_DIR)],
@@ -62,6 +79,8 @@ def _build_docs_image(
     return False
 
 
+# Start the docs server. Builds the image first if it does not exist yet.
+# Запускаем сервер документации. Сначала собирает образ, если он ещё не существует.
 def _task_up(screen: LogScreen, port: str) -> None:
     try:
         if _is_running():
@@ -91,6 +110,8 @@ def _task_up(screen: LogScreen, port: str) -> None:
         result = _docker(
             "run", "-d", "--name", _CONTAINER_NAME, "--rm",
             "-p", f"{port}:8000",
+            # Mount the docs directory so edits appear live without restarting the container.
+            # Монтируем директорию с документацией, чтобы изменения появлялись сразу без перезапуска.
             "-v", f"{_DOC_DIR}:/docs",
             _IMAGE_NAME, "serve", "--dev-addr=0.0.0.0:8000",
             capture=True,
@@ -111,6 +132,8 @@ def _task_up(screen: LogScreen, port: str) -> None:
         screen.finish(False)
 
 
+# Stop the running docs container.
+# Останавливаем работающий контейнер с документацией.
 def _task_down(screen: LogScreen) -> None:
     try:
         if not _is_running():
@@ -128,6 +151,8 @@ def _task_down(screen: LogScreen) -> None:
         screen.finish(False)
 
 
+# Stop the container, remove the old image, rebuild it, and start a new container.
+# Останавливаем контейнер, удаляем старый образ, пересобираем и запускаем новый контейнер.
 def _task_rebuild(screen: LogScreen, port: str) -> None:
     try:
         if _is_running():
@@ -174,6 +199,8 @@ def _task_rebuild(screen: LogScreen, port: str) -> None:
         screen.finish(False)
 
 
+# One app handles all three actions (up/down/rebuild) by branching in on_mount.
+# Одно приложение обрабатывает все три действия (up/down/rebuild), разветвляясь в on_mount.
 class _DocApp(App[None]):
     CSS = SCREEN_CSS
 
@@ -202,6 +229,8 @@ class _DocApp(App[None]):
         if port is None:
             self.exit()
             return
+        # Use the default port if the user cleared the input or typed something that is not a number.
+        # Используем порт по умолчанию если пользователь очистил ввод или написал не число.
         p = (port.strip() or _DEFAULT_PORT) if port.isdigit() or not port.strip() else _DEFAULT_PORT
         self.push_screen(
             LogScreen("Documentation server", lambda s: _task_up(s, p), show_progress=True),

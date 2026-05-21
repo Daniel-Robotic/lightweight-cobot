@@ -11,9 +11,14 @@ from cobot.tui import SCREEN_CSS, LogScreen
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 
 
+# Pull the latest commits from the remote and reinstall the cobot CLI in one go.
+# Progress bar: fetch (0-30%), pull (30-80%), reinstall (80-100%).
+# Скачиваем последние коммиты с удалённого репозитория и переустанавливаем cobot CLI за один раз.
+# Прогресс-бар: fetch (0-30%), pull (30-80%), переустановка (80-100%).
 def _task_update(screen: LogScreen) -> None:
     try:
-        # Current branch
+        # Find out which branch we are on so we can fetch and pull the right one.
+        # Определяем на какой ветке мы находимся, чтобы делать fetch и pull нужной ветки.
         branch = subprocess.check_output(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=_PROJECT_DIR, text=True,
@@ -33,7 +38,8 @@ def _task_update(screen: LogScreen) -> None:
             return
         screen.set_progress(30)
 
-        # Check how many commits behind
+        # Count how many commits the remote is ahead of us.
+        # Считаем сколько коммитов нас опережает удалённый репозиторий.
         behind = subprocess.check_output(
             ["git", "rev-list", f"HEAD..origin/{branch}", "--count"],
             cwd=_PROJECT_DIR, text=True,
@@ -45,7 +51,8 @@ def _task_update(screen: LogScreen) -> None:
             screen.finish(True)
             return
 
-        # Show incoming commits
+        # Show which commits are coming in so the user knows what changed.
+        # Показываем какие коммиты приходят, чтобы пользователь знал что изменилось.
         screen.write(f"\n[bold]{behind} new commit(s):[/bold]")
         log_lines = subprocess.check_output(
             ["git", "log", f"HEAD..origin/{branch}", "--oneline"],
@@ -71,6 +78,8 @@ def _task_update(screen: LogScreen) -> None:
         screen.set_progress(80)
 
         # Reinstall (80 → 100 %)
+        # Reinstall so the cobot binary picks up any new dependencies from pyproject.toml.
+        # Переустанавливаем, чтобы бинарник cobot подхватил новые зависимости из pyproject.toml.
         screen.set_progress(80, "Reinstalling cobot CLI...")
         screen.write("\n[cyan][*][/cyan] Reinstalling cobot CLI...")
         reinstall = subprocess.run(

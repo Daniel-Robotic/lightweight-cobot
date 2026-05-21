@@ -8,6 +8,8 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import Footer, Input, LoadingIndicator, ProgressBar, RadioButton, RadioSet, RichLog, Static
 
+# Shared CSS applied to every screen in the app.
+# Общий CSS, применяемый ко всем экранам приложения.
 SCREEN_CSS = """
 Screen {
     padding: 2 4;
@@ -77,6 +79,10 @@ RunScreen #hint {
 """
 
 
+# A screen that shows a question and a list of radio button options.
+# The user picks one and presses Enter - the chosen string is returned as the result.
+# Экран с вопросом и списком вариантов в виде радио-кнопок.
+# Пользователь выбирает один и нажимает Enter - выбранная строка возвращается как результат.
 class PickScreen(Screen[Optional[str]]):
     BINDINGS = [
         Binding("enter", "submit", "Confirm", priority=True),
@@ -98,6 +104,8 @@ class PickScreen(Screen[Optional[str]]):
             yield Static(self._note, id="note")
         with RadioSet(id="choices"):
             for opt in self._options:
+                # Pre-select the default option so the user can just press Enter to accept it.
+                # Заранее выделяем вариант по умолчанию, чтобы пользователь мог просто нажать Enter.
                 yield RadioButton(opt, value=(opt == self._default))
         yield Footer()
 
@@ -115,9 +123,15 @@ class PickScreen(Screen[Optional[str]]):
             self.dismiss(str(btn.label) if btn else self._default)
 
     def action_abort(self) -> None:
+        # Exit the whole app, not just this screen, so the calling code knows the user cancelled.
+        # Выходим из всего приложения, а не только из этого экрана, чтобы вызывающий код знал об отмене.
         self.app.exit(None)
 
 
+# A screen that shows a question with a free-text input field.
+# The user types a value, presses Enter, and the text is returned as the result.
+# Экран с вопросом и полем для ввода произвольного текста.
+# Пользователь вводит значение, нажимает Enter, и текст возвращается как результат.
 class InputScreen(Screen[Optional[str]]):
     BINDINGS = [
         Binding("enter", "submit", "Confirm", priority=True),
@@ -154,9 +168,13 @@ class InputScreen(Screen[Optional[str]]):
         self.app.exit(None)
 
 
+# A screen that streams output from a background task into a scrollable log.
+# Used for long-running operations like installs and builds.
+# Press Enter or Escape to close once the task finishes.
+# Экран, который транслирует вывод фоновой задачи в прокручиваемый лог.
+# Используется для долгих операций, таких как установка и сборка.
+# После завершения задачи закрывается по нажатию Enter или Escape.
 class LogScreen(Screen[bool]):
-    """Streams task output into a scrollable log; press Enter to close when done."""
-
     BINDINGS = [Binding("enter,escape", "close", "Close", show=False)]
 
     def __init__(self, title: str, task: Callable[[LogScreen], None], show_progress: bool = False):
@@ -179,10 +197,13 @@ class LogScreen(Screen[bool]):
 
     def on_mount(self) -> None:
         self.query_one(RichLog).focus()
+        # Run the task in a worker thread so the UI stays responsive.
+        # Запускаем задачу в отдельном потоке, чтобы интерфейс не зависал.
         self.app.run_worker(lambda: self._run_fn(self), thread=True)
 
     def set_progress(self, pct: float, label: str = "") -> None:
-        """Thread-safe: update the progress bar and optional step label."""
+        # Thread-safe - this is called from the worker thread, not the UI thread.
+        # Потокобезопасно - вызывается из рабочего потока, а не из потока интерфейса.
         if self._show_progress:
             self.app.call_from_thread(self._do_set_progress, pct, label)
 
@@ -192,14 +213,16 @@ class LogScreen(Screen[bool]):
             self.query_one("#step-label", Static).update(label)
 
     def write(self, line: str) -> None:
-        """Thread-safe: append a line to the log."""
+        # Thread-safe - append a line to the log from a worker thread.
+        # Потокобезопасно - добавляет строку в лог из рабочего потока.
         self.app.call_from_thread(self._append, line)
 
     def _append(self, line: str) -> None:
         self.query_one(RichLog).write(line)
 
     def finish(self, success: bool) -> None:
-        """Thread-safe: mark task done and prompt the user to close."""
+        # Thread-safe - called by the task when it is done to show the close hint.
+        # Потокобезопасно - вызывается задачей по завершении, чтобы показать подсказку о закрытии.
         self.app.call_from_thread(self._do_finish, success)
 
     def _do_finish(self, success: bool) -> None:
@@ -214,13 +237,17 @@ class LogScreen(Screen[bool]):
         self.query_one("#hint", Static).update(msg)
 
     def action_close(self) -> None:
+        # Only allow closing after the task has finished, not while it is still running.
+        # Разрешаем закрытие только после завершения задачи, а не во время её работы.
         if self._finished:
             self.dismiss(self._success)
 
 
+# A screen for a long-running process that the user can stop at any time.
+# Shows a live log and offers S / Enter / Escape to stop or close.
+# Экран для долго работающего процесса, который пользователь может остановить в любой момент.
+# Показывает живой лог и предлагает S / Enter / Escape для остановки или закрытия.
 class RunScreen(Screen[None]):
-    """Streams a long-running process. S/Enter/Escape stops or closes."""
-
     BINDINGS = [
         Binding("s", "stop_close", "Stop", show=True, priority=True),
         Binding("enter", "stop_close", "Close", show=False),
@@ -231,8 +258,8 @@ class RunScreen(Screen[None]):
         super().__init__()
         self._title = title
         self._run_fn = task
-        self._proc = None          # set via set_proc()
-        self._kill_fn = None       # optional custom kill callable
+        self._proc = None          # the subprocess, set via set_proc()
+        self._kill_fn = None       # optional custom kill callable, set via set_kill_fn()
         self._finished = False
         self._stopped = False
 
@@ -245,23 +272,33 @@ class RunScreen(Screen[None]):
 
     def on_mount(self) -> None:
         self.query_one(RichLog).focus()
+        # Run the process task in a worker thread so the UI stays responsive.
+        # Запускаем задачу с процессом в отдельном потоке, чтобы интерфейс не зависал.
         self.app.run_worker(lambda: self._run_fn(self), thread=True)
 
     def set_proc(self, proc) -> None:
-        """Register the running subprocess so Stop can terminate it."""
+        # Register the subprocess so the Stop button knows what to terminate.
+        # Регистрируем subprocess, чтобы кнопка Stop знала что завершать.
         self._proc = proc
 
     def set_kill_fn(self, fn: Callable) -> None:
-        """Override the default terminate() with a custom kill function."""
+        # Override the default proc.terminate() with a custom kill function.
+        # For example, docker kill or os.killpg for process groups.
+        # Заменяем стандартный proc.terminate() кастомной функцией завершения.
+        # Например, docker kill или os.killpg для групп процессов.
         self._kill_fn = fn
 
     def write(self, line: str) -> None:
+        # Thread-safe - called from the worker thread to append a log line.
+        # Потокобезопасно - вызывается из рабочего потока для добавления строки в лог.
         self.app.call_from_thread(self._append, line)
 
     def _append(self, line: str) -> None:
         self.query_one(RichLog).write(line)
 
     def finish(self, stopped: bool = False) -> None:
+        # Thread-safe - called by the task when the process exits naturally.
+        # Потокобезопасно - вызывается задачей когда процесс завершается естественным образом.
         self.app.call_from_thread(self._do_finish, stopped)
 
     def _do_finish(self, stopped: bool) -> None:
@@ -274,6 +311,10 @@ class RunScreen(Screen[None]):
         self.query_one("#hint", Static).update(msg)
 
     def action_stop_close(self) -> None:
+        # This runs in the UI thread, so we call _append() directly instead of write()
+        # because write() uses call_from_thread() which only works from other threads.
+        # Выполняется в потоке UI, поэтому вызываем _append() напрямую, а не write(),
+        # потому что write() использует call_from_thread(), который работает только из других потоков.
         if self._finished:
             self.dismiss(None)
             return
@@ -288,4 +329,4 @@ class RunScreen(Screen[None]):
                 self._proc.terminate()
             except Exception:
                 pass
-        self.write("\n[yellow]Stopping process...[/yellow]")
+        self._append("\n[yellow]Stopping process...[/yellow]")

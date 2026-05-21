@@ -11,17 +11,32 @@ from typing import Callable, List, Optional
 from textual.app import App
 
 from cobot.tui import SCREEN_CSS, LogScreen, PickScreen, RunScreen
+from cobot.commands.local_setup import webots_installed, WebotsInstallApp, _WEBOTS_VERSION
 
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 _CONFIG_PATH = _PROJECT_DIR / "cobot-setting.yaml"
 _INSTALL_DIR = _PROJECT_DIR / "install"
 _JAZZY_DIR = Path("/opt/ros/jazzy")
+
+# Path where the config file is mounted inside the Docker container.
+# Путь по которому конфиг-файл монтируется внутри Docker-контейнера.
 _CONFIG_IN_CONTAINER = "/ros2_ws/cobot-setting.yaml"
 
+# Container names used for docker run and docker kill.
+# Имена контейнеров, используемые для docker run и docker kill.
 _CONTAINER_CONTROLLER = "lwc-controller"
 _CONTAINER_WEBOTS = "lwc-webots"
 
-# Candidates checked in order; for controller the webots image is a valid fallback
+# Named Docker volume that stores the Webots asset cache between container runs.
+# Without it Webots re-downloads all 3D assets from the internet on every launch.
+# Именованный Docker volume для хранения кэша ассетов Webots между запусками контейнера.
+# Без него Webots заново скачивает все 3D-ассеты из интернета при каждом запуске.
+_WEBOTS_CACHE_VOLUME = "lwc-webots-cache"
+
+# Candidates checked in order - for the controller the webots image is a valid fallback
+# because it already contains all controller packages too.
+# Кандидаты проверяются по порядку - для контроллера образ webots является допустимым запасным,
+# так как он уже содержит все пакеты контроллера.
 _CONTROLLER_IMAGES = [
     "lwc-local:ros-iiwa7-jazzy",
     "evilfisru/lwc:iiwa-jazzy",
@@ -37,10 +52,10 @@ _WEBOTS_IMAGES = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Small utilities
-# ---------------------------------------------------------------------------
-
+# A minimal app that asks one question and exits immediately with the chosen value.
+# We need a full App because Textual screens cannot run outside one.
+# Минимальное приложение, которое задаёт один вопрос и сразу выходит с выбранным значением.
+# Нам нужен полноценный App, потому что экраны Textual не могут работать вне него.
 class _Ask(App[Optional[str]]):
     CSS = SCREEN_CSS
 
@@ -59,9 +74,13 @@ class _Ask(App[Optional[str]]):
 
 
 def _ask(step: str, question: str, options: List[str], default: str) -> Optional[str]:
+    # Returns None when the user pressed Escape to cancel.
+    # Возвращает None когда пользователь нажал Escape для отмены.
     return _Ask(step, question, options, default).run()
 
 
+# Detect the GPU type so we can pass the right flags to docker run for Webots rendering.
+# Определяем тип GPU, чтобы передать нужные флаги в docker run для рендеринга Webots.
 def _detect_gpu() -> str:
     if shutil.which("nvidia-smi"):
         if subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0:
@@ -71,6 +90,8 @@ def _detect_gpu() -> str:
     return "software"
 
 
+# List all Docker images currently available on this machine.
+# Получаем список всех Docker-образов доступных на этой машине.
 def _docker_images() -> set:
     r = subprocess.run(
         ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
@@ -79,6 +100,8 @@ def _docker_images() -> set:
     return set(r.stdout.strip().splitlines())
 
 
+# Return the first image from the candidates list that is already present locally.
+# Возвращаем первый образ из списка кандидатов, который уже присутствует локально.
 def _find_image(candidates: List[str]) -> Optional[str]:
     available = _docker_images()
     for img in candidates:
@@ -87,14 +110,16 @@ def _find_image(candidates: List[str]) -> Optional[str]:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Build project (colcon build --mixin release)
-# ---------------------------------------------------------------------------
-
+# Build the ROS2 project locally with colcon. Used when launching in local mode
+# and the install/ directory does not exist yet.
+# Собираем ROS2-проект локально с помощью colcon. Используется при запуске в локальном режиме,
+# если директория install/ ещё не существует.
 def _task_build(screen: LogScreen) -> None:
     try:
         screen.write("[bold]Building project with colcon[/bold]\n")
 
+        # Count packages first so we can show X/total progress.
+        # Сначала считаем пакеты, чтобы показывать X/всего в прогрессе.
         list_proc = subprocess.run(
             ["bash", "-c", f"source {_JAZZY_DIR}/setup.bash && colcon list"],
             capture_output=True, text=True, cwd=_PROJECT_DIR,
@@ -113,6 +138,8 @@ def _task_build(screen: LogScreen) -> None:
             s = line.rstrip()
             if s:
                 screen.write(s)
+            # colcon prints "Finished <<<" or "Failed <<<" when each package is done.
+            # colcon печатает "Finished <<<" или "Failed <<<" когда каждый пакет готов.
             if "Finished <<<" in line or "Failed <<<" in line:
                 built += 1
                 screen.set_progress(built / total * 100, f"{built} / {total} packages done")
@@ -141,10 +168,10 @@ class _BuildApp(App[bool]):
         )
 
 
-# ---------------------------------------------------------------------------
-# Local launch task
-# ---------------------------------------------------------------------------
-
+# Start the ROS2 launch file directly on this machine without Docker.
+# Uses start_new_session so we can kill the whole process group with one signal.
+# Запускаем launch-файл ROS2 напрямую на этой машине без Docker.
+# Используем start_new_session, чтобы можно было убить всю группу процессов одним сигналом.
 def _task_run_local(screen: RunScreen, mode: str) -> None:
     config = str(_CONFIG_PATH)
     ros_cmd = f"ros2 launch iiwa_bringup iiwa.launch.py setting:={config}"
@@ -168,6 +195,8 @@ def _task_run_local(screen: RunScreen, mode: str) -> None:
         start_new_session=True,
     )
     screen.set_proc(proc)
+    # Kill the entire process group so all child processes (nodes) are terminated together.
+    # Убиваем всю группу процессов, чтобы все дочерние процессы (узлы) завершились вместе.
     screen.set_kill_fn(lambda: os.killpg(os.getpgid(proc.pid), signal.SIGTERM))
 
     for line in proc.stdout:
@@ -179,18 +208,22 @@ def _task_run_local(screen: RunScreen, mode: str) -> None:
     screen.finish(stopped=screen._stopped)
 
 
-# ---------------------------------------------------------------------------
-# Docker launch task
-# ---------------------------------------------------------------------------
-
+# Start the ROS2 launch file inside a Docker container.
+# For Webots mode we also forward X11 and GPU access so the simulator window can appear on screen.
+# Запускаем launch-файл ROS2 внутри Docker-контейнера.
+# Для режима Webots также пробрасываем X11 и доступ к GPU, чтобы окно симулятора появилось на экране.
 def _task_run_docker(screen: RunScreen, image: str, mode: str, gpu: str) -> None:
     container = _CONTAINER_WEBOTS if mode == "webots" else _CONTAINER_CONTROLLER
 
-    ros_cmd = f"ros2 launch iiwa_bringup iiwa.launch.py setting:={_CONFIG_IN_CONTAINER}"
+    ros_cmd = (
+        "source /ros2_ws/install/setup.bash && "
+        f"ros2 launch iiwa_bringup iiwa.launch.py setting:={_CONFIG_IN_CONTAINER}"
+    )
     if mode == "webots":
         ros_cmd += " simulate:=1"
 
-    # Remove stale container with the same name
+    # Remove any stale container with the same name left from a previous run.
+    # Удаляем устаревший контейнер с таким же именем, оставшийся от предыдущего запуска.
     subprocess.run(["docker", "rm", "-f", container], capture_output=True)
 
     cmd = [
@@ -201,11 +234,16 @@ def _task_run_docker(screen: RunScreen, image: str, mode: str, gpu: str) -> None
     ]
 
     if mode == "webots":
+        # Allow the container to open windows on the host display.
+        # Разрешаем контейнеру открывать окна на дисплее хоста.
         subprocess.run(["xhost", "+local:docker"], capture_output=True)
         cmd += [
             "-e", f"DISPLAY={os.environ.get('DISPLAY', ':0')}",
             "-e", "QT_X11_NO_MITSHM=1",
             "-v", "/tmp/.X11-unix:/tmp/.X11-unix:rw",
+            # Persist the Webots asset cache so it is not re-downloaded on every launch.
+            # Сохраняем кэш ассетов Webots, чтобы он не скачивался заново при каждом запуске.
+            "-v", f"{_WEBOTS_CACHE_VOLUME}:/root/.cache/Cyberbotics/Webots",
         ]
         if gpu == "nvidia":
             cmd += [
@@ -214,13 +252,19 @@ def _task_run_docker(screen: RunScreen, image: str, mode: str, gpu: str) -> None
                 "-e", "NVIDIA_DRIVER_CAPABILITIES=graphics,utility,compute",
             ]
         elif gpu == "mesa":
+            # Pass through the DRI device for Intel/AMD hardware acceleration.
+            # Пробрасываем DRI-устройство для аппаратного ускорения Intel/AMD.
             cmd += ["--device", "/dev/dri"]
         else:
+            # No GPU found - fall back to software rendering via llvmpipe.
+            # GPU не найден - используем программный рендеринг через llvmpipe.
             cmd += [
                 "-e", "LIBGL_ALWAYS_SOFTWARE=1",
                 "-e", "GALLIUM_DRIVER=llvmpipe",
             ]
 
+    # Mount the config file so the container uses our local cobot-setting.yaml.
+    # Монтируем конфиг-файл, чтобы контейнер использовал наш локальный cobot-setting.yaml.
     if _CONFIG_PATH.exists():
         cmd += ["-v", f"{_CONFIG_PATH}:{_CONFIG_IN_CONTAINER}:ro"]
 
@@ -244,6 +288,11 @@ def _task_run_docker(screen: RunScreen, image: str, mode: str, gpu: str) -> None
         text=True,
     )
     screen.set_proc(proc)
+    # Use docker kill instead of proc.terminate() so the container is stopped immediately.
+    # Terminating only the docker CLI process leaves the container itself running.
+    # Используем docker kill вместо proc.terminate(), чтобы контейнер остановился немедленно.
+    # Завершение только процесса docker CLI оставляет сам контейнер работающим.
+    screen.set_kill_fn(lambda: subprocess.run(["docker", "kill", container], capture_output=True))
 
     for line in proc.stdout:
         s = line.rstrip()
@@ -254,10 +303,8 @@ def _task_run_docker(screen: RunScreen, image: str, mode: str, gpu: str) -> None
     screen.finish(stopped=screen._stopped)
 
 
-# ---------------------------------------------------------------------------
-# RunApp wrapper
-# ---------------------------------------------------------------------------
-
+# Wraps a RunScreen in an App so it can be launched with .run().
+# Оборачивает RunScreen в App, чтобы его можно было запустить через .run().
 class _RunApp(App[None]):
     CSS = SCREEN_CSS
 
@@ -270,10 +317,10 @@ class _RunApp(App[None]):
         self.push_screen(RunScreen(self._title, self._run_fn), lambda _: self.exit())
 
 
-# ---------------------------------------------------------------------------
-# Local flow
-# ---------------------------------------------------------------------------
-
+# Guide the user through launching locally - asks what to run, checks prerequisites,
+# installs Webots and builds the project if needed, then launches.
+# Ведёт пользователя через локальный запуск - спрашивает что запустить, проверяет
+# предварительные условия, устанавливает Webots и собирает проект при необходимости, затем запускает.
 def _local_flow(args: argparse.Namespace) -> None:
     mode_v = _ask(
         "Run local",
@@ -284,6 +331,20 @@ def _local_flow(args: argparse.Namespace) -> None:
     if mode_v is None:
         return
     mode = "webots" if mode_v == "Webots simulator" else "controller"
+
+    # Check Webots installed (local mode only)
+    if mode == "webots" and not webots_installed():
+        v = _ask(
+            "Webots not found",
+            f"Webots {_WEBOTS_VERSION} is not installed. Install it now?",
+            [f"Yes, install Webots {_WEBOTS_VERSION}", "No, cancel"],
+            f"Yes, install Webots {_WEBOTS_VERSION}",
+        )
+        if v is None or v.startswith("No"):
+            return
+        ok = WebotsInstallApp().run()
+        if not ok:
+            return
 
     # Check ROS2 Jazzy
     if not _JAZZY_DIR.is_dir():
@@ -316,10 +377,10 @@ def _local_flow(args: argparse.Namespace) -> None:
     _RunApp(f"Running {label} — local", lambda s: _task_run_local(s, mode)).run()
 
 
-# ---------------------------------------------------------------------------
-# Docker flow
-# ---------------------------------------------------------------------------
-
+# Guide the user through launching in Docker - asks what to run, finds a suitable image,
+# detects the GPU for Webots, and launches.
+# Ведёт пользователя через запуск в Docker - спрашивает что запустить, ищет подходящий образ,
+# определяет GPU для Webots и запускает.
 def _docker_flow(args: argparse.Namespace) -> None:
     if not shutil.which("docker"):
         from rich.console import Console
@@ -340,6 +401,8 @@ def _docker_flow(args: argparse.Namespace) -> None:
     image = _find_image(candidates)
 
     if image is None:
+        # No image available - offer to run docker-setup to get one.
+        # Образ не найден - предлагаем запустить docker-setup чтобы его получить.
         what = "Webots" if mode == "webots" else "controller or Webots"
         v = _ask(
             "No image found",
@@ -352,6 +415,8 @@ def _docker_flow(args: argparse.Namespace) -> None:
             _docker_setup(args)
         return
 
+    # Only detect GPU for Webots - the controller does not need a display.
+    # GPU определяем только для Webots - контроллеру дисплей не нужен.
     gpu = _detect_gpu() if mode == "webots" else "software"
 
     label = "Webots simulator" if mode == "webots" else "Controller"
@@ -360,10 +425,6 @@ def _docker_flow(args: argparse.Namespace) -> None:
         lambda s: _task_run_docker(s, image, mode, gpu),
     ).run()
 
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
@@ -388,6 +449,8 @@ def run(args: argparse.Namespace) -> None:
     elif mode == "docker":
         _docker_flow(args)
     else:
+        # No mode given - ask the user how they want to run.
+        # Режим не указан - спрашиваем пользователя как он хочет запустить.
         v = _ask(
             "Run",
             "How do you want to run the project?",

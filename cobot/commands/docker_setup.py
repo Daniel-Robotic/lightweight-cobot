@@ -16,12 +16,19 @@ from cobot.tui import SCREEN_CSS, InputScreen, LogScreen, PickScreen
 
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 _DOCKER_DIR = _PROJECT_DIR / "docker"
+
+# Default Docker Hub repository and local image prefix used when building locally.
+# Репозиторий Docker Hub по умолчанию и локальный префикс образов при локальной сборке.
 _DEFAULT_HUB_REPO = "evilfisru/lwc"
 _DEFAULT_PREFIX = "lwc-local"
 
+# The images must be built in this order because each one is based on the previous.
+# Образы должны собираться в этом порядке, потому что каждый основан на предыдущем.
 _CONTROLLER_CHAIN = ["ros-core", "ros-base", "ros-iiwa7"]
 _WEBOTS_CHAIN = ["ros-core", "ros-base", "ros-iiwa7-webots"]
 
+# Maps each image to the image it is built FROM. None means it starts from scratch (base Ubuntu).
+# Сопоставляет каждый образ с тем, на основе которого он собирается. None - начинает с нуля (базовый Ubuntu).
 _IMAGE_PARENT: dict[str, str | None] = {
     "ros-core": None,
     "ros-base": "ros-core",
@@ -29,11 +36,15 @@ _IMAGE_PARENT: dict[str, str | None] = {
     "ros-iiwa7-webots": "ros-base",
 }
 
+# These images need the full project source as Docker build context because they copy source files.
+# Эти образы требуют полный исходный код проекта как контекст сборки, потому что копируют файлы.
 _NEEDS_PROJECT_CTX = {"ros-iiwa7", "ros-iiwa7-webots"}
 
 Write = Callable[[str], None]
 
 
+# All the choices the user makes in the wizard are stored here before we start the actual build.
+# Все выборы пользователя в мастере хранятся здесь перед началом фактической сборки.
 @dataclass
 class _Config:
     ros_version: str
@@ -44,6 +55,10 @@ class _Config:
     hub_repo: str
 
 
+# Build one Docker image and stream its output to the log.
+# Progress is tracked by parsing "Step X/Y" lines that Docker prints during the build.
+# Собирает один Docker-образ и транслирует его вывод в лог.
+# Прогресс отслеживается по строкам "Step X/Y", которые Docker печатает во время сборки.
 def _build_image(
     name: str,
     tag: str,
@@ -55,6 +70,8 @@ def _build_image(
     build_type: str = "release",
 ) -> bool:
     write(f"[cyan][*][/cyan] Building [bold]{name}[/bold]...")
+    # DOCKER_BUILDKIT=0 gives us "Step X/Y" lines in the output which we parse for progress.
+    # DOCKER_BUILDKIT=0 даёт нам строки "Step X/Y" в выводе, которые мы парсим для прогресса.
     env = {**os.environ, "DOCKER_BUILDKIT": "0"}
     cmd = [
         "docker", "build", "-t", tag, "-f", str(dockerfile),
@@ -84,6 +101,8 @@ def _build_image(
     return False
 
 
+# Pull a Docker image from Hub and track progress by counting downloaded layers.
+# Скачиваем Docker-образ с Hub и отслеживаем прогресс по количеству скачанных слоёв.
 def _pull_image(
     name: str,
     tag: str,
@@ -104,6 +123,8 @@ def _pull_image(
         s = line.rstrip()
         if s:
             write(s)
+        # Count layers as they appear and mark them done when Docker confirms they are pulled.
+        # Считаем слои по мере их появления и отмечаем завершёнными когда Docker подтверждает скачивание.
         if "Pulling fs layer" in line or "Waiting" in line:
             layers_total += 1
         elif "Pull complete" in line or "Already exists" in line:
@@ -120,6 +141,10 @@ def _pull_image(
     return False
 
 
+# The actual work - either build or pull all images depending on what the user chose.
+# Each image gets its own slice of the progress bar so the overall bar advances smoothly.
+# Основная работа - собираем или скачиваем все образы в зависимости от выбора пользователя.
+# Каждый образ получает свой кусок прогресс-бара, чтобы общий бар двигался равномерно.
 def _task_execute(screen: LogScreen, cfg: _Config) -> None:
     try:
         chain = _WEBOTS_CHAIN if cfg.variant == "webots" else _CONTROLLER_CHAIN
@@ -190,15 +215,23 @@ def _task_execute(screen: LogScreen, cfg: _Config) -> None:
         screen.finish(False)
 
 
+# Scan the docker/ directory for subdirectories named after ROS versions (e.g. jazzy).
+# If nothing is found we fall back to "jazzy" so the wizard still works.
+# Сканируем директорию docker/ на наличие поддиректорий с именами версий ROS (например jazzy).
+# Если ничего не найдено, используем "jazzy" по умолчанию, чтобы мастер всё равно работал.
 def _discover_versions() -> List[str]:
     if not _DOCKER_DIR.exists():
         return ["jazzy"]
     dirs = sorted(d.name for d in _DOCKER_DIR.iterdir() if d.is_dir())
+    # Put jazzy first so it is the pre-selected default in the wizard.
+    # Ставим jazzy первым, чтобы он был предвыбранным по умолчанию в мастере.
     if "jazzy" in dirs:
         dirs = ["jazzy"] + [d for d in dirs if d != "jazzy"]
     return dirs or ["jazzy"]
 
 
+# Multi-step wizard that collects all build options before starting the actual image build.
+# Многошаговый мастер, который собирает все параметры сборки перед запуском фактической сборки образа.
 class _Wizard(App[None]):
     CSS = SCREEN_CSS
 
@@ -264,6 +297,8 @@ class _Wizard(App[None]):
             self.exit()
             return
         self._state["build_type"] = v or "release"
+        # Pull needs a Hub repo name, build needs a local image prefix.
+        # Для pull нужно имя репозитория на Hub, для build - локальный префикс образов.
         if self._state["source"] == "pull":
             self.push_screen(
                 InputScreen("Step 5 of 5", "Docker Hub repository:", _DEFAULT_HUB_REPO),
@@ -290,6 +325,8 @@ class _Wizard(App[None]):
         self._finish()
 
     def _finish(self) -> None:
+        # Assemble the config and hand it off to the log screen that does the actual work.
+        # Собираем конфиг и передаём его экрану лога, который выполняет фактическую работу.
         s = self._state
         cfg = _Config(
             ros_version=s["ros_version"],

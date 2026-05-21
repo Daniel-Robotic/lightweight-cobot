@@ -1,6 +1,8 @@
 import argparse
 import sys
 
+# Import each command module so we can register its subparser.
+# Импортируем каждый модуль команды, чтобы зарегистрировать его подпарсер.
 from cobot.commands import delete as cmd_delete
 from cobot.commands import docker_setup as cmd_docker_setup
 from cobot.commands import doc_setup as cmd_doc_setup
@@ -12,6 +14,8 @@ from cobot.commands import update as cmd_update
 
 # Command groups shown in --help output.
 # Add new commands here when introducing other categories.
+# Группы команд, отображаемые в --help.
+# Добавляйте новые команды сюда при создании новых категорий.
 _GROUPS = [
     ("Setup", [
         ("setup",        "first-time setup: docs, build environment, robot config"),
@@ -32,6 +36,8 @@ _GROUPS = [
 _DESCRIPTION = "Lightweight Cobot"
 
 
+# Custom --help action that prints commands grouped by category instead of a flat list.
+# Кастомный обработчик --help, который выводит команды по категориям, а не одним списком.
 class _GroupedHelpAction(argparse.Action):
     def __init__(self, option_strings, dest, default=None, required=False, help=None):
         super().__init__(
@@ -79,6 +85,8 @@ def main():
 
 
 def _register_commands(subparsers):
+    # Each module registers its own subparser and sets args.func to its run() function.
+    # Каждый модуль регистрирует свой подпарсер и устанавливает args.func на свою функцию run().
     cmd_setup.register(subparsers)
     cmd_local_setup.register(subparsers)
     cmd_docker_setup.register(subparsers)
