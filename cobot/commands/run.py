@@ -4,6 +4,7 @@ import argparse
 import os
 import signal
 import shutil
+import socket
 import subprocess
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -195,9 +196,18 @@ def _task_run_local(screen: RunScreen, mode: str) -> None:
         start_new_session=True,
     )
     screen.set_proc(proc)
-    # Kill the entire process group so all child processes (nodes) are terminated together.
-    # Убиваем всю группу процессов, чтобы все дочерние процессы (узлы) завершились вместе.
-    screen.set_kill_fn(lambda: os.killpg(os.getpgid(proc.pid), signal.SIGTERM))
+    # Kill the entire session so all ROS2 nodes are terminated together.
+    # ros2 launch puts each node in its own process group (setpgrp), so killpg on the
+    # bash pgid only reaches bash/launch itself. All nodes share the session started
+    # with start_new_session=True, so pkill -s reaches every one of them.
+    # Убиваем всю сессию, чтобы все ROS2-узлы завершились вместе.
+    # ros2 launch помещает каждый узел в отдельную группу процессов (setpgrp), поэтому
+    # killpg по pgid bash достигает только bash/launch. Все узлы разделяют сессию,
+    # созданную через start_new_session=True, поэтому pkill -s достигает каждого из них.
+    sid = os.getsid(proc.pid)
+    screen.set_kill_fn(lambda: subprocess.run(
+        ["pkill", "-TERM", "-s", str(sid)], capture_output=True
+    ))
 
     for line in proc.stdout:
         s = line.rstrip()
@@ -230,6 +240,7 @@ def _task_run_docker(screen: RunScreen, image: str, mode: str, gpu: str) -> None
         "docker", "run", "--rm",
         "--name", container,
         "--network", "host",
+        "--hostname", socket.gethostname(),
         "-e", "USER=root",
     ]
 
