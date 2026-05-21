@@ -20,7 +20,8 @@ def _task_update(screen: LogScreen) -> None:
         ).strip()
         screen.write(f"[cyan][*][/cyan] Branch: [bold]{branch}[/bold]")
 
-        # Fetch
+        # Fetch (0 → 30 %)
+        screen.set_progress(0, "Fetching from remote...")
         screen.write("[cyan][*][/cyan] Fetching from remote...")
         fetch = subprocess.run(
             ["git", "fetch", "origin"],
@@ -30,6 +31,7 @@ def _task_update(screen: LogScreen) -> None:
             screen.write(f"[red]Fetch failed:[/red] {fetch.stderr.strip()}")
             screen.finish(False)
             return
+        screen.set_progress(30)
 
         # Check how many commits behind
         behind = subprocess.check_output(
@@ -38,6 +40,7 @@ def _task_update(screen: LogScreen) -> None:
         ).strip()
 
         if behind == "0":
+            screen.set_progress(100, "Already up to date")
             screen.write("[green][ok][/green] Already up to date.")
             screen.finish(True)
             return
@@ -51,7 +54,8 @@ def _task_update(screen: LogScreen) -> None:
         for line in log_lines:
             screen.write(f"  [dim]{line}[/dim]")
 
-        # Pull
+        # Pull (30 → 80 %)
+        screen.set_progress(30, "Pulling changes...")
         screen.write("\n[cyan][*][/cyan] Pulling changes...")
         pull = subprocess.run(
             ["git", "pull", "origin", branch],
@@ -64,8 +68,10 @@ def _task_update(screen: LogScreen) -> None:
             screen.write("[red]Pull failed.[/red]")
             screen.finish(False)
             return
+        screen.set_progress(80)
 
-        # Reinstall in case dependencies changed
+        # Reinstall (80 → 100 %)
+        screen.set_progress(80, "Reinstalling cobot CLI...")
         screen.write("\n[cyan][*][/cyan] Reinstalling cobot CLI...")
         reinstall = subprocess.run(
             ["uv", "tool", "install", "--editable", str(_PROJECT_DIR)],
@@ -76,6 +82,7 @@ def _task_update(screen: LogScreen) -> None:
         else:
             screen.write(f"[yellow]Warning:[/yellow] reinstall failed — {reinstall.stderr.strip()}")
 
+        screen.set_progress(100, "Done")
         screen.write("\n[green]Project updated successfully.[/green]")
         screen.finish(True)
 
@@ -89,7 +96,7 @@ class _UpdateApp(App[None]):
 
     def on_mount(self) -> None:
         self.push_screen(
-            LogScreen("Updating project", _task_update),
+            LogScreen("Updating project", _task_update, show_progress=True),
             lambda _: self.exit(),
         )
 

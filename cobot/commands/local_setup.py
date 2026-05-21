@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import urllib.request
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -72,6 +73,53 @@ def _run_logged(cmd: List[str], write: Write, env: dict | None = None, cwd=None)
         raise RuntimeError(f"Command failed: {cmd[0]}")
 
 
+def _run_apt_with_progress(
+    cmd: List[str],
+    write: Write,
+    on_progress: Callable[[float], None],
+    env: dict | None = None,
+) -> None:
+    """Run an apt command and feed real percentage from APT::Status-Fd to on_progress(0-100)."""
+    r_fd, w_fd = os.pipe()
+    try:
+        proc = subprocess.Popen(
+            cmd + [f"-o", f"APT::Status-Fd={w_fd}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env or os.environ,
+            pass_fds=(w_fd,),
+        )
+    finally:
+        os.close(w_fd)
+
+    def _read_status() -> None:
+        with os.fdopen(r_fd, "r") as f:
+            for line in f:
+                # Format: dlstatus:N:PCT:MSG  or  pmstatus:NAME:PCT:MSG
+                parts = line.strip().split(":", 3)
+                if len(parts) >= 3:
+                    try:
+                        on_progress(float(parts[2]))
+                    except ValueError:
+                        pass
+
+    t = threading.Thread(target=_read_status, daemon=True)
+    t.start()
+    for line in proc.stdout:
+        s = line.rstrip()
+        if s:
+            write(s)
+    proc.wait()
+    t.join()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Command failed: {cmd[0]}")
+
+
+# ---------------------------------------------------------------------------
+# Installation steps
+# ---------------------------------------------------------------------------
+
 def _setup_locale(write: Write) -> None:
     write("[cyan][*][/cyan] Checking locale...")
     if "UTF-8" in subprocess.run(["locale"], capture_output=True, text=True).stdout:
@@ -85,29 +133,37 @@ def _setup_locale(write: Write) -> None:
     write("[green][ok][/green] Locale configured")
 
 
-def _add_ros2_repo(write: Write) -> None:
+def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] = None) -> None:
+    def _prog(p: float) -> None:
+        if on_progress:
+            on_progress(p)
+
     write("[cyan][*][/cyan] Adding ROS2 apt repository...")
 
-    # Best-effort update before installing prereqs (ignore errors from broken repos)
+    # Best-effort update before installing prereqs
     subprocess.run(["sudo", "apt-get", "update", "-qq"], capture_output=True)
+    _prog(15)
 
     _run_quiet(
         ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
          "software-properties-common", "curl", "gnupg"],
         write, _APT_ENV,
     )
+    _prog(35)
     _run_quiet(["sudo", "add-apt-repository", "-y", "universe"], write)
+    _prog(45)
 
-    # Always re-download and dearmor the key to fix any previous bad install
     write("[cyan][*][/cyan] Downloading ROS2 signing key...")
     with tempfile.NamedTemporaryFile(delete=False, suffix=".key") as tmp:
         tmp_path = tmp.name
     try:
         urllib.request.urlretrieve(_ROS_KEY_URL, tmp_path)
+        _prog(60)
         _run_quiet(["sudo", "gpg", "--dearmor", "--yes", "-o", str(_ROS_KEYRING), tmp_path])
     finally:
         os.unlink(tmp_path)
     write("[green][ok][/green] Signing key installed")
+    _prog(65)
 
     arch = subprocess.check_output(["dpkg", "--print-architecture"], text=True).strip()
     codename = subprocess.check_output(
@@ -123,18 +179,26 @@ def _add_ros2_repo(write: Write) -> None:
     )
     if proc.returncode != 0:
         raise RuntimeError(f"Failed to write {_ROS_SOURCES}")
+    _prog(70)
 
     write("[cyan][*][/cyan] Updating apt cache...")
-    _run_quiet(["sudo", "apt-get", "update", "-q"], write, _APT_ENV)
+    _run_apt_with_progress(
+        ["sudo", "apt-get", "update", "-q"],
+        write,
+        lambda p: _prog(70 + p * 0.30),
+        _APT_ENV,
+    )
     write("[green][ok][/green] ROS2 repository ready")
+    _prog(100)
 
 
-def _install_ros2_jazzy(write: Write) -> None:
+def _install_ros2_jazzy(write: Write, on_progress: Optional[Callable[[float], None]] = None) -> None:
     write("[cyan][*][/cyan] Installing ros-jazzy-desktop and ros-dev-tools...")
-    _run_quiet(
-        ["sudo", "apt-get", "install", "-y",
-         "ros-jazzy-desktop", "ros-dev-tools"],
-        write, _APT_ENV,
+    _run_apt_with_progress(
+        ["sudo", "apt-get", "install", "-y", "ros-jazzy-desktop", "ros-dev-tools"],
+        write,
+        on_progress or (lambda _: None),
+        _APT_ENV,
     )
     write("[green][ok][/green] ROS2 Jazzy Desktop installed")
 
@@ -164,14 +228,44 @@ def _setup_shell_rc(write: Write) -> None:
     write(f"[green][ok][/green] Added ROS2 setup to ~/{rc.name}")
 
 
+# ---------------------------------------------------------------------------
+# Background tasks (run inside LogScreen worker)
+# ---------------------------------------------------------------------------
+
 def _task_install_jazzy(screen: LogScreen) -> None:
     try:
-        screen.write("[bold]Installing ROS2 Jazzy[/bold]\n")
+        # Step 1 — locale  (0 → 5 %)
+        screen.set_progress(0, "Setting up locale...")
+        screen.write("[bold]Step 1 / 5 — Locale[/bold]")
         _setup_locale(screen.write)
-        _add_ros2_repo(screen.write)
-        _install_ros2_jazzy(screen.write)
+
+        # Step 2 — ROS2 repo  (5 → 20 %)
+        screen.set_progress(5, "Adding ROS2 repository...")
+        screen.write("\n[bold]Step 2 / 5 — ROS2 repository[/bold]")
+        _add_ros2_repo(
+            screen.write,
+            on_progress=lambda p: screen.set_progress(5 + p * 0.15),
+        )
+
+        # Step 3 — ROS2 Jazzy  (20 → 85 %)
+        screen.set_progress(20, "Installing ROS2 Jazzy Desktop...")
+        screen.write("\n[bold]Step 3 / 5 — ROS2 Jazzy Desktop[/bold]")
+        _install_ros2_jazzy(
+            screen.write,
+            on_progress=lambda p: screen.set_progress(20 + p * 0.65),
+        )
+
+        # Step 4 — colcon  (85 → 92 %)
+        screen.set_progress(85, "Installing colcon...")
+        screen.write("\n[bold]Step 4 / 5 — colcon[/bold]")
         _install_colcon(screen.write)
+
+        # Step 5 — shell rc  (92 → 100 %)
+        screen.set_progress(92, "Configuring shell...")
+        screen.write("\n[bold]Step 5 / 5 — Shell configuration[/bold]")
         _setup_shell_rc(screen.write)
+        screen.set_progress(100, "Done")
+
         screen.write(
             "\nRestart the terminal, then run [bold]cobot local-setup[/bold] again to build."
         )
@@ -188,18 +282,37 @@ def _task_build(screen: LogScreen) -> None:
             screen.write("Source ROS2 first:  [bold]source /opt/ros/jazzy/setup.bash[/bold]")
             screen.finish(False)
             return
-        screen.write("[bold]Building project with colcon[/bold]\n")
-        _run_logged(
-            ["colcon", "build", "--symlink-install"],
-            screen.write,
-            cwd=_PROJECT_DIR,
+
+        # Count packages so we can show X/total progress
+        list_result = subprocess.run(
+            ["colcon", "list"], capture_output=True, text=True, cwd=_PROJECT_DIR,
         )
+        total = max(len([l for l in list_result.stdout.splitlines() if l.strip()]), 1)
+
+        screen.write(f"[bold]Building {total} package(s) with colcon[/bold]\n")
+        screen.set_progress(0, f"0 / {total} packages done")
+        built = 0
+
+        def _track(line: str) -> None:
+            nonlocal built
+            screen.write(line)
+            if "Finished <<<" in line or "Failed <<<" in line:
+                built += 1
+                screen.set_progress(built / total * 100, f"{built} / {total} packages done")
+
+        _run_logged(["colcon", "build", "--symlink-install"], _track, cwd=_PROJECT_DIR)
+
+        screen.set_progress(100, "Build complete")
         screen.write("\nActivate workspace:  [bold]source install/setup.bash[/bold]")
         screen.finish(True)
     except Exception as exc:
         screen.write(f"\n[red]Error:[/red] {exc}")
         screen.finish(False)
 
+
+# ---------------------------------------------------------------------------
+# Textual apps
+# ---------------------------------------------------------------------------
 
 class _InstallJazzyApp(App[None]):
     CSS = SCREEN_CSS
@@ -220,7 +333,7 @@ class _InstallJazzyApp(App[None]):
             self.exit()
             return
         self.push_screen(
-            LogScreen("Installing ROS2 Jazzy", _task_install_jazzy),
+            LogScreen("Installing ROS2 Jazzy", _task_install_jazzy, show_progress=True),
             lambda _: self.exit(),
         )
 
@@ -230,7 +343,7 @@ class _BuildApp(App[None]):
 
     def on_mount(self) -> None:
         self.push_screen(
-            LogScreen("Building project", _task_build),
+            LogScreen("Building project", _task_build, show_progress=True),
             lambda _: self.exit(),
         )
 
@@ -249,6 +362,10 @@ class _DockerPromptApp(App[bool]):
             lambda v: self.exit(v is not None and v.startswith("Yes")),
         )
 
+
+# ---------------------------------------------------------------------------
+# CLI registration
+# ---------------------------------------------------------------------------
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(

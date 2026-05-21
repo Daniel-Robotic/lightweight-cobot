@@ -94,15 +94,30 @@ def _remove_project_dir(write) -> None:
 
 def _task_delete(screen: LogScreen, remove_ros: bool) -> None:
     try:
-        _stop_docker_containers(screen.write)
-        _remove_docker_images(screen.write)
-
         if remove_ros:
+            # stop(0-20) images(20-45) ros2(45-70) cobot(70-85) dir(85-100)
+            screen.set_progress(0, "Stopping containers...")
+            _stop_docker_containers(screen.write)
+            screen.set_progress(20, "Removing Docker images...")
+            _remove_docker_images(screen.write)
+            screen.set_progress(45, "Removing ROS2 Jazzy...")
             _remove_ros2(screen.write)
+            screen.set_progress(70, "Uninstalling cobot CLI...")
+            _uninstall_cobot(screen.write)
+            screen.set_progress(85, "Removing project directory...")
+            _remove_project_dir(screen.write)
+        else:
+            # stop(0-25) images(25-60) cobot(60-85) dir(85-100)
+            screen.set_progress(0, "Stopping containers...")
+            _stop_docker_containers(screen.write)
+            screen.set_progress(25, "Removing Docker images...")
+            _remove_docker_images(screen.write)
+            screen.set_progress(60, "Uninstalling cobot CLI...")
+            _uninstall_cobot(screen.write)
+            screen.set_progress(85, "Removing project directory...")
+            _remove_project_dir(screen.write)
 
-        _uninstall_cobot(screen.write)
-        _remove_project_dir(screen.write)
-
+        screen.set_progress(100, "Done")
         screen.write("\n[green]Project fully removed.[/green]")
         screen.finish(True)
 
@@ -143,7 +158,7 @@ class _DeleteApp(App[None]):
     def _on_ros_choice(self, choice: Optional[str]) -> None:
         remove_ros = choice is not None and choice.startswith("Yes")
         self.push_screen(
-            LogScreen("Deleting project", lambda s: _task_delete(s, remove_ros)),
+            LogScreen("Deleting project", lambda s: _task_delete(s, remove_ros), show_progress=True),
             lambda _: self.exit(),
         )
 

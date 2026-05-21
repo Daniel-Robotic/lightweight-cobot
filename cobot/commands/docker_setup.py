@@ -44,21 +44,13 @@ class _Config:
     hub_repo: str
 
 
-def _run_quiet(cmd: List[str], write: Write, env=None) -> bool:
-    result = subprocess.run(
-        cmd, capture_output=True, text=True,
-        env=env or os.environ,
-    )
-    if result.returncode != 0:
-        for line in (result.stdout + result.stderr).splitlines():
-            if line.strip():
-                write(line)
-    return result.returncode == 0
-
-
 def _build_image(
-    name: str, tag: str, dockerfile: Path, ctx: Path,
+    name: str,
+    tag: str,
+    dockerfile: Path,
+    ctx: Path,
     write: Write,
+    on_progress: Optional[Callable[[float], None]] = None,
     parent_tag: Optional[str] = None,
     build_type: str = "release",
 ) -> bool:
@@ -71,34 +63,78 @@ def _build_image(
     if parent_tag:
         cmd += ["--build-arg", f"IMAGE={parent_tag}"]
     cmd.append(str(ctx))
-    ok = _run_quiet(cmd, write, env)
-    if ok:
+
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
+    )
+    for line in proc.stdout:
+        s = line.rstrip()
+        if s:
+            write(s)
+        if on_progress:
+            m = re.match(r"Step (\d+)/(\d+) :", line)
+            if m:
+                step, total = int(m.group(1)), int(m.group(2))
+                on_progress(step / total * 100)
+    proc.wait()
+    if proc.returncode == 0:
         write(f"[green][ok][/green] {name}")
-    else:
-        write(f"[red]Build failed:[/red] {tag}")
-    return ok
+        return True
+    write(f"[red]Build failed:[/red] {tag}")
+    return False
 
 
-def _pull_image(name: str, tag: str, write: Write) -> bool:
+def _pull_image(
+    name: str,
+    tag: str,
+    write: Write,
+    on_progress: Optional[Callable[[float], None]] = None,
+) -> bool:
     write(f"[cyan][*][/cyan] Pulling [bold]{name}[/bold]  ({tag})...")
-    ok = _run_quiet(["docker", "pull", tag], write)
-    if ok:
+    if on_progress:
+        on_progress(5)
+
+    proc = subprocess.Popen(
+        ["docker", "pull", tag],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    layers_total = 0
+    layers_done = 0
+    for line in proc.stdout:
+        s = line.rstrip()
+        if s:
+            write(s)
+        if "Pulling fs layer" in line or "Waiting" in line:
+            layers_total += 1
+        elif "Pull complete" in line or "Already exists" in line:
+            layers_done += 1
+            if on_progress and layers_total > 0:
+                on_progress(5 + layers_done / layers_total * 90)
+    proc.wait()
+    if proc.returncode == 0:
         write(f"[green][ok][/green] {name}")
-    else:
-        write(f"[red]Pull failed:[/red] {tag}")
-    return ok
+        if on_progress:
+            on_progress(100)
+        return True
+    write(f"[red]Pull failed:[/red] {tag}")
+    return False
 
 
 def _task_execute(screen: LogScreen, cfg: _Config) -> None:
     try:
         chain = _WEBOTS_CHAIN if cfg.variant == "webots" else _CONTROLLER_CHAIN
+        n = len(chain)
 
         if cfg.source == "build":
             screen.write(
-                f"[bold]Building {len(chain)} image(s) — "
+                f"[bold]Building {n} image(s) — "
                 f"ROS {cfg.ros_version} — {cfg.build_type}[/bold]\n"
             )
-            for name in chain:
+            for i, name in enumerate(chain):
+                lo = i / n * 100
+                hi = (i + 1) / n * 100
+                screen.set_progress(lo, f"Image {i + 1}/{n}: building {name}...")
+
                 tag = f"{cfg.image_prefix}:{name}-{cfg.ros_version}"
                 dockerfile = _DOCKER_DIR / cfg.ros_version / name / "Dockerfile"
                 if not dockerfile.exists():
@@ -111,9 +147,19 @@ def _task_execute(screen: LogScreen, cfg: _Config) -> None:
                     f"{cfg.image_prefix}:{parent_name}-{cfg.ros_version}"
                     if parent_name else None
                 )
-                if not _build_image(name, tag, dockerfile, ctx, screen.write, parent_tag, cfg.build_type):
+                if not _build_image(
+                    name, tag, dockerfile, ctx, screen.write,
+                    on_progress=lambda p, lo=lo, hi=hi: screen.set_progress(
+                        lo + p * (hi - lo) / 100, f"Image {i + 1}/{n}: building {name}..."
+                    ),
+                    parent_tag=parent_tag,
+                    build_type=cfg.build_type,
+                ):
                     screen.finish(False)
                     return
+                screen.set_progress(hi)
+
+            screen.set_progress(100, "All images built")
             screen.write(
                 f"\n[green]Done.[/green] "
                 f"Images tagged [bold]{cfg.image_prefix}:<name>-{cfg.ros_version}[/bold]."
@@ -127,9 +173,14 @@ def _task_execute(screen: LogScreen, cfg: _Config) -> None:
                 f"[bold]Pulling from {cfg.hub_repo} — "
                 f"ROS {cfg.ros_version} — {cfg.build_type}[/bold]\n"
             )
-            if not _pull_image(short, full_ref, screen.write):
+            screen.set_progress(0, f"Pulling {full_ref}...")
+            if not _pull_image(
+                short, full_ref, screen.write,
+                on_progress=lambda p: screen.set_progress(p, f"Pulling {full_ref}..."),
+            ):
                 screen.finish(False)
                 return
+            screen.set_progress(100, "Pull complete")
             screen.write(f"\n[green]Done.[/green] Image ready: [bold]{full_ref}[/bold].")
 
         screen.finish(True)
@@ -254,7 +305,7 @@ class _Wizard(App[None]):
             else f"Pulling Docker image — ROS {cfg.ros_version}"
         )
         self.push_screen(
-            LogScreen(title, lambda screen: _task_execute(screen, cfg)),
+            LogScreen(title, lambda screen: _task_execute(screen, cfg), show_progress=True),
             lambda _: self.exit(),
         )
 

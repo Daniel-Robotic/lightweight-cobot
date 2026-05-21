@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,7 +22,6 @@ _DEFAULT_PORT = "8000"
 Write = Callable[[str], None]
 
 
-
 def _docker(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", *args], capture_output=capture, text=True)
 
@@ -35,22 +35,31 @@ def _image_exists() -> bool:
     return bool(_docker("images", "-q", _IMAGE_NAME, capture=True).stdout.strip())
 
 
-def _build_docs_image(write: Write) -> bool:
+def _build_docs_image(
+    write: Write,
+    on_progress: Optional[Callable[[float], None]] = None,
+) -> bool:
     write("[cyan][*][/cyan] Building documentation image (runs once)...")
     env = {**os.environ, "DOCKER_BUILDKIT": "0"}
-    result = subprocess.run(
+    proc = subprocess.Popen(
         ["docker", "build", "-t", _IMAGE_NAME, str(_DOC_DIR)],
-        capture_output=True, text=True, env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
     )
-    if result.returncode != 0:
-        for line in (result.stdout + result.stderr).splitlines():
-            if line.strip():
-                write(line)
-        write("[red]Image build failed.[/red]")
-        return False
-    write("[green][ok][/green] Documentation image ready")
-    return True
-
+    for line in proc.stdout:
+        s = line.rstrip()
+        if s:
+            write(s)
+        if on_progress:
+            m = re.match(r"Step (\d+)/(\d+) :", line)
+            if m:
+                step, total = int(m.group(1)), int(m.group(2))
+                on_progress(step / total * 100)
+    proc.wait()
+    if proc.returncode == 0:
+        write("[green][ok][/green] Documentation image ready")
+        return True
+    write("[red]Image build failed.[/red]")
+    return False
 
 
 def _task_up(screen: LogScreen, port: str) -> None:
@@ -67,12 +76,17 @@ def _task_up(screen: LogScreen, port: str) -> None:
             return
 
         if not _image_exists():
-            if not _build_docs_image(screen.write):
+            screen.set_progress(0, "Building documentation image...")
+            if not _build_docs_image(
+                screen.write,
+                on_progress=lambda p: screen.set_progress(p * 0.85, "Building documentation image..."),
+            ):
                 screen.finish(False)
                 return
         else:
             screen.write("[dim]Documentation image already built, skipping.[/dim]")
 
+        screen.set_progress(88, "Starting MkDocs server...")
         screen.write("\n[cyan][*][/cyan] Starting MkDocs server...")
         result = _docker(
             "run", "-d", "--name", _CONTAINER_NAME, "--rm",
@@ -86,6 +100,7 @@ def _task_up(screen: LogScreen, port: str) -> None:
             screen.finish(False)
             return
 
+        screen.set_progress(100, "Server running")
         screen.write(f"\n[green]Docs running at:[/green] http://localhost:{port}")
         screen.write("  Edit files in [bold]doc/lwc-doc/docs/[/bold] — reloads automatically.")
         screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
@@ -102,8 +117,10 @@ def _task_down(screen: LogScreen) -> None:
             screen.write("[yellow]Docs container is not running.[/yellow]")
             screen.finish(True)
             return
+        screen.set_progress(30, "Stopping container...")
         screen.write("[cyan][*][/cyan] Stopping documentation server...")
         _docker("stop", _CONTAINER_NAME)
+        screen.set_progress(100, "Done")
         screen.write("[green][ok][/green] Container stopped.")
         screen.finish(True)
     except Exception as exc:
@@ -114,19 +131,26 @@ def _task_down(screen: LogScreen) -> None:
 def _task_rebuild(screen: LogScreen, port: str) -> None:
     try:
         if _is_running():
+            screen.set_progress(5, "Stopping container...")
             screen.write("[cyan][*][/cyan] Stopping existing container...")
             _docker("stop", _CONTAINER_NAME)
             screen.write("[green][ok][/green] Stopped.")
 
         if _image_exists():
+            screen.set_progress(15, "Removing old image...")
             screen.write("[cyan][*][/cyan] Removing old image...")
             _docker("rmi", "-f", _IMAGE_NAME)
             screen.write("[green][ok][/green] Image removed.")
 
-        if not _build_docs_image(screen.write):
+        screen.set_progress(20, "Building documentation image...")
+        if not _build_docs_image(
+            screen.write,
+            on_progress=lambda p: screen.set_progress(20 + p * 0.68, "Building documentation image..."),
+        ):
             screen.finish(False)
             return
 
+        screen.set_progress(90, "Starting MkDocs server...")
         screen.write("\n[cyan][*][/cyan] Starting MkDocs server...")
         result = _docker(
             "run", "-d", "--name", _CONTAINER_NAME, "--rm",
@@ -140,6 +164,7 @@ def _task_rebuild(screen: LogScreen, port: str) -> None:
             screen.finish(False)
             return
 
+        screen.set_progress(100, "Server running")
         screen.write(f"\n[green]Docs running at:[/green] http://localhost:{port}")
         screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
         screen.finish(True)
@@ -159,7 +184,7 @@ class _DocApp(App[None]):
     def on_mount(self) -> None:
         if self._action == "down":
             self.push_screen(
-                LogScreen("Documentation server", _task_down),
+                LogScreen("Documentation server", _task_down, show_progress=True),
                 lambda _: self.exit(),
             )
         elif self._action == "rebuild":
@@ -179,7 +204,7 @@ class _DocApp(App[None]):
             return
         p = (port.strip() or _DEFAULT_PORT) if port.isdigit() or not port.strip() else _DEFAULT_PORT
         self.push_screen(
-            LogScreen("Documentation server", lambda s: _task_up(s, p)),
+            LogScreen("Documentation server", lambda s: _task_up(s, p), show_progress=True),
             lambda _: self.exit(),
         )
 
@@ -189,7 +214,7 @@ class _DocApp(App[None]):
             return
         p = (port.strip() or _DEFAULT_PORT) if port.isdigit() or not port.strip() else _DEFAULT_PORT
         self.push_screen(
-            LogScreen("Documentation server — rebuild", lambda s: _task_rebuild(s, p)),
+            LogScreen("Documentation server — rebuild", lambda s: _task_rebuild(s, p), show_progress=True),
             lambda _: self.exit(),
         )
 

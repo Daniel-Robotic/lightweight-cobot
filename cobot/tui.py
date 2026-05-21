@@ -6,7 +6,7 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import Footer, Input, LoadingIndicator, RadioButton, RadioSet, RichLog, Static
+from textual.widgets import Footer, Input, LoadingIndicator, ProgressBar, RadioButton, RadioSet, RichLog, Static
 
 SCREEN_CSS = """
 Screen {
@@ -34,6 +34,15 @@ RadioSet {
     margin-bottom: 1;
 }
 Input {
+    margin-bottom: 1;
+}
+LogScreen #progress {
+    margin-top: 1;
+    height: 1;
+}
+LogScreen #step-label {
+    color: $text-muted;
+    text-style: dim;
     margin-bottom: 1;
 }
 LogScreen #log {
@@ -135,14 +144,18 @@ class LogScreen(Screen[bool]):
 
     BINDINGS = [Binding("enter,escape", "close", "Close", show=False)]
 
-    def __init__(self, title: str, task: Callable[[LogScreen], None]):
+    def __init__(self, title: str, task: Callable[[LogScreen], None], show_progress: bool = False):
         super().__init__()
         self._title = title
         self._run_fn = task
         self._finished = False
+        self._show_progress = show_progress
 
     def compose(self) -> ComposeResult:
         yield Static(self._title, id="step")
+        if self._show_progress:
+            yield ProgressBar(id="progress", total=100, show_eta=False)
+            yield Static("", id="step-label")
         yield RichLog(id="log", highlight=True, markup=True, wrap=True)
         yield LoadingIndicator(id="loading")
         yield Static("", id="hint")
@@ -151,6 +164,16 @@ class LogScreen(Screen[bool]):
     def on_mount(self) -> None:
         self.query_one(RichLog).focus()
         self.app.run_worker(lambda: self._run_fn(self), thread=True)
+
+    def set_progress(self, pct: float, label: str = "") -> None:
+        """Thread-safe: update the progress bar and optional step label."""
+        if self._show_progress:
+            self.app.call_from_thread(self._do_set_progress, pct, label)
+
+    def _do_set_progress(self, pct: float, label: str) -> None:
+        self.query_one("#progress", ProgressBar).progress = pct
+        if label:
+            self.query_one("#step-label", Static).update(label)
 
     def write(self, line: str) -> None:
         """Thread-safe: append a line to the log."""
