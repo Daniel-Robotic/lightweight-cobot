@@ -59,6 +59,21 @@ LogScreen #hint {
     margin-top: 1;
     color: $text;
 }
+RunScreen #log {
+    height: 1fr;
+    border: none;
+    padding: 0 1;
+    margin-top: 1;
+}
+RunScreen #loading {
+    height: 1;
+    margin-top: 1;
+}
+RunScreen #hint {
+    margin-top: 1;
+    color: $text-muted;
+    text-style: dim;
+}
 """
 
 
@@ -149,6 +164,7 @@ class LogScreen(Screen[bool]):
         self._title = title
         self._run_fn = task
         self._finished = False
+        self._success = False
         self._show_progress = show_progress
 
     def compose(self) -> ComposeResult:
@@ -188,6 +204,7 @@ class LogScreen(Screen[bool]):
 
     def _do_finish(self, success: bool) -> None:
         self._finished = True
+        self._success = success
         self.query_one("#loading", LoadingIndicator).display = False
         msg = (
             "[green]Done![/green]  Press [bold]Enter[/bold] to close."
@@ -198,4 +215,77 @@ class LogScreen(Screen[bool]):
 
     def action_close(self) -> None:
         if self._finished:
-            self.dismiss(True)
+            self.dismiss(self._success)
+
+
+class RunScreen(Screen[None]):
+    """Streams a long-running process. S/Enter/Escape stops or closes."""
+
+    BINDINGS = [
+        Binding("s", "stop_close", "Stop", show=True, priority=True),
+        Binding("enter", "stop_close", "Close", show=False),
+        Binding("escape", "stop_close", "Close", show=False),
+    ]
+
+    def __init__(self, title: str, task: Callable[[RunScreen], None]):
+        super().__init__()
+        self._title = title
+        self._run_fn = task
+        self._proc = None          # set via set_proc()
+        self._kill_fn = None       # optional custom kill callable
+        self._finished = False
+        self._stopped = False
+
+    def compose(self) -> ComposeResult:
+        yield Static(self._title, id="step")
+        yield RichLog(id="log", highlight=True, markup=True, wrap=True)
+        yield LoadingIndicator(id="loading")
+        yield Static("  Press [bold]S[/bold] to stop the process", id="hint")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one(RichLog).focus()
+        self.app.run_worker(lambda: self._run_fn(self), thread=True)
+
+    def set_proc(self, proc) -> None:
+        """Register the running subprocess so Stop can terminate it."""
+        self._proc = proc
+
+    def set_kill_fn(self, fn: Callable) -> None:
+        """Override the default terminate() with a custom kill function."""
+        self._kill_fn = fn
+
+    def write(self, line: str) -> None:
+        self.app.call_from_thread(self._append, line)
+
+    def _append(self, line: str) -> None:
+        self.query_one(RichLog).write(line)
+
+    def finish(self, stopped: bool = False) -> None:
+        self.app.call_from_thread(self._do_finish, stopped)
+
+    def _do_finish(self, stopped: bool) -> None:
+        self._finished = True
+        self.query_one("#loading", LoadingIndicator).display = False
+        if stopped:
+            msg = "[yellow]Process stopped.[/yellow]  Press [bold]Enter[/bold] to close."
+        else:
+            msg = "[green]Process exited.[/green]  Press [bold]Enter[/bold] to close."
+        self.query_one("#hint", Static).update(msg)
+
+    def action_stop_close(self) -> None:
+        if self._finished:
+            self.dismiss(None)
+            return
+        self._stopped = True
+        if self._kill_fn is not None:
+            try:
+                self._kill_fn()
+            except Exception:
+                pass
+        elif self._proc is not None and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass
+        self.write("\n[yellow]Stopping process...[/yellow]")

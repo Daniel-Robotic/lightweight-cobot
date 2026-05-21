@@ -6,6 +6,7 @@ from cobot.commands import docker_setup as cmd_docker_setup
 from cobot.commands import doc_setup as cmd_doc_setup
 from cobot.commands import local_setup as cmd_local_setup
 from cobot.commands import robot_setup as cmd_robot_setup
+from cobot.commands import run as cmd_run
 from cobot.commands import setup as cmd_setup
 from cobot.commands import update as cmd_update
 
@@ -18,6 +19,9 @@ _GROUPS = [
         ("docker-setup", "build or pull Docker images for KUKA iiwa7"),
         ("doc-setup",    "deploy or stop the MkDocs documentation server"),
         ("robot-setup",  "configure cobot-setting.yaml interactively"),
+    ]),
+    ("Run", [
+        ("run", "launch the robot controller or Webots simulator (local or Docker)"),
     ]),
     ("Management", [
         ("update", "pull latest changes from the remote git branch and reinstall cobot"),
@@ -80,5 +84,6 @@ def _register_commands(subparsers):
     cmd_docker_setup.register(subparsers)
     cmd_doc_setup.register(subparsers)
     cmd_robot_setup.register(subparsers)
+    cmd_run.register(subparsers)
     cmd_update.register(subparsers)
     cmd_delete.register(subparsers)
