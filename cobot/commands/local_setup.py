@@ -255,7 +255,7 @@ def _task_build(screen: LogScreen) -> None:
                 )
 
         _run_logged(
-            ["colcon", "build", "--base-paths", "src", "--symlink-install"],
+            ["colcon", "build", "--base-paths", "src"],
             _track,
             env=env,
             cwd=_PROJECT_DIR,
