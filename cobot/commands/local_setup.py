@@ -159,8 +159,9 @@ def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] 
 
     write("[cyan][*][/cyan] Adding ROS2 apt repository...")
 
-    # Best-effort update before installing prereqs
-    subprocess.run(["sudo", "apt-get", "update", "-qq"], capture_output=True)
+    # Best-effort update - 60 second timeout so a bad mirror doesn't hang forever.
+    # Фоновое обновление с таймаутом 60 секунд, чтобы зависший зеркальный сервер не блокировал процесс.
+    subprocess.run(["sudo", "apt-get", "update", "-qq"], capture_output=True, timeout=60)
     _prog(15)
 
     _run_quiet(
@@ -176,7 +177,11 @@ def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".key") as tmp:
         tmp_path = tmp.name
     try:
-        urllib.request.urlretrieve(_ROS_KEY_URL, tmp_path)
+        # 30 second timeout - if GitHub is unreachable we fail fast instead of hanging forever.
+        # Таймаут 30 секунд - если GitHub недоступен, падаем быстро вместо бесконечного зависания.
+        with urllib.request.urlopen(_ROS_KEY_URL, timeout=30) as resp:
+            with open(tmp_path, "wb") as f:
+                f.write(resp.read())
         _prog(60)
         # Convert the ASCII-armored key to binary GPG format that apt understands.
         # Конвертируем ключ из ASCII-armor формата в бинарный GPG, который понимает apt.
