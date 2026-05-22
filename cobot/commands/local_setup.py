@@ -234,7 +234,7 @@ def _task_build(screen: LogScreen) -> None:
 
         screen.set_progress(30, "Building...")
         list_result = subprocess.run(
-            ["colcon", "list"], capture_output=True, text=True,
+            ["colcon", "list", "--base-paths", "src"], capture_output=True, text=True,
             cwd=_PROJECT_DIR, env=env,
         )
         total = max(len([l for l in list_result.stdout.splitlines() if l.strip()]), 1)
@@ -255,7 +255,7 @@ def _task_build(screen: LogScreen) -> None:
                 )
 
         _run_logged(
-            ["colcon", "build"],
+            ["colcon", "build", "--base-paths", "src", "--symlink-install"],
             _track,
             env=env,
             cwd=_PROJECT_DIR,
