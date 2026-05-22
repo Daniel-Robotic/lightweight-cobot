@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import glob
+import json
 import os
 import shutil
 import subprocess
@@ -17,11 +19,15 @@ from cobot.commands.docker_setup import run as _docker_setup
 
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 
-# Paths used for the ROS2 apt repository signing key and sources list.
-# Пути для ключа подписи apt-репозитория ROS2 и файла sources list.
-_ROS_KEYRING = Path("/usr/share/keyrings/ros-archive-keyring.gpg")
-_ROS_SOURCES = Path("/etc/apt/sources.list.d/ros2.list")
-_ROS_KEY_URL = "https://raw.githubusercontent.com/ros/rosdistro/master/ros.key"
+# GitHub repository that publishes the official ROS2 apt source package.
+# Репозиторий GitHub, публикующий официальный пакет источника apt для ROS2.
+_ROS_APT_SOURCE_API = (
+    "https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest"
+)
+_ROS_APT_SOURCE_DEB = (
+    "https://github.com/ros-infrastructure/ros-apt-source/releases/download"
+    "/{version}/ros2-apt-source_{version}.{codename}_all.deb"
+)
 
 # Suppress apt interactive prompts such as "restart services?".
 # Подавляем интерактивные запросы apt, например "перезапустить службы?".
@@ -174,8 +180,8 @@ def _setup_locale(write: Write) -> None:
     write("[green][ok][/green] Locale configured")
 
 
-# Add the official ROS2 apt repository and its signing key so we can install ROS2 packages.
-# Добавляем официальный apt-репозиторий ROS2 и его ключ подписи, чтобы можно было установить пакеты ROS2.
+# Add the official ROS2 apt repository using the ros2-apt-source package.
+# Добавляем официальный репозиторий ROS2 через пакет ros2-apt-source.
 def _add_ros2_repo(
     write: Write,
     on_progress: Optional[Callable[[float], None]] = None,
@@ -185,61 +191,82 @@ def _add_ros2_repo(
         if on_progress:
             on_progress(p)
 
-    write("[cyan][*][/cyan] Adding ROS2 apt repository...")
+    write("[cyan][*][/cyan] Configuring ROS2 apt repository...")
 
-    # Best-effort update - 60 second timeout so a bad mirror doesn't hang forever.
-    # Фоновое обновление с таймаутом 60 секунд, чтобы зависший зеркальный сервер не блокировал процесс.
+    # Update apt cache so we can install curl and software-properties-common.
+    # Обновляем кеш apt перед установкой curl и software-properties-common.
     subprocess.run(["sudo", "apt-get", "update"] + _APT_TIMEOUTS, capture_output=True, timeout=120)
-    _prog(15)
+    _prog(10)
 
     _run_quiet(
         ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
-         "software-properties-common", "curl", "gnupg"],
+         "software-properties-common", "curl"],
         write, _APT_ENV,
     )
-    _prog(35)
+    _prog(20)
     _run_quiet(["sudo", "add-apt-repository", "-y", "universe"], write)
-    _prog(45)
+    _prog(30)
 
-    write("[cyan][*][/cyan] Downloading ROS2 signing key...")
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".key") as tmp:
+    # Fetch the latest ros2-apt-source release version from the GitHub API.
+    # The User-Agent header is required by the GitHub API.
+    # Получаем последнюю версию ros2-apt-source через GitHub API.
+    # Заголовок User-Agent обязателен для GitHub API.
+    write("[cyan][*][/cyan] Fetching ros2-apt-source package...")
+    req = urllib.request.Request(
+        _ROS_APT_SOURCE_API,
+        headers={"User-Agent": "cobot-installer"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        version = json.loads(resp.read())["tag_name"]
+
+    codename = subprocess.check_output(
+        ["bash", "-c", ". /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}}"],
+        text=True,
+    ).strip()
+    deb_url = _ROS_APT_SOURCE_DEB.format(version=version, codename=codename)
+    _prog(40)
+
+    # Download the .deb and install it. The package sets up the GPG key and sources list automatically.
+    # Скачиваем .deb и устанавливаем его. Пакет сам настраивает GPG-ключ и список источников.
+    with tempfile.NamedTemporaryFile(suffix=".deb", delete=False) as tmp:
         tmp_path = tmp.name
     try:
-        # 30 second timeout - if GitHub is unreachable we fail fast instead of hanging forever.
-        # Таймаут 30 секунд - если GitHub недоступен, падаем быстро вместо бесконечного зависания.
-        with urllib.request.urlopen(_ROS_KEY_URL, timeout=30) as resp:
-            with open(tmp_path, "wb") as f:
-                f.write(resp.read())
-        _prog(60)
-        # Convert the ASCII-armored key to binary GPG format that apt understands.
-        # Конвертируем ключ из ASCII-armor формата в бинарный GPG, который понимает apt.
-        _run_quiet(["sudo", "gpg", "--dearmor", "--yes", "-o", str(_ROS_KEYRING), tmp_path])
+        with urllib.request.urlopen(deb_url, timeout=60) as resp:
+            Path(tmp_path).write_bytes(resp.read())
+        _prog(55)
+
+        # Remember which files exist before dpkg so we can find the new sources file it creates.
+        # Запоминаем файлы до dpkg, чтобы найти новый файл источников, который он создаст.
+        before = set(glob.glob("/etc/apt/sources.list.d/*"))
+        _run_quiet(["sudo", "dpkg", "-i", tmp_path], write)
+        after = set(glob.glob("/etc/apt/sources.list.d/*"))
     finally:
         os.unlink(tmp_path)
-    write("[green][ok][/green] Signing key installed")
-    _prog(65)
 
-    arch = subprocess.check_output(["dpkg", "--print-architecture"], text=True).strip()
-    codename = subprocess.check_output(
-        ["bash", "-c", ". /etc/os-release && echo $UBUNTU_CODENAME"], text=True
-    ).strip()
-    sources_line = (
-        f"deb [arch={arch} signed-by={_ROS_KEYRING}] "
-        f"http://packages.ros.org/ros2/ubuntu {codename} main\n"
-    )
-    proc = subprocess.run(
-        ["sudo", "tee", str(_ROS_SOURCES)],
-        input=sources_line, capture_output=True, text=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"Failed to write {_ROS_SOURCES}")
-    _prog(70)
+    write("[green][ok][/green] ROS2 apt source installed")
+    _prog(60)
 
-    write("[cyan][*][/cyan] Updating apt cache...")
+    # Update ONLY the newly added ROS2 sources file, not all Ubuntu repos.
+    # This avoids re-downloading hundreds of MB of ubuntu package lists that are already cached.
+    # Обновляем ТОЛЬКО новый файл источников ROS2, а не все репозитории Ubuntu.
+    # Это позволяет не перекачивать сотни МБ списков пакетов Ubuntu, которые уже закешированы.
+    write("[cyan][*][/cyan] Updating ROS2 package list...")
+    new_files = [f for f in (after - before) if f.endswith((".list", ".sources"))]
+    if new_files:
+        update_cmd = [
+            "sudo", "apt-get", "update", "-q",
+            "-o", f"Dir::Etc::sourcelist={new_files[0]}",
+            "-o", "Dir::Etc::sourceparts=-",
+            "-o", "APT::Get::List-Cleanup=0",
+        ] + _APT_TIMEOUTS
+    else:
+        # Fallback when the deb updates an existing file rather than creating a new one.
+        # Запасной вариант когда deb обновляет существующий файл, а не создаёт новый.
+        update_cmd = ["sudo", "apt-get", "update", "-q"] + _APT_TIMEOUTS
+
     _run_apt_with_progress(
-        ["sudo", "apt-get", "update", "-q"] + _APT_TIMEOUTS,
-        write,
-        lambda p: _prog(70 + p * 0.30),
+        update_cmd, write,
+        lambda p: _prog(60 + p * 0.40),
         _APT_ENV,
         register_proc=register_proc,
     )
