@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.request
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -103,10 +104,6 @@ def _run_apt_with_progress(
     register_proc: Callable | None = None,
 ) -> None:
     """Run an apt command and feed real percentage from APT::Status-Fd to on_progress(0-100)."""
-    # APT::Status-Fd makes apt write progress lines to a pipe descriptor instead of stdout.
-    # We read that pipe in a background thread so we can update the progress bar live.
-    # APT::Status-Fd заставляет apt писать строки прогресса в дескриптор канала, а не в stdout.
-    # Читаем этот канал в фоновом потоке, чтобы обновлять прогресс-бар в реальном времени.
     r_fd, w_fd = os.pipe()
     try:
         proc = subprocess.Popen(
@@ -118,19 +115,23 @@ def _run_apt_with_progress(
             pass_fds=(w_fd,),
         )
     finally:
-        # Close the write end in the parent process so the reader thread gets EOF when apt exits.
-        # Закрываем пишущий конец в родительском процессе, чтобы читающий поток получил EOF при выходе apt.
         os.close(w_fd)
 
-    # Tell the caller about this process so it can be killed if the user cancels.
-    # Сообщаем вызывающему о процессе, чтобы его можно было завершить при отмене пользователем.
     if register_proc:
         register_proc(proc)
+
+    done = threading.Event()
+    last_output = [time.monotonic()]
+
+    def _heartbeat() -> None:
+        while not done.wait(5):
+            idle = int(time.monotonic() - last_output[0])
+            if idle >= 5:
+                write(f"[dim]... waiting ({idle}s)[/dim]")
 
     def _read_status() -> None:
         with os.fdopen(r_fd, "r") as f:
             for line in f:
-                # Format: dlstatus:N:PCT:MSG  or  pmstatus:NAME:PCT:MSG
                 parts = line.strip().split(":", 3)
                 if len(parts) >= 3:
                     try:
@@ -139,13 +140,18 @@ def _run_apt_with_progress(
                         pass
 
     t = threading.Thread(target=_read_status, daemon=True)
+    hb = threading.Thread(target=_heartbeat, daemon=True)
     t.start()
+    hb.start()
     for line in proc.stdout:
+        last_output[0] = time.monotonic()
         s = line.rstrip()
         if s:
             write(s)
     proc.wait()
+    done.set()
     t.join()
+
     if proc.returncode not in (0, -9):
         raise RuntimeError(f"Command failed: {cmd[0]}")
 
@@ -285,19 +291,38 @@ def _install_ros2_jazzy(
     write("[green][ok][/green] ROS2 Jazzy Desktop installed")
 
 
-# Install colcon if it is not already available. It is used to build the project packages.
-# Устанавливаем colcon если он ещё не доступен. Он используется для сборки пакетов проекта.
-def _install_colcon(write: Write) -> None:
-    if shutil.which("colcon"):
-        write("[green][ok][/green] colcon already available")
+# Install colcon and rosdep if not already available.
+# Устанавливаем colcon и rosdep если они ещё не доступны.
+def _install_dev_tools(write: Write) -> None:
+    to_install = []
+    if not shutil.which("colcon"):
+        to_install.append("python3-colcon-common-extensions")
+    if not shutil.which("rosdep"):
+        to_install.append("python3-rosdep")
+    if not to_install:
+        write("[green][ok][/green] Dev tools already installed")
         return
-    write("[cyan][*][/cyan] Installing colcon...")
+    write(f"[cyan][*][/cyan] Installing: {', '.join(to_install)}...")
     _run_logged(
-        ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
-         "python3-colcon-common-extensions"] + _APT_TIMEOUTS,
+        ["sudo", "apt-get", "install", "-y", "--no-install-recommends"] + to_install + _APT_TIMEOUTS,
         write, _APT_ENV,
     )
-    write("[green][ok][/green] colcon installed")
+    write("[green][ok][/green] Dev tools installed")
+
+
+_ROSDEP_SOURCES = Path("/etc/ros/rosdep/sources.list.d/20-default.list")
+
+
+# Initialize and update rosdep. Safe to call on repeated runs.
+# Инициализируем и обновляем rosdep. Безопасно вызывать при повторных запусках.
+def _setup_rosdep(write: Write) -> None:
+    if not _ROSDEP_SOURCES.exists():
+        write("[cyan][*][/cyan] Initializing rosdep...")
+        _run_logged(["sudo", "rosdep", "init"], write)
+    else:
+        write("[green][ok][/green] rosdep already initialized")
+    write("[cyan][*][/cyan] Updating rosdep...")
+    _run_logged(["rosdep", "update", "--rosdistro", "jazzy"], write)
 
 
 # Add "source /opt/ros/jazzy/setup.bash" to the user's shell config file.
@@ -322,12 +347,12 @@ def _task_install_jazzy(screen: LogScreen) -> None:
     try:
         # Step 1 — locale  (0 → 5 %)
         screen.set_progress(0, "Setting up locale...")
-        screen.write("[bold]Step 1 / 5 — Locale[/bold]")
+        screen.write("[bold]Step 1 / 6 — Locale[/bold]")
         _setup_locale(screen.write)
 
         # Step 2 — ROS2 repo  (5 → 20 %)
         screen.set_progress(5, "Adding ROS2 repository...")
-        screen.write("\n[bold]Step 2 / 5 — ROS2 repository[/bold]")
+        screen.write("\n[bold]Step 2 / 6 — ROS2 repository[/bold]")
         _add_ros2_repo(
             screen.write,
             on_progress=lambda p: screen.set_progress(5 + p * 0.15),
@@ -337,26 +362,31 @@ def _task_install_jazzy(screen: LogScreen) -> None:
         if screen.is_stopped():
             return
 
-        # Step 3 — ROS2 Jazzy  (20 → 85 %)
+        # Step 3 — ROS2 Jazzy Desktop  (20 → 82 %)
         screen.set_progress(20, "Installing ROS2 Jazzy Desktop...")
-        screen.write("\n[bold]Step 3 / 5 — ROS2 Jazzy Desktop[/bold]")
+        screen.write("\n[bold]Step 3 / 6 — ROS2 Jazzy Desktop[/bold]")
         _install_ros2_jazzy(
             screen.write,
-            on_progress=lambda p: screen.set_progress(20 + p * 0.65),
+            on_progress=lambda p: screen.set_progress(20 + p * 0.62),
             register_proc=screen.set_proc,
         )
 
         if screen.is_stopped():
             return
 
-        # Step 4 — colcon  (85 → 92 %)
-        screen.set_progress(85, "Installing colcon...")
-        screen.write("\n[bold]Step 4 / 5 — colcon[/bold]")
-        _install_colcon(screen.write)
+        # Step 4 — dev tools  (82 → 90 %)
+        screen.set_progress(82, "Installing dev tools...")
+        screen.write("\n[bold]Step 4 / 6 — Dev tools (colcon, rosdep)[/bold]")
+        _install_dev_tools(screen.write)
 
-        # Step 5 — shell rc  (92 → 100 %)
-        screen.set_progress(92, "Configuring shell...")
-        screen.write("\n[bold]Step 5 / 5 — Shell configuration[/bold]")
+        # Step 5 — rosdep  (90 → 96 %)
+        screen.set_progress(90, "Setting up rosdep...")
+        screen.write("\n[bold]Step 5 / 6 — rosdep[/bold]")
+        _setup_rosdep(screen.write)
+
+        # Step 6 — shell rc  (96 → 100 %)
+        screen.set_progress(96, "Configuring shell...")
+        screen.write("\n[bold]Step 6 / 6 — Shell configuration[/bold]")
         _setup_shell_rc(screen.write)
         screen.set_progress(100, "Done")
 
@@ -381,25 +411,35 @@ def _task_build(screen: LogScreen) -> None:
             screen.finish(False)
             return
 
-        # Count packages first so we can show X/total in the progress label.
-        # Сначала считаем пакеты, чтобы показывать X/всего в подписи прогресса.
+        # Step 1: install all src/ dependencies via rosdep  (0 → 25 %)
+        screen.set_progress(0, "Installing dependencies...")
+        screen.write("[bold]Step 1 / 2 — rosdep install[/bold]\n")
+        _run_logged(
+            ["rosdep", "install", "--from-paths", "src", "-i", "-r", "-y"],
+            screen.write,
+            cwd=_PROJECT_DIR,
+            register_proc=screen.set_proc,
+        )
+
+        if screen.is_stopped():
+            return
+
+        # Step 2: build with colcon  (25 → 100 %)
+        screen.set_progress(25, "Building...")
         list_result = subprocess.run(
             ["colcon", "list"], capture_output=True, text=True, cwd=_PROJECT_DIR,
         )
         total = max(len([l for l in list_result.stdout.splitlines() if l.strip()]), 1)
-
-        screen.write(f"[bold]Building {total} package(s) with colcon[/bold]\n")
-        screen.set_progress(0, f"0 / {total} packages done")
+        screen.write(f"\n[bold]Step 2 / 2 — colcon build ({total} packages)[/bold]\n")
         built = 0
 
         def _track(line: str) -> None:
             nonlocal built
             screen.write(line)
-            # colcon prints "Finished <<<" or "Failed <<<" when each package is done.
-            # colcon печатает "Finished <<<" или "Failed <<<" когда каждый пакет готов.
             if "Finished <<<" in line or "Failed <<<" in line:
                 built += 1
-                screen.set_progress(built / total * 100, f"{built} / {total} packages done")
+                pct = 25 + built / total * 75
+                screen.set_progress(pct, f"{built} / {total} packages done")
 
         _run_logged(["colcon", "build", "--symlink-install"], _track, cwd=_PROJECT_DIR, register_proc=screen.set_proc)
 
