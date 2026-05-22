@@ -37,6 +37,8 @@ _APT_TIMEOUTS = [
     "-o", "Acquire::http::Timeout=60",
     "-o", "Acquire::https::Timeout=60",
     "-o", "Acquire::Retries=3",
+    # Many VMs have broken IPv6 routing; force IPv4 to avoid silent hangs.
+    "-o", "Acquire::ForceIPv4=true",
 ]
 
 
@@ -169,8 +171,8 @@ def _setup_locale(write: Write) -> None:
         write("[green][ok][/green] UTF-8 locale active")
         return
     write("[cyan][*][/cyan] Configuring UTF-8 locale...")
-    _run_quiet(["sudo", "apt-get", "update", "-qq"], write)
-    _run_quiet(["sudo", "apt-get", "install", "-y", "--no-install-recommends", "locales"], write, _APT_ENV)
+    _run_quiet(["sudo", "apt-get", "update", "-qq"] + _APT_TIMEOUTS, write)
+    _run_quiet(["sudo", "apt-get", "install", "-y", "--no-install-recommends", "locales"] + _APT_TIMEOUTS, write, _APT_ENV)
     _run_quiet(["sudo", "locale-gen", "en_US.UTF-8"], write)
     _run_quiet(["sudo", "update-locale", "LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8"], write)
     write("[green][ok][/green] Locale configured")
@@ -178,6 +180,14 @@ def _setup_locale(write: Write) -> None:
 
 # Add the official ROS2 apt repository using the ros2-apt-source package.
 # Добавляем официальный репозиторий ROS2 через пакет ros2-apt-source.
+def _cleanup_ros2_repo(write: Write) -> None:
+    write("[cyan][*][/cyan] Cleaning up previous ROS2 repository config...")
+    for path in (_ROS_KEYRING, _ROS_SOURCES):
+        if path.exists():
+            subprocess.run(["sudo", "rm", "-f", str(path)], check=False)
+            write(f"[dim]Removed {path}[/dim]")
+
+
 def _add_ros2_repo(
     write: Write,
     on_progress: Optional[Callable[[float], None]] = None,
@@ -187,6 +197,7 @@ def _add_ros2_repo(
         if on_progress:
             on_progress(p)
 
+    _cleanup_ros2_repo(write)
     write("[cyan][*][/cyan] Configuring ROS2 apt repository...")
 
     # Install prerequisites for GPG key import and universe repo.
@@ -195,11 +206,11 @@ def _add_ros2_repo(
     _prog(10)
     _run_quiet(
         ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
-         "dirmngr", "gnupg2", "software-properties-common"],
+         "dirmngr", "gnupg2", "software-properties-common"] + _APT_TIMEOUTS,
         write, _APT_ENV,
     )
     _prog(20)
-    _run_quiet(["sudo", "add-apt-repository", "-y", "universe"], write)
+    _run_quiet(["sudo", "add-apt-repository", "-y", "universe"] + _APT_TIMEOUTS, write)
     _prog(30)
 
     # Import the official ROS2 signing key from the Ubuntu keyserver.
