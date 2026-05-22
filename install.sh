@@ -330,6 +330,18 @@ run_setup() {
 
 main() {
     print_banner
+
+    # Ask for the sudo password upfront before anything else runs.
+    # This way all later sudo calls work silently without interrupting the flow.
+    # Skip if we are already root - no password needed in that case.
+    # Запрашиваем пароль sudo в самом начале, до запуска всего остального.
+    # Тогда все последующие sudo-вызовы работают молча, не прерывая процесс.
+    # Пропускаем если уже запущены от root - пароль в этом случае не нужен.
+    if [ "$(id -u)" -ne 0 ]; then
+        log_info "Some steps require administrator privileges. Please enter your password:"
+        sudo -v || log_error "sudo authentication failed"
+    fi
+
     detect_os
     check_git
     check_docker
