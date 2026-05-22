@@ -525,6 +525,13 @@ def run(args: argparse.Namespace) -> None:
     # ROS2 ещё не установлен - показываем установщик.
     # После установки пользователь должен перезапустить терминал, поэтому останавливаемся здесь.
     if not _detect_ros2_jazzy():
+        # Cache the sudo token now, while the terminal is in normal mode and the password
+        # prompt is visible. Once Textual takes over the screen, sudo prompts become invisible
+        # and the process hangs silently waiting for input that never arrives.
+        # Кешируем sudo-токен сейчас, пока терминал работает в обычном режиме и запрос пароля
+        # виден пользователю. После запуска Textual sudo не может показать запрос и процесс
+        # зависает молча, ожидая ввод который никогда не придёт.
+        subprocess.run(["sudo", "-v"], check=False)
         _InstallJazzyApp().run()
         return
 
@@ -542,4 +549,7 @@ def run(args: argparse.Namespace) -> None:
             "No, skip",
         )
         if v and v.startswith("Yes"):
+            # Same sudo pre-cache before launching the Webots installer TUI.
+            # Тот же предварительный кеш sudo перед запуском TUI установщика Webots.
+            subprocess.run(["sudo", "-v"], check=False)
             WebotsInstallApp().run()
