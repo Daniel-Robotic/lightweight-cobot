@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import os
 import shutil
@@ -216,9 +215,7 @@ def _add_ros2_repo(
     _prog(30)
 
     # Fetch the latest ros2-apt-source release version from the GitHub API.
-    # The User-Agent header is required by the GitHub API.
     # Получаем последнюю версию ros2-apt-source через GitHub API.
-    # Заголовок User-Agent обязателен для GitHub API.
     write("[cyan][*][/cyan] Fetching ros2-apt-source package...")
     req = urllib.request.Request(
         _ROS_APT_SOURCE_API,
@@ -243,35 +240,46 @@ def _add_ros2_repo(
             Path(tmp_path).write_bytes(resp.read())
         _prog(55)
 
-        # Remember which files exist before dpkg so we can find the new sources file it creates.
-        # Запоминаем файлы до dpkg, чтобы найти новый файл источников, который он создаст.
-        before = set(glob.glob("/etc/apt/sources.list.d/*"))
-        _run_quiet(["sudo", "dpkg", "-i", tmp_path], write)
-        after = set(glob.glob("/etc/apt/sources.list.d/*"))
+        # apt install resolves dependencies automatically unlike dpkg -i.
+        # The "./" prefix tells apt this is a local file, not a package name from a repo.
+        # apt install автоматически разрешает зависимости в отличие от dpkg -i.
+        # Префикс "./" говорит apt что это локальный файл, а не имя пакета из репозитория.
+        _run_quiet(["sudo", "apt-get", "install", "-y", f"./{tmp_path}"], write, _APT_ENV)
     finally:
         os.unlink(tmp_path)
 
     write("[green][ok][/green] ROS2 apt source installed")
     _prog(60)
 
-    # Update ONLY the newly added ROS2 sources file, not all Ubuntu repos.
-    # This avoids re-downloading hundreds of MB of ubuntu package lists that are already cached.
-    # Обновляем ТОЛЬКО новый файл источников ROS2, а не все репозитории Ubuntu.
-    # Это позволяет не перекачивать сотни МБ списков пакетов Ubuntu, которые уже закешированы.
-    write("[cyan][*][/cyan] Updating ROS2 package list...")
-    new_files = [f for f in (after - before) if f.endswith((".list", ".sources"))]
-    if new_files:
+    # Ask dpkg which files the package installed and find the apt sources entry.
+    # This is more reliable than comparing directory snapshots: dpkg knows exactly what it placed.
+    # Спрашиваем dpkg какие файлы установил пакет и находим файл источников apt.
+    # Это надёжнее сравнения снимков директории: dpkg точно знает что он положил.
+    dpkg_files = subprocess.run(
+        ["dpkg", "-L", "ros2-apt-source"],
+        capture_output=True, text=True,
+    ).stdout.splitlines()
+    sources_file = next(
+        (f for f in dpkg_files
+         if f.startswith("/etc/apt/") and f.endswith((".list", ".sources"))),
+        None,
+    )
+
+    if sources_file:
+        write(f"[dim]Sources file: {sources_file}[/dim]")
         update_cmd = [
-            "sudo", "apt-get", "update", "-q",
-            "-o", f"Dir::Etc::sourcelist={new_files[0]}",
+            "sudo", "apt-get", "update",
+            "-o", f"Dir::Etc::sourcelist={sources_file}",
             "-o", "Dir::Etc::sourceparts=-",
             "-o", "APT::Get::List-Cleanup=0",
         ] + _APT_TIMEOUTS
     else:
-        # Fallback when the deb updates an existing file rather than creating a new one.
-        # Запасной вариант когда deb обновляет существующий файл, а не создаёт новый.
-        update_cmd = ["sudo", "apt-get", "update", "-q"] + _APT_TIMEOUTS
+        # Fall back to full update if dpkg -L does not reveal the sources file.
+        # Запасной вариант: полный update если dpkg -L не раскрыл файл источников.
+        write("[dim]Sources file not found via dpkg -L, running full apt-get update[/dim]")
+        update_cmd = ["sudo", "apt-get", "update"] + _APT_TIMEOUTS
 
+    write("[cyan][*][/cyan] Updating ROS2 package list...")
     _run_apt_with_progress(
         update_cmd, write,
         lambda p: _prog(60 + p * 0.40),
