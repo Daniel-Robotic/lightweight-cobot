@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
 import subprocess
@@ -18,15 +17,13 @@ from cobot.commands.docker_setup import run as _docker_setup
 
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 
-# GitHub repository that publishes the official ROS2 apt source package.
-# Репозиторий GitHub, публикующий официальный пакет источника apt для ROS2.
-_ROS_APT_SOURCE_API = (
-    "https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest"
-)
-_ROS_APT_SOURCE_DEB = (
-    "https://github.com/ros-infrastructure/ros-apt-source/releases/download"
-    "/{version}/ros2-apt-source_{version}.{codename}_all.deb"
-)
+# Official ROS2 release signing key fingerprint and the keyring path apt expects it at.
+# This is the same key used in OSRF's official Docker images (docker/jazzy/ros-core/Dockerfile).
+# Отпечаток официального ключа подписи релизов ROS2 и путь к кейрингу, который ожидает apt.
+# Тот же ключ используется в официальных Docker-образах OSRF.
+_ROS2_KEY = "C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654"
+_ROS_KEYRING = Path("/usr/share/keyrings/ros2-archive-keyring.gpg")
+_ROS_SOURCES = Path("/etc/apt/sources.list.d/ros2.list")
 
 # Suppress apt interactive prompts such as "restart services?".
 # Подавляем интерактивные запросы apt, например "перезапустить службы?".
@@ -192,97 +189,69 @@ def _add_ros2_repo(
 
     write("[cyan][*][/cyan] Configuring ROS2 apt repository...")
 
-    for leftover in [
-        "/etc/apt/sources.list.d/ros2.list",
-        "/usr/share/keyrings/ros-archive-keyring.gpg",
-    ]:
-        if Path(leftover).exists():
-            subprocess.run(["sudo", "rm", "-f", leftover], capture_output=True)
-            write(f"[dim]Removed leftover: {leftover}[/dim]")
-
-    # Update apt cache so we can install curl and software-properties-common.
-    # Обновляем кеш apt перед установкой curl и software-properties-common.
+    # Install prerequisites for GPG key import and universe repo.
+    # Устанавливаем необходимые пакеты для импорта GPG-ключа и репозитория universe.
     subprocess.run(["sudo", "apt-get", "update"] + _APT_TIMEOUTS, capture_output=True, timeout=120)
     _prog(10)
-
     _run_quiet(
         ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
-         "software-properties-common", "curl"],
+         "dirmngr", "gnupg2", "software-properties-common"],
         write, _APT_ENV,
     )
     _prog(20)
     _run_quiet(["sudo", "add-apt-repository", "-y", "universe"], write)
     _prog(30)
 
-    # Fetch the latest ros2-apt-source release version from the GitHub API.
-    # Получаем последнюю версию ros2-apt-source через GitHub API.
-    write("[cyan][*][/cyan] Fetching ros2-apt-source package...")
-    req = urllib.request.Request(
-        _ROS_APT_SOURCE_API,
-        headers={"User-Agent": "cobot-installer"},
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        version = json.loads(resp.read())["tag_name"]
+    # Import the official ROS2 signing key from the Ubuntu keyserver.
+    # This is exactly how OSRF does it in their official Docker images.
+    # The key fingerprint is fixed for all ROS2 releases - it never changes.
+    # Импортируем официальный ключ подписи ROS2 с сервера ключей Ubuntu.
+    # Именно так OSRF делает это в официальных Docker-образах.
+    # Отпечаток ключа фиксирован для всех релизов ROS2 и никогда не меняется.
+    write("[cyan][*][/cyan] Importing ROS2 signing key from keyserver.ubuntu.com...")
+    _run_quiet([
+        "sudo", "bash", "-c",
+        f'export GNUPGHOME="$(mktemp -d)" && '
+        f'gpg --batch --keyserver keyserver.ubuntu.com --recv-keys {_ROS2_KEY} && '
+        f'mkdir -p /usr/share/keyrings && '
+        f'gpg --batch --export {_ROS2_KEY} > {_ROS_KEYRING} && '
+        f'gpgconf --kill all && '
+        f'rm -rf "$GNUPGHOME"',
+    ], write)
+    write("[green][ok][/green] Signing key installed")
+    _prog(60)
 
+    # Write the sources.list entry pointing at the stable ROS2 apt repository.
+    # Записываем строку sources.list, указывающую на стабильный репозиторий ROS2.
     codename = subprocess.check_output(
         ["bash", "-c", ". /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}}"],
         text=True,
     ).strip()
-    deb_url = _ROS_APT_SOURCE_DEB.format(version=version, codename=codename)
-    _prog(40)
-
-    # Download the .deb and install it. The package sets up the GPG key and sources list automatically.
-    # Скачиваем .deb и устанавливаем его. Пакет сам настраивает GPG-ключ и список источников.
-    with tempfile.NamedTemporaryFile(suffix=".deb", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
-        with urllib.request.urlopen(deb_url, timeout=60) as resp:
-            Path(tmp_path).write_bytes(resp.read())
-        _prog(55)
-
-        # apt install resolves dependencies automatically unlike dpkg -i.
-        # The "./" prefix tells apt this is a local file, not a package name from a repo.
-        # apt install автоматически разрешает зависимости в отличие от dpkg -i.
-        # Префикс "./" говорит apt что это локальный файл, а не имя пакета из репозитория.
-        _run_quiet(["sudo", "apt-get", "install", "-y", tmp_path], write, _APT_ENV)
-    finally:
-        os.unlink(tmp_path)
-
-    write("[green][ok][/green] ROS2 apt source installed")
-    _prog(60)
-
-    # Ask dpkg which files the package installed and find the apt sources entry.
-    # This is more reliable than comparing directory snapshots: dpkg knows exactly what it placed.
-    # Спрашиваем dpkg какие файлы установил пакет и находим файл источников apt.
-    # Это надёжнее сравнения снимков директории: dpkg точно знает что он положил.
-    dpkg_files = subprocess.run(
-        ["dpkg", "-L", "ros2-apt-source"],
-        capture_output=True, text=True,
-    ).stdout.splitlines()
-    sources_file = next(
-        (f for f in dpkg_files
-         if f.startswith("/etc/apt/") and f.endswith((".list", ".sources"))),
-        None,
+    sources_line = (
+        f"deb [ signed-by={_ROS_KEYRING} ] "
+        f"http://packages.ros.org/ros2/ubuntu {codename} main\n"
     )
+    result = subprocess.run(
+        ["sudo", "tee", str(_ROS_SOURCES)],
+        input=sources_line, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to write {_ROS_SOURCES}")
+    write(f"[dim]Sources: {_ROS_SOURCES}[/dim]")
+    _prog(65)
 
-    if sources_file:
-        write(f"[dim]Sources file: {sources_file}[/dim]")
-        update_cmd = [
-            "sudo", "apt-get", "update",
-            "-o", f"Dir::Etc::sourcelist={sources_file}",
-            "-o", "Dir::Etc::sourceparts=-",
-            "-o", "APT::Get::List-Cleanup=0",
-        ] + _APT_TIMEOUTS
-    else:
-        # Fall back to full update if dpkg -L does not reveal the sources file.
-        # Запасной вариант: полный update если dpkg -L не раскрыл файл источников.
-        write("[dim]Sources file not found via dpkg -L, running full apt-get update[/dim]")
-        update_cmd = ["sudo", "apt-get", "update"] + _APT_TIMEOUTS
-
+    # Update ONLY the ROS2 source we just wrote, not all Ubuntu repos.
+    # Обновляем ТОЛЬКО добавленный источник ROS2, а не все репозитории Ubuntu.
     write("[cyan][*][/cyan] Updating ROS2 package list...")
     _run_apt_with_progress(
-        update_cmd, write,
-        lambda p: _prog(60 + p * 0.40),
+        [
+            "sudo", "apt-get", "update",
+            "-o", f"Dir::Etc::sourcelist={_ROS_SOURCES}",
+            "-o", "Dir::Etc::sourceparts=-",
+            "-o", "APT::Get::List-Cleanup=0",
+        ] + _APT_TIMEOUTS,
+        write,
+        lambda p: _prog(65 + p * 0.35),
         _APT_ENV,
         register_proc=register_proc,
     )
