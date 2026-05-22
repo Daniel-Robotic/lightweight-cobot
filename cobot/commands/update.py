@@ -32,6 +32,8 @@ def _task_update(screen: LogScreen) -> None:
             ["git", "fetch", "origin"],
             cwd=_PROJECT_DIR, capture_output=True, text=True,
         )
+        if screen.is_stopped():
+            return
         if fetch.returncode != 0:
             screen.write(f"[red]Fetch failed:[/red] {fetch.stderr.strip()}")
             screen.finish(False)
@@ -46,9 +48,10 @@ def _task_update(screen: LogScreen) -> None:
         ).strip()
 
         if behind == "0":
-            screen.set_progress(100, "Already up to date")
-            screen.write("[green][ok][/green] Already up to date.")
-            screen.finish(True)
+            if not screen.is_stopped():
+                screen.set_progress(100, "Already up to date")
+                screen.write("[green][ok][/green] Already up to date.")
+                screen.finish(True)
             return
 
         # Show which commits are coming in so the user knows what changed.
@@ -68,6 +71,8 @@ def _task_update(screen: LogScreen) -> None:
             ["git", "pull", "origin", branch],
             capture_output=True, text=True, cwd=_PROJECT_DIR,
         )
+        if screen.is_stopped():
+            return
         if pull.returncode != 0:
             for line in (pull.stdout + pull.stderr).splitlines():
                 if line.strip():
@@ -86,18 +91,22 @@ def _task_update(screen: LogScreen) -> None:
             ["uv", "tool", "install", "--editable", str(_PROJECT_DIR)],
             capture_output=True, text=True,
         )
+        if screen.is_stopped():
+            return
         if reinstall.returncode == 0:
             screen.write("[green][ok][/green] cobot reinstalled")
         else:
             screen.write(f"[yellow]Warning:[/yellow] reinstall failed — {reinstall.stderr.strip()}")
 
-        screen.set_progress(100, "Done")
-        screen.write("\n[green]Project updated successfully.[/green]")
-        screen.finish(True)
+        if not screen.is_stopped():
+            screen.set_progress(100, "Done")
+            screen.write("\n[green]Project updated successfully.[/green]")
+            screen.finish(True)
 
     except Exception as exc:
-        screen.write(f"\n[red]Error:[/red] {exc}")
-        screen.finish(False)
+        if not screen.is_stopped():
+            screen.write(f"\n[red]Error:[/red] {exc}")
+            screen.finish(False)
 
 
 class _UpdateApp(App[None]):

@@ -78,7 +78,13 @@ def _run_quiet(cmd: List[str], write: Write | None = None, env: dict | None = No
 
 # Run a command and stream every output line to the log in real time.
 # Запускаем команду и транслируем каждую строку вывода в лог в реальном времени.
-def _run_logged(cmd: List[str], write: Write, env: dict | None = None, cwd=None) -> None:
+def _run_logged(
+    cmd: List[str],
+    write: Write,
+    env: dict | None = None,
+    cwd=None,
+    register_proc: Callable | None = None,
+) -> None:
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -87,12 +93,14 @@ def _run_logged(cmd: List[str], write: Write, env: dict | None = None, cwd=None)
         env=env or os.environ,
         cwd=cwd,
     )
+    if register_proc:
+        register_proc(proc)
     for line in proc.stdout:
         s = line.rstrip()
         if s:
             write(s)
     proc.wait()
-    if proc.returncode != 0:
+    if proc.returncode not in (0, -9):
         raise RuntimeError(f"Command failed: {cmd[0]}")
 
 
@@ -101,6 +109,7 @@ def _run_apt_with_progress(
     write: Write,
     on_progress: Callable[[float], None],
     env: dict | None = None,
+    register_proc: Callable | None = None,
 ) -> None:
     """Run an apt command and feed real percentage from APT::Status-Fd to on_progress(0-100)."""
     # APT::Status-Fd makes apt write progress lines to a pipe descriptor instead of stdout.
@@ -110,7 +119,7 @@ def _run_apt_with_progress(
     r_fd, w_fd = os.pipe()
     try:
         proc = subprocess.Popen(
-            cmd + [f"-o", f"APT::Status-Fd={w_fd}"],
+            cmd + ["-o", f"APT::Status-Fd={w_fd}"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -121,6 +130,11 @@ def _run_apt_with_progress(
         # Close the write end in the parent process so the reader thread gets EOF when apt exits.
         # Закрываем пишущий конец в родительском процессе, чтобы читающий поток получил EOF при выходе apt.
         os.close(w_fd)
+
+    # Tell the caller about this process so it can be killed if the user cancels.
+    # Сообщаем вызывающему о процессе, чтобы его можно было завершить при отмене пользователем.
+    if register_proc:
+        register_proc(proc)
 
     def _read_status() -> None:
         with os.fdopen(r_fd, "r") as f:
@@ -141,7 +155,7 @@ def _run_apt_with_progress(
             write(s)
     proc.wait()
     t.join()
-    if proc.returncode != 0:
+    if proc.returncode not in (0, -9):
         raise RuntimeError(f"Command failed: {cmd[0]}")
 
 
@@ -162,7 +176,11 @@ def _setup_locale(write: Write) -> None:
 
 # Add the official ROS2 apt repository and its signing key so we can install ROS2 packages.
 # Добавляем официальный apt-репозиторий ROS2 и его ключ подписи, чтобы можно было установить пакеты ROS2.
-def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] = None) -> None:
+def _add_ros2_repo(
+    write: Write,
+    on_progress: Optional[Callable[[float], None]] = None,
+    register_proc: Callable | None = None,
+) -> None:
     def _prog(p: float) -> None:
         if on_progress:
             on_progress(p)
@@ -171,7 +189,6 @@ def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] 
 
     # Best-effort update - 60 second timeout so a bad mirror doesn't hang forever.
     # Фоновое обновление с таймаутом 60 секунд, чтобы зависший зеркальный сервер не блокировал процесс.
-    # subprocess.run(["sudo", "apt-get", "update", "-qq"] + _APT_TIMEOUTS, capture_output=True, timeout=120)
     subprocess.run(["sudo", "apt-get", "update"] + _APT_TIMEOUTS, capture_output=True, timeout=120)
     _prog(15)
 
@@ -224,6 +241,7 @@ def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] 
         write,
         lambda p: _prog(70 + p * 0.30),
         _APT_ENV,
+        register_proc=register_proc,
     )
     write("[green][ok][/green] ROS2 repository ready")
     _prog(100)
@@ -231,13 +249,18 @@ def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] 
 
 # Install the full ROS2 Jazzy Desktop and the developer tools (colcon, rosdep, etc.).
 # Устанавливаем полный ROS2 Jazzy Desktop и инструменты разработчика (colcon, rosdep и т.д.).
-def _install_ros2_jazzy(write: Write, on_progress: Optional[Callable[[float], None]] = None) -> None:
+def _install_ros2_jazzy(
+    write: Write,
+    on_progress: Optional[Callable[[float], None]] = None,
+    register_proc: Callable | None = None,
+) -> None:
     write("[cyan][*][/cyan] Installing ros-jazzy-desktop and ros-dev-tools...")
     _run_apt_with_progress(
         ["sudo", "apt-get", "install", "-y", "ros-jazzy-desktop", "ros-dev-tools"] + _APT_TIMEOUTS,
         write,
         on_progress or (lambda _: None),
         _APT_ENV,
+        register_proc=register_proc,
     )
     write("[green][ok][/green] ROS2 Jazzy Desktop installed")
 
@@ -288,7 +311,11 @@ def _task_install_jazzy(screen: LogScreen) -> None:
         _add_ros2_repo(
             screen.write,
             on_progress=lambda p: screen.set_progress(5 + p * 0.15),
+            register_proc=screen.set_proc,
         )
+
+        if screen.is_stopped():
+            return
 
         # Step 3 — ROS2 Jazzy  (20 → 85 %)
         screen.set_progress(20, "Installing ROS2 Jazzy Desktop...")
@@ -296,7 +323,11 @@ def _task_install_jazzy(screen: LogScreen) -> None:
         _install_ros2_jazzy(
             screen.write,
             on_progress=lambda p: screen.set_progress(20 + p * 0.65),
+            register_proc=screen.set_proc,
         )
+
+        if screen.is_stopped():
+            return
 
         # Step 4 — colcon  (85 → 92 %)
         screen.set_progress(85, "Installing colcon...")
@@ -309,13 +340,15 @@ def _task_install_jazzy(screen: LogScreen) -> None:
         _setup_shell_rc(screen.write)
         screen.set_progress(100, "Done")
 
-        screen.write(
-            "\nRestart the terminal, then run [bold]cobot local-setup[/bold] again to build."
-        )
-        screen.finish(True)
+        if not screen.is_stopped():
+            screen.write(
+                "\nRestart the terminal, then run [bold]cobot local-setup[/bold] again to build."
+            )
+            screen.finish(True)
     except Exception as exc:
-        screen.write(f"\n[red]Error:[/red] {exc}")
-        screen.finish(False)
+        if not screen.is_stopped():
+            screen.write(f"\n[red]Error:[/red] {exc}")
+            screen.finish(False)
 
 
 # Build all project packages with colcon and track progress by counting finished packages.
@@ -348,14 +381,16 @@ def _task_build(screen: LogScreen) -> None:
                 built += 1
                 screen.set_progress(built / total * 100, f"{built} / {total} packages done")
 
-        _run_logged(["colcon", "build", "--symlink-install"], _track, cwd=_PROJECT_DIR)
+        _run_logged(["colcon", "build", "--symlink-install"], _track, cwd=_PROJECT_DIR, register_proc=screen.set_proc)
 
-        screen.set_progress(100, "Build complete")
-        screen.write("\nActivate workspace:  [bold]source install/setup.bash[/bold]")
-        screen.finish(True)
+        if not screen.is_stopped():
+            screen.set_progress(100, "Build complete")
+            screen.write("\nActivate workspace:  [bold]source install/setup.bash[/bold]")
+            screen.finish(True)
     except Exception as exc:
-        screen.write(f"\n[red]Error:[/red] {exc}")
-        screen.finish(False)
+        if not screen.is_stopped():
+            screen.write(f"\n[red]Error:[/red] {exc}")
+            screen.finish(False)
 
 
 # Webots version that matches the Docker images used in this project.
@@ -386,16 +421,31 @@ def _task_install_webots(screen: LogScreen) -> None:
             screen.write(f"[dim]{_WEBOTS_DEB_URL}[/dim]\n")
             screen.set_progress(0, "Downloading Webots...")
 
-            # urllib calls this hook periodically with how many bytes have been downloaded.
-            # urllib вызывает этот обратный вызов периодически с количеством скачанных байт.
-            def _hook(blocks: int, block_size: int, total: int) -> None:
-                if total > 0:
-                    pct = min(blocks * block_size / total * 65, 65)
-                    mb = blocks * block_size / 1_048_576
-                    total_mb = total / 1_048_576
-                    screen.set_progress(pct, f"Downloading... {mb:.0f} / {total_mb:.0f} MB")
+            # Download in 64 KB chunks so we can update the progress bar and bail out if the user
+            # cancels midway through instead of blocking in urlretrieve until the full file arrives.
+            # Скачиваем по 64 КБ, чтобы обновлять прогресс-бар и прерваться при отмене пользователем,
+            # а не блокироваться в urlretrieve до получения всего файла.
+            with urllib.request.urlopen(_WEBOTS_DEB_URL, timeout=30) as resp:
+                total = int(resp.headers.get("Content-Length", 0))
+                downloaded = 0
+                with open(deb_path, "wb") as f:
+                    while True:
+                        if screen.is_stopped():
+                            return
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total > 0:
+                            pct = min(downloaded / total * 65, 65)
+                            mb = downloaded / 1_048_576
+                            total_mb = total / 1_048_576
+                            screen.set_progress(pct, f"Downloading... {mb:.0f} / {total_mb:.0f} MB")
 
-            urllib.request.urlretrieve(_WEBOTS_DEB_URL, deb_path, _hook)
+            if screen.is_stopped():
+                return
+
             screen.write("[green]Download complete.[/green]")
             screen.set_progress(65, "Installing package...")
 
@@ -404,23 +454,28 @@ def _task_install_webots(screen: LogScreen) -> None:
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True,
             )
+            screen.set_proc(proc)
             for line in proc.stdout:
                 s = line.rstrip()
                 if s:
                     screen.write(s)
             proc.wait()
 
-        if proc.returncode != 0:
+        if proc.returncode not in (0, -9):
             screen.write("\n[red]Installation failed.[/red]")
             screen.finish(False)
+            return
+
+        if screen.is_stopped():
             return
 
         screen.set_progress(100, "Done")
         screen.write("\n[green]Webots installed successfully.[/green]")
         screen.finish(True)
     except Exception as exc:
-        screen.write(f"\n[red]Error:[/red] {exc}")
-        screen.finish(False)
+        if not screen.is_stopped():
+            screen.write(f"\n[red]Error:[/red] {exc}")
+            screen.finish(False)
 
 
 # Minimal single-question app used between steps where a full wizard is not needed.

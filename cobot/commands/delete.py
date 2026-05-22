@@ -178,13 +178,15 @@ def _task_delete(screen: LogScreen, remove_ros: bool, remove_webots: bool) -> No
         screen.set_progress(88, "Removing project directory...")
         _remove_project_dir(screen.write)
 
-        screen.set_progress(100, "Done")
-        screen.write("\n[green]Project fully removed.[/green]")
-        screen.finish(True)
+        if not screen.is_stopped():
+            screen.set_progress(100, "Done")
+            screen.write("\n[green]Project fully removed.[/green]")
+            screen.finish(True)
 
     except Exception as exc:
-        screen.write(f"\n[red]Error:[/red] {exc}")
-        screen.finish(False)
+        if not screen.is_stopped():
+            screen.write(f"\n[red]Error:[/red] {exc}")
+            screen.finish(False)
 
 
 # Multi-step confirmation wizard before anything is deleted.

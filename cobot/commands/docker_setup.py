@@ -68,6 +68,7 @@ def _build_image(
     on_progress: Optional[Callable[[float], None]] = None,
     parent_tag: Optional[str] = None,
     build_type: str = "release",
+    register_proc: Optional[Callable] = None,
 ) -> bool:
     write(f"[cyan][*][/cyan] Building [bold]{name}[/bold]...")
     # DOCKER_BUILDKIT=0 gives us "Step X/Y" lines in the output which we parse for progress.
@@ -84,6 +85,8 @@ def _build_image(
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
     )
+    if register_proc:
+        register_proc(proc)
     for line in proc.stdout:
         s = line.rstrip()
         if s:
@@ -94,6 +97,8 @@ def _build_image(
                 step, total = int(m.group(1)), int(m.group(2))
                 on_progress(step / total * 100)
     proc.wait()
+    if proc.returncode in (-9, -15):
+        return False
     if proc.returncode == 0:
         write(f"[green][ok][/green] {name}")
         return True
@@ -102,12 +107,13 @@ def _build_image(
 
 
 # Pull a Docker image from Hub and track progress by counting downloaded layers.
-# Скачиваем Docker-образ с Hub и отслеживаем прогресс по количеству скачанных слоёв.
+# Скачиваем Docker-образ с Hub и отслеживаем прогресс по количеством скачанных слоёв.
 def _pull_image(
     name: str,
     tag: str,
     write: Write,
     on_progress: Optional[Callable[[float], None]] = None,
+    register_proc: Optional[Callable] = None,
 ) -> bool:
     write(f"[cyan][*][/cyan] Pulling [bold]{name}[/bold]  ({tag})...")
     if on_progress:
@@ -117,6 +123,8 @@ def _pull_image(
         ["docker", "pull", tag],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
+    if register_proc:
+        register_proc(proc)
     layers_total = 0
     layers_done = 0
     for line in proc.stdout:
@@ -132,6 +140,8 @@ def _pull_image(
             if on_progress and layers_total > 0:
                 on_progress(5 + layers_done / layers_total * 90)
     proc.wait()
+    if proc.returncode in (-9, -15):
+        return False
     if proc.returncode == 0:
         write(f"[green][ok][/green] {name}")
         if on_progress:
@@ -156,6 +166,8 @@ def _task_execute(screen: LogScreen, cfg: _Config) -> None:
                 f"ROS {cfg.ros_version} — {cfg.build_type}[/bold]\n"
             )
             for i, name in enumerate(chain):
+                if screen.is_stopped():
+                    return
                 lo = i / n * 100
                 hi = (i + 1) / n * 100
                 screen.set_progress(lo, f"Image {i + 1}/{n}: building {name}...")
@@ -164,7 +176,8 @@ def _task_execute(screen: LogScreen, cfg: _Config) -> None:
                 dockerfile = _DOCKER_DIR / cfg.ros_version / name / "Dockerfile"
                 if not dockerfile.exists():
                     screen.write(f"[red]Dockerfile not found:[/red] {dockerfile}")
-                    screen.finish(False)
+                    if not screen.is_stopped():
+                        screen.finish(False)
                     return
                 ctx = _PROJECT_DIR if name in _NEEDS_PROJECT_CTX else dockerfile.parent
                 parent_name = _IMAGE_PARENT.get(name)
@@ -172,23 +185,28 @@ def _task_execute(screen: LogScreen, cfg: _Config) -> None:
                     f"{cfg.image_prefix}:{parent_name}-{cfg.ros_version}"
                     if parent_name else None
                 )
-                if not _build_image(
+                ok = _build_image(
                     name, tag, dockerfile, ctx, screen.write,
                     on_progress=lambda p, lo=lo, hi=hi: screen.set_progress(
                         lo + p * (hi - lo) / 100, f"Image {i + 1}/{n}: building {name}..."
                     ),
                     parent_tag=parent_tag,
                     build_type=cfg.build_type,
-                ):
+                    register_proc=screen.set_proc,
+                )
+                if screen.is_stopped():
+                    return
+                if not ok:
                     screen.finish(False)
                     return
                 screen.set_progress(hi)
 
-            screen.set_progress(100, "All images built")
-            screen.write(
-                f"\n[green]Done.[/green] "
-                f"Images tagged [bold]{cfg.image_prefix}:<name>-{cfg.ros_version}[/bold]."
-            )
+            if not screen.is_stopped():
+                screen.set_progress(100, "All images built")
+                screen.write(
+                    f"\n[green]Done.[/green] "
+                    f"Images tagged [bold]{cfg.image_prefix}:<name>-{cfg.ros_version}[/bold]."
+                )
 
         else:
             short = "webots" if cfg.variant == "webots" else "iiwa"
@@ -199,20 +217,26 @@ def _task_execute(screen: LogScreen, cfg: _Config) -> None:
                 f"ROS {cfg.ros_version} — {cfg.build_type}[/bold]\n"
             )
             screen.set_progress(0, f"Pulling {full_ref}...")
-            if not _pull_image(
+            ok = _pull_image(
                 short, full_ref, screen.write,
                 on_progress=lambda p: screen.set_progress(p, f"Pulling {full_ref}..."),
-            ):
+                register_proc=screen.set_proc,
+            )
+            if screen.is_stopped():
+                return
+            if not ok:
                 screen.finish(False)
                 return
             screen.set_progress(100, "Pull complete")
             screen.write(f"\n[green]Done.[/green] Image ready: [bold]{full_ref}[/bold].")
 
-        screen.finish(True)
+        if not screen.is_stopped():
+            screen.finish(True)
 
     except Exception as exc:
-        screen.write(f"\n[red]Error:[/red] {exc}")
-        screen.finish(False)
+        if not screen.is_stopped():
+            screen.write(f"\n[red]Error:[/red] {exc}")
+            screen.finish(False)
 
 
 # Scan the docker/ directory for subdirectories named after ROS versions (e.g. jazzy).

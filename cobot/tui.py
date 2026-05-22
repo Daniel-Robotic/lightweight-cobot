@@ -184,6 +184,10 @@ class LogScreen(Screen[bool]):
         self._finished = False
         self._success = False
         self._show_progress = show_progress
+        # Tracks the subprocess that is currently running so on_unmount can kill it.
+        # Отслеживает текущий subprocess, чтобы on_unmount мог его завершить.
+        self._active_proc = None
+        self._stopped = False
 
     def compose(self) -> ComposeResult:
         yield Static(self._title, id="step")
@@ -200,6 +204,29 @@ class LogScreen(Screen[bool]):
         # Run the task in a worker thread so the UI stays responsive.
         # Запускаем задачу в отдельном потоке, чтобы интерфейс не зависал.
         self.app.run_worker(lambda: self._run_fn(self), thread=True)
+
+    def set_proc(self, proc) -> None:
+        # Register the subprocess that is currently running.
+        # Called from the worker thread - GIL makes simple assignment safe here.
+        # Регистрируем текущий subprocess.
+        # Вызывается из рабочего потока - простое присваивание безопасно благодаря GIL.
+        self._active_proc = proc
+
+    def is_stopped(self) -> bool:
+        # Return True if the user has closed the screen before the task finished.
+        # Возвращает True если пользователь закрыл экран до завершения задачи.
+        return self._stopped
+
+    def on_unmount(self) -> None:
+        # Kill the active subprocess when the screen closes so it does not keep running in the background.
+        # Убиваем активный subprocess при закрытии экрана, чтобы он не продолжал работать в фоне.
+        self._stopped = True
+        proc = self._active_proc
+        if proc is not None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
     def set_progress(self, pct: float, label: str = "") -> None:
         # Thread-safe - this is called from the worker thread, not the UI thread.

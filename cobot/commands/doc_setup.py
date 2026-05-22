@@ -53,6 +53,7 @@ def _image_exists() -> bool:
 def _build_docs_image(
     write: Write,
     on_progress: Optional[Callable[[float], None]] = None,
+    register_proc: Optional[Callable] = None,
 ) -> bool:
     write("[cyan][*][/cyan] Building documentation image (runs once)...")
     # DOCKER_BUILDKIT=0 gives us "Step X/Y" lines that we can parse for progress.
@@ -62,6 +63,8 @@ def _build_docs_image(
         ["docker", "build", "-t", _IMAGE_NAME, str(_DOC_DIR)],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
     )
+    if register_proc:
+        register_proc(proc)
     for line in proc.stdout:
         s = line.rstrip()
         if s:
@@ -72,6 +75,8 @@ def _build_docs_image(
                 step, total = int(m.group(1)), int(m.group(2))
                 on_progress(step / total * 100)
     proc.wait()
+    if proc.returncode in (-9, -15):
+        return False
     if proc.returncode == 0:
         write("[green][ok][/green] Documentation image ready")
         return True
@@ -86,24 +91,33 @@ def _task_up(screen: LogScreen, port: str) -> None:
         if _is_running():
             screen.write(f"[green]Docs already running at:[/green] http://localhost:{port}")
             screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
-            screen.finish(True)
+            if not screen.is_stopped():
+                screen.finish(True)
             return
 
         if not _DOC_DIR.exists():
             screen.write(f"[red]Doc directory not found:[/red] {_DOC_DIR}")
-            screen.finish(False)
+            if not screen.is_stopped():
+                screen.finish(False)
             return
 
         if not _image_exists():
             screen.set_progress(0, "Building documentation image...")
-            if not _build_docs_image(
+            ok = _build_docs_image(
                 screen.write,
                 on_progress=lambda p: screen.set_progress(p * 0.85, "Building documentation image..."),
-            ):
+                register_proc=screen.set_proc,
+            )
+            if screen.is_stopped():
+                return
+            if not ok:
                 screen.finish(False)
                 return
         else:
             screen.write("[dim]Documentation image already built, skipping.[/dim]")
+
+        if screen.is_stopped():
+            return
 
         screen.set_progress(88, "Starting MkDocs server...")
         screen.write("\n[cyan][*][/cyan] Starting MkDocs server...")
@@ -116,6 +130,8 @@ def _task_up(screen: LogScreen, port: str) -> None:
             _IMAGE_NAME, "serve", "--dev-addr=0.0.0.0:8000",
             capture=True,
         )
+        if screen.is_stopped():
+            return
         if result.returncode != 0:
             screen.write(f"[red]Failed to start container.[/red]\n{result.stderr}")
             screen.finish(False)
@@ -125,11 +141,13 @@ def _task_up(screen: LogScreen, port: str) -> None:
         screen.write(f"\n[green]Docs running at:[/green] http://localhost:{port}")
         screen.write("  Edit files in [bold]doc/lwc-doc/docs/[/bold] — reloads automatically.")
         screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
-        screen.finish(True)
+        if not screen.is_stopped():
+            screen.finish(True)
 
     except Exception as exc:
-        screen.write(f"[red]Error:[/red] {exc}")
-        screen.finish(False)
+        if not screen.is_stopped():
+            screen.write(f"[red]Error:[/red] {exc}")
+            screen.finish(False)
 
 
 # Stop the running docs container.
@@ -138,17 +156,21 @@ def _task_down(screen: LogScreen) -> None:
     try:
         if not _is_running():
             screen.write("[yellow]Docs container is not running.[/yellow]")
-            screen.finish(True)
+            if not screen.is_stopped():
+                screen.finish(True)
             return
         screen.set_progress(30, "Stopping container...")
         screen.write("[cyan][*][/cyan] Stopping documentation server...")
         _docker("stop", _CONTAINER_NAME)
+        if screen.is_stopped():
+            return
         screen.set_progress(100, "Done")
         screen.write("[green][ok][/green] Container stopped.")
         screen.finish(True)
     except Exception as exc:
-        screen.write(f"[red]Error:[/red] {exc}")
-        screen.finish(False)
+        if not screen.is_stopped():
+            screen.write(f"[red]Error:[/red] {exc}")
+            screen.finish(False)
 
 
 # Stop the container, remove the old image, rebuild it, and start a new container.
@@ -159,19 +181,27 @@ def _task_rebuild(screen: LogScreen, port: str) -> None:
             screen.set_progress(5, "Stopping container...")
             screen.write("[cyan][*][/cyan] Stopping existing container...")
             _docker("stop", _CONTAINER_NAME)
+            if screen.is_stopped():
+                return
             screen.write("[green][ok][/green] Stopped.")
 
         if _image_exists():
             screen.set_progress(15, "Removing old image...")
             screen.write("[cyan][*][/cyan] Removing old image...")
             _docker("rmi", "-f", _IMAGE_NAME)
+            if screen.is_stopped():
+                return
             screen.write("[green][ok][/green] Image removed.")
 
         screen.set_progress(20, "Building documentation image...")
-        if not _build_docs_image(
+        ok = _build_docs_image(
             screen.write,
             on_progress=lambda p: screen.set_progress(20 + p * 0.68, "Building documentation image..."),
-        ):
+            register_proc=screen.set_proc,
+        )
+        if screen.is_stopped():
+            return
+        if not ok:
             screen.finish(False)
             return
 
@@ -184,6 +214,8 @@ def _task_rebuild(screen: LogScreen, port: str) -> None:
             _IMAGE_NAME, "serve", "--dev-addr=0.0.0.0:8000",
             capture=True,
         )
+        if screen.is_stopped():
+            return
         if result.returncode != 0:
             screen.write(f"[red]Failed to start container.[/red]\n{result.stderr}")
             screen.finish(False)
@@ -192,11 +224,13 @@ def _task_rebuild(screen: LogScreen, port: str) -> None:
         screen.set_progress(100, "Server running")
         screen.write(f"\n[green]Docs running at:[/green] http://localhost:{port}")
         screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
-        screen.finish(True)
+        if not screen.is_stopped():
+            screen.finish(True)
 
     except Exception as exc:
-        screen.write(f"[red]Error:[/red] {exc}")
-        screen.finish(False)
+        if not screen.is_stopped():
+            screen.write(f"[red]Error:[/red] {exc}")
+            screen.finish(False)
 
 
 # One app handles all three actions (up/down/rebuild) by branching in on_mount.
