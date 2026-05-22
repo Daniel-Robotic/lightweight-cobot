@@ -205,7 +205,7 @@ def _add_ros2_repo(
     else:
         write("[green][ok][/green] Prerequisites already installed")
     _prog(20)
-    _run_logged(["sudo", "add-apt-repository", "-y", "universe"] + _APT_TIMEOUTS, write)
+    _run_logged(["sudo", "add-apt-repository", "-y", "universe"], write)
     _prog(30)
 
     # Import the official ROS2 signing key from the Ubuntu keyserver.
