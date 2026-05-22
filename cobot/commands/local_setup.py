@@ -93,6 +93,16 @@ def _ros2_env() -> dict:
         if "=" in line:
             k, _, v = line.partition("=")
             env[k] = v
+
+    # Put system dirs first so ament_cmake picks up system Python (where catkin_pkg
+    # lives) instead of a user-local Python installed by uv or pyenv.
+    # Ставим системные пути первыми, чтобы ament_cmake использовал системный Python
+    # (где установлен catkin_pkg), а не пользовательский Python от uv или pyenv.
+    _SYSTEM_PATHS = ["/usr/bin", "/usr/local/bin"]
+    existing = env.get("PATH", "").split(":")
+    env["PATH"] = ":".join(
+        _SYSTEM_PATHS + [p for p in existing if p not in _SYSTEM_PATHS]
+    )
     return env
 
 
