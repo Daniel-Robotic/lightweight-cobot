@@ -193,6 +193,14 @@ def _add_ros2_repo(
 
     write("[cyan][*][/cyan] Configuring ROS2 apt repository...")
 
+    for leftover in [
+        "/etc/apt/sources.list.d/ros2.list",
+        "/usr/share/keyrings/ros-archive-keyring.gpg",
+    ]:
+        if Path(leftover).exists():
+            subprocess.run(["sudo", "rm", "-f", leftover], capture_output=True)
+            write(f"[dim]Removed leftover: {leftover}[/dim]")
+
     # Update apt cache so we can install curl and software-properties-common.
     # Обновляем кеш apt перед установкой curl и software-properties-common.
     subprocess.run(["sudo", "apt-get", "update"] + _APT_TIMEOUTS, capture_output=True, timeout=120)
