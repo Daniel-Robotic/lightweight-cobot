@@ -244,7 +244,7 @@ def _add_ros2_repo(
         # The "./" prefix tells apt this is a local file, not a package name from a repo.
         # apt install автоматически разрешает зависимости в отличие от dpkg -i.
         # Префикс "./" говорит apt что это локальный файл, а не имя пакета из репозитория.
-        _run_quiet(["sudo", "apt-get", "install", "-y", f"./{tmp_path}"], write, _APT_ENV)
+        _run_quiet(["sudo", "apt-get", "install", "-y", tmp_path], write, _APT_ENV)
     finally:
         os.unlink(tmp_path)
 
