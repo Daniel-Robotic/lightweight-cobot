@@ -121,30 +121,44 @@ def _run_apt_with_progress(
         register_proc(proc)
 
     done = threading.Event()
-    last_output = [time.monotonic()]
+    last_activity = [time.monotonic()]  # updated by both stdout and status-fd
 
     def _heartbeat() -> None:
         while not done.wait(5):
-            idle = int(time.monotonic() - last_output[0])
+            idle = int(time.monotonic() - last_activity[0])
             if idle >= 5:
                 write(f"[dim]... waiting ({idle}s)[/dim]")
 
     def _read_status() -> None:
+        last_uri: str = ""
+        fetched = 0
         with os.fdopen(r_fd, "r") as f:
             for line in f:
+                last_activity[0] = time.monotonic()
+                # Format: dlstatus:index:pct:message  or  pmstatus:pkg:pct:message
                 parts = line.strip().split(":", 3)
-                if len(parts) >= 3:
-                    try:
-                        on_progress(float(parts[2]))
-                    except ValueError:
-                        pass
+                if len(parts) < 3:
+                    continue
+                kind, _, pct_str = parts[0], parts[1], parts[2]
+                msg = parts[3] if len(parts) == 4 else ""
+                try:
+                    on_progress(float(pct_str))
+                except ValueError:
+                    continue
+                if kind == "dlstatus" and msg:
+                    # Show each new file as it starts downloading
+                    uri = msg.split()[0]
+                    if uri != last_uri:
+                        last_uri = uri
+                        fetched += 1
+                        write(f"[dim][{fetched}] {msg}[/dim]")
 
     t = threading.Thread(target=_read_status, daemon=True)
     hb = threading.Thread(target=_heartbeat, daemon=True)
     t.start()
     hb.start()
     for line in proc.stdout:
-        last_output[0] = time.monotonic()
+        last_activity[0] = time.monotonic()
         s = line.rstrip()
         if s:
             write(s)
@@ -259,10 +273,7 @@ def _add_ros2_repo(
     write("[cyan][*][/cyan] Updating ROS2 package list...")
     _run_apt_with_progress(
         [
-            "sudo", "apt-get", "update",
-            "-o", f"Dir::Etc::sourcelist={_ROS_SOURCES}",
-            "-o", "Dir::Etc::sourceparts=-",
-            "-o", "APT::Get::List-Cleanup=0",
+            "sudo", "apt-get", "update"
         ] + _APT_TIMEOUTS,
         write,
         lambda p: _prog(65 + p * 0.35),
