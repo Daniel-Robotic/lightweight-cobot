@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import tempfile
 import threading
-import time
 import urllib.request
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -16,38 +15,65 @@ from textual.app import App
 from cobot.tui import SCREEN_CSS, LogScreen, PickScreen
 from cobot.commands.docker_setup import run as _docker_setup
 
+# Root directory of the project, used as the working directory for colcon builds.
+# Корневая директория проекта, используется как рабочая директория для сборки colcon.
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 
-# Official ROS2 release signing key fingerprint and the keyring path apt expects it at.
-# This is the same key used in OSRF's official Docker images (docker/jazzy/ros-core/Dockerfile).
-# Отпечаток официального ключа подписи релизов ROS2 и путь к кейрингу, который ожидает apt.
-# Тот же ключ используется в официальных Docker-образах OSRF.
-_ROS2_KEY = "C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654"
-_ROS_KEYRING = Path("/usr/share/keyrings/ros2-archive-keyring.gpg")
+# ROS2 distribution name targeted by this installer.
+# Название дистрибутива ROS2, который устанавливает этот скрипт.
+_DISTRO = "jazzy"
+
+# Path where apt expects the ROS2 GPG signing key to be stored.
+# Путь, по которому apt ожидает найти GPG-ключ подписи ROS2.
+_ROS_KEYRING = Path("/usr/share/keyrings/ros-archive-keyring.gpg")
+
+# Path to the apt sources file that points to the ROS2 package repository.
+# Путь к файлу источников apt, указывающему на репозиторий пакетов ROS2.
 _ROS_SOURCES = Path("/etc/apt/sources.list.d/ros2.list")
 
-# Suppress apt interactive prompts such as "restart services?".
-# Подавляем интерактивные запросы apt, например "перезапустить службы?".
+# Path created by "rosdep init" to mark that rosdep has already been initialized.
+# Путь, создаваемый "rosdep init" для отметки того, что rosdep уже инициализирован.
+_ROSDEP_SOURCES = Path("/etc/ros/rosdep/sources.list.d/20-default.list")
+
+# Webots simulator version and the direct .deb download URL for amd64.
+# Версия симулятора Webots и прямая ссылка для скачивания .deb для amd64.
+_WEBOTS_VERSION = "2025a"
+_WEBOTS_DEB_URL = (
+    f"https://github.com/cyberbotics/webots/releases/download/"
+    f"R{_WEBOTS_VERSION}/webots_{_WEBOTS_VERSION}_amd64.deb"
+)
+
+# Environment variables passed to apt to suppress interactive prompts (e.g. "restart services?").
+# Переменные окружения для apt, подавляющие интерактивные запросы (например, "перезапустить сервисы?").
 _APT_ENV = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
 
-# HTTP/HTTPS timeouts for apt so a stalled server does not hang the process forever.
-# 60 seconds per connection attempt is generous enough for any healthy mirror.
-# HTTP/HTTPS таймауты для apt, чтобы зависший сервер не блокировал процесс бесконечно.
-# 60 секунд на попытку подключения достаточно для любого нормального зеркала.
-_APT_TIMEOUTS = [
+# Extra apt options: short per-connection and per-transfer timeouts plus retry count.
+# Forces IPv4 because many VMs have broken IPv6 routing that causes silent hangs.
+# Дополнительные опции apt: короткие таймауты на соединение и передачу данных, плюс число повторов.
+# Принудительно используем IPv4, так как в VM часто сломана маршрутизация IPv6, что вызывает зависания.
+_APT_OPTS = [
     "-o", "Acquire::http::ConnectTimeout=15",
     "-o", "Acquire::https::ConnectTimeout=15",
     "-o", "Acquire::http::Timeout=30",
     "-o", "Acquire::https::Timeout=30",
     "-o", "Acquire::Retries=2",
-    # Many VMs have broken IPv6 routing; force IPv4 to avoid silent hangs.
     "-o", "Acquire::ForceIPv4=true",
 ]
 
+# Type alias for the callable used to write a line to the TUI log screen.
+# Псевдоним типа для функции записи строки в лог TUI.
+Write = Callable[[str], None]
 
-# Check whether we are running on Ubuntu 24.04, which is required for ROS2 Jazzy.
-# Проверяем, запущены ли мы на Ubuntu 24.04, которая требуется для ROS2 Jazzy.
+
+# OS and tool detection helpers
+# Вспомогательные функции для определения ОС и наличия инструментов
 def _detect_ubuntu_2404() -> bool:
+    """Return True if the current OS is Ubuntu 24.04 (Noble).
+
+    Reads /etc/os-release and checks the ID and VERSION_ID fields.
+    Возвращает True, если текущая ОС - Ubuntu 24.04 (Noble).
+    Читает /etc/os-release и проверяет поля ID и VERSION_ID.
+    """
     path = Path("/etc/os-release")
     if not path.exists():
         return False
@@ -59,17 +85,51 @@ def _detect_ubuntu_2404() -> bool:
     return info.get("ID") == "ubuntu" and info.get("VERSION_ID") == "24.04"
 
 
-# Check whether ROS2 Jazzy is already installed by looking for its directory.
-# Проверяем, установлен ли ROS2 Jazzy, проверяя наличие его директории.
-def _detect_ros2_jazzy() -> bool:
-    return Path("/opt/ros/jazzy").is_dir()
+def _detect_ros2() -> bool:
+    """Return True if ROS2 Jazzy is already installed under /opt/ros/jazzy.
+
+    Возвращает True, если ROS2 Jazzy уже установлен в /opt/ros/jazzy.
+    """
+    return Path(f"/opt/ros/{_DISTRO}").is_dir()
 
 
-Write = Callable[[str], None]
+def webots_installed() -> bool:
+    """Return True if the Webots binary is available on PATH.
+
+    Возвращает True, если бинарный файл Webots доступен в PATH.
+    """
+    return shutil.which("webots") is not None
 
 
-# Run a command and stream every output line to the log in real time.
-# Запускаем команду и транслируем каждую строку вывода в лог в реальном времени.
+def _ros2_env() -> dict:
+    """Build an environment dict with ROS2 variables sourced from setup.bash.
+
+    Sources /opt/ros/jazzy/setup.bash in a subprocess, captures all exported
+    variables and merges them into a copy of os.environ. Falls back to plain
+    os.environ if the setup file does not exist yet.
+
+    Формирует словарь окружения с переменными ROS2, полученными из setup.bash.
+    Запускает /opt/ros/jazzy/setup.bash в подпроцессе, перехватывает все
+    экспортированные переменные и объединяет их с копией os.environ.
+    Возвращает чистый os.environ если файл setup.bash ещё не существует.
+    """
+    setup = Path(f"/opt/ros/{_DISTRO}/setup.bash")
+    if not setup.exists():
+        return os.environ.copy()
+    result = subprocess.run(
+        ["bash", "-c", f"source {setup} && env"],
+        capture_output=True, text=True,
+    )
+    env = os.environ.copy()
+    for line in result.stdout.splitlines():
+        if "=" in line:
+            k, _, v = line.partition("=")
+            env[k] = v
+    return env
+
+
+# Subprocess runner helpers
+# Вспомогательные функции для запуска подпроцессов
 def _run_logged(
     cmd: List[str],
     write: Write,
@@ -77,6 +137,15 @@ def _run_logged(
     cwd=None,
     register_proc: Callable | None = None,
 ) -> None:
+    """Run a command and stream every non-empty output line to the TUI log.
+
+    Raises RuntimeError if the process exits with a non-zero code (SIGKILL is
+    treated as a normal cancellation and does not raise).
+
+    Запускает команду и передаёт каждую непустую строку вывода в лог TUI.
+    Выбрасывает RuntimeError если процесс завершился с ненулевым кодом
+    (SIGKILL считается нормальной отменой и не вызывает исключение).
+    """
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -103,7 +172,19 @@ def _run_apt_with_progress(
     env: dict | None = None,
     register_proc: Callable | None = None,
 ) -> None:
-    """Run an apt command and feed real percentage from APT::Status-Fd to on_progress(0-100)."""
+    """Run an apt command, stream its stdout to the log, and report download progress.
+
+    Uses APT::Status-Fd to receive machine-readable progress lines on a private
+    pipe. A background thread reads the pipe and calls on_progress(0-100) for
+    each percentage update. When a new URI starts downloading it is printed to
+    the log so the user can see what is being fetched.
+
+    Запускает команду apt, передаёт stdout в лог и показывает прогресс скачивания.
+    Использует APT::Status-Fd для получения машинночитаемых строк прогресса через
+    приватный канал. Фоновый поток читает канал и вызывает on_progress(0-100) при
+    каждом обновлении процента. При начале скачивания нового файла его URI
+    выводится в лог, чтобы пользователь видел что именно загружается.
+    """
     r_fd, w_fd = os.pipe()
     try:
         proc = subprocess.Popen(
@@ -115,27 +196,27 @@ def _run_apt_with_progress(
             pass_fds=(w_fd,),
         )
     finally:
+        # Close the write end in the parent so the reader thread gets EOF when apt exits.
+        # Закрываем пишущий конец в родителе, чтобы читающий поток получил EOF при выходе apt.
         os.close(w_fd)
 
     if register_proc:
         register_proc(proc)
 
-    done = threading.Event()
-    last_activity = [time.monotonic()]  # updated by both stdout and status-fd
-
-    def _heartbeat() -> None:
-        while not done.wait(5):
-            idle = int(time.monotonic() - last_activity[0])
-            if idle >= 5:
-                write(f"[dim]... waiting ({idle}s)[/dim]")
-
     def _read_status() -> None:
+        """Parse APT::Status-Fd lines and forward percentage and URI info.
+
+        Status-Fd line format: dlstatus:index:pct:message
+        or for package installs: pmstatus:pkg:pct:message
+
+        Разбирает строки APT::Status-Fd и передаёт процент и URI.
+        Формат строки: dlstatus:index:pct:message
+        или для установки пакетов: pmstatus:pkg:pct:message
+        """
         last_uri: str = ""
         fetched = 0
         with os.fdopen(r_fd, "r") as f:
             for line in f:
-                last_activity[0] = time.monotonic()
-                # Format: dlstatus:index:pct:message  or  pmstatus:pkg:pct:message
                 parts = line.strip().split(":", 3)
                 if len(parts) < 3:
                     continue
@@ -146,7 +227,8 @@ def _run_apt_with_progress(
                 except ValueError:
                     continue
                 if kind == "dlstatus" and msg:
-                    # Show each new file as it starts downloading
+                    # Print each new URI once as it starts downloading.
+                    # Выводим каждый новый URI один раз при начале загрузки.
                     uri = msg.split()[0]
                     if uri != last_uri:
                         last_uri = uri
@@ -154,109 +236,101 @@ def _run_apt_with_progress(
                         write(f"[dim][{fetched}] {msg}[/dim]")
 
     t = threading.Thread(target=_read_status, daemon=True)
-    hb = threading.Thread(target=_heartbeat, daemon=True)
     t.start()
-    hb.start()
     for line in proc.stdout:
-        last_activity[0] = time.monotonic()
         s = line.rstrip()
         if s:
             write(s)
     proc.wait()
-    done.set()
     t.join()
 
     if proc.returncode not in (0, -9):
         raise RuntimeError(f"Command failed: {cmd[0]}")
 
 
-# Make sure the system has a UTF-8 locale, which ROS2 requires to work correctly.
-# Убеждаемся, что в системе есть локаль UTF-8, которая требуется ROS2 для корректной работы.
-def _setup_locale(write: Write) -> None:
-    write("[cyan][*][/cyan] Checking locale...")
-    if "UTF-8" in subprocess.run(["locale"], capture_output=True, text=True).stdout:
-        write("[green][ok][/green] UTF-8 locale active")
-        return
-    write("[cyan][*][/cyan] Configuring UTF-8 locale...")
-    _run_logged(["sudo", "apt-get", "update"] + _APT_TIMEOUTS, write)
-    _run_logged(["sudo", "apt-get", "install", "-y", "--no-install-recommends", "locales"] + _APT_TIMEOUTS, write, _APT_ENV)
-    _run_logged(["sudo", "locale-gen", "en_US.UTF-8"], write)
-    _run_logged(["sudo", "update-locale", "LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8"], write)
-    write("[green][ok][/green] Locale configured")
+# Installation steps - each step maps to one visible phase in the log screen
+# Шаги установки - каждый шаг соответствует одной видимой фазе в экране лога
+def _step_prereqs(write: Write, on_progress: Callable[[float], None]) -> None:
+    """Step 1 - Refresh apt cache and install packages required for the ROS2 setup.
+
+    Installs: software-properties-common, curl, gnupg2, lsb-release, build-essential.
+    Also enables the Ubuntu universe repository which some ROS2 dependencies live in.
+
+    Шаг 1 - Обновляет кеш apt и устанавливает пакеты, необходимые для настройки ROS2.
+    Устанавливает: software-properties-common, curl, gnupg2, lsb-release, build-essential.
+    Также включает репозиторий Ubuntu universe, в котором находятся некоторые зависимости ROS2.
+    """
+    write("[bold]Step 1 / 5 - Prerequisites[/bold]")
+    write("[cyan][*][/cyan] Updating package lists...")
+    _run_apt_with_progress(
+        ["sudo", "apt-get", "update"] + _APT_OPTS,
+        write, on_progress, _APT_ENV,
+    )
+    write("[cyan][*][/cyan] Installing prerequisites...")
+    _run_apt_with_progress(
+        [
+            "sudo", "apt-get", "install", "-y", "--no-install-recommends",
+            "software-properties-common", "curl", "gnupg2",
+            "lsb-release", "build-essential",
+        ] + _APT_OPTS,
+        write, on_progress, _APT_ENV,
+    )
+    write("[cyan][*][/cyan] Adding universe repository...")
+    # --no-update prevents add-apt-repository from running its own apt-get update,
+    # which would ignore our timeout options and could hang indefinitely.
+    # --no-update запрещает add-apt-repository запускать собственный apt-get update,
+    # который игнорирует наши таймауты и может зависнуть.
+    _run_logged(["sudo", "add-apt-repository", "-y", "--no-update", "universe"], write)
+    write("[green][ok][/green] Prerequisites ready")
 
 
-# Add the official ROS2 apt repository using the ros2-apt-source package.
-# Добавляем официальный репозиторий ROS2 через пакет ros2-apt-source.
-def _cleanup_ros2_repo(write: Write) -> None:
-    write("[cyan][*][/cyan] Cleaning up previous ROS2 repository config...")
+def _step_ros2_repo(write: Write, on_progress: Callable[[float], None]) -> None:
+    """Step 2 - Download the ROS2 signing key and register the ROS2 apt repository.
+
+    Removes any previous key and sources file first so re-runs always start clean.
+    Downloads the key from the official ros/rosdistro GitHub repository, writes it
+    to the system keyring, then creates /etc/apt/sources.list.d/ros2.list and
+    refreshes only that source to avoid updating all Ubuntu mirrors.
+
+    Шаг 2 - Скачивает ключ подписи ROS2 и регистрирует репозиторий apt ROS2.
+    Сначала удаляет предыдущие ключ и файл источников, чтобы повторные запуски
+    всегда начинались с чистого состояния. Скачивает ключ с официального GitHub
+    репозитория ros/rosdistro, записывает его в системный кейринг, затем создаёт
+    /etc/apt/sources.list.d/ros2.list и обновляет только этот источник.
+    """
+    write("\n[bold]Step 2 / 5 - ROS2 repository[/bold]")
+
+    # Remove previous key and sources file to avoid stale config on re-runs.
+    # Удаляем предыдущие ключ и файл источников для чистого состояния при повторных запусках.
     for path in (_ROS_KEYRING, _ROS_SOURCES):
         if path.exists():
             subprocess.run(["sudo", "rm", "-f", str(path)], check=False)
             write(f"[dim]Removed {path}[/dim]")
 
-
-def _add_ros2_repo(
-    write: Write,
-    on_progress: Optional[Callable[[float], None]] = None,
-    register_proc: Callable | None = None,
-) -> None:
-    def _prog(p: float) -> None:
-        if on_progress:
-            on_progress(p)
-
-    _cleanup_ros2_repo(write)
-    write("[cyan][*][/cyan] Configuring ROS2 apt repository...")
-
-    # Only install tools that are not already present to avoid unnecessary network access.
-    # gnupg2 is a transitional metapackage — gpg/gpg2 binary is what we actually need.
-    to_install = []
-    if not shutil.which("gpg") and not shutil.which("gpg2"):
-        to_install.append("gnupg2")
-    if not shutil.which("dirmngr"):
-        to_install.append("dirmngr")
-    if not shutil.which("add-apt-repository"):
-        to_install.append("software-properties-common")
-
-    if to_install:
-        write(f"[cyan][*][/cyan] Installing prerequisites: {', '.join(to_install)}...")
-        _run_logged(["sudo", "apt-get", "update"] + _APT_TIMEOUTS, write)
-        _run_logged(
-            ["sudo", "apt-get", "install", "-y", "--no-install-recommends"] + to_install + _APT_TIMEOUTS,
-            write, _APT_ENV,
+    write("[cyan][*][/cyan] Downloading ROS2 signing key...")
+    key_url = "https://raw.githubusercontent.com/ros/rosdistro/master/ros.key"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".gpg") as tmp:
+        tmp_path = tmp.name
+    try:
+        with urllib.request.urlopen(key_url, timeout=30) as resp:
+            Path(tmp_path).write_bytes(resp.read())
+        subprocess.run(
+            ["sudo", "install", "-m", "644", tmp_path, str(_ROS_KEYRING)],
+            check=True,
         )
-    else:
-        write("[green][ok][/green] Prerequisites already installed")
-    _prog(20)
-    _run_logged(["sudo", "add-apt-repository", "-y", "--no-update", "universe"], write)
-    _prog(30)
-
-    # Import the official ROS2 signing key from the Ubuntu keyserver.
-    # This is exactly how OSRF does it in their official Docker images.
-    # The key fingerprint is fixed for all ROS2 releases - it never changes.
-    # Импортируем официальный ключ подписи ROS2 с сервера ключей Ubuntu.
-    # Именно так OSRF делает это в официальных Docker-образах.
-    # Отпечаток ключа фиксирован для всех релизов ROS2 и никогда не меняется.
-    write("[cyan][*][/cyan] Importing ROS2 signing key from keyserver.ubuntu.com...")
-    _run_logged([
-        "sudo", "bash", "-c",
-        f'export GNUPGHOME="$(mktemp -d)" && '
-        f'gpg --batch --verbose --keyserver keyserver.ubuntu.com --recv-keys {_ROS2_KEY} && '
-        f'mkdir -p /usr/share/keyrings && '
-        f'gpg --batch --export {_ROS2_KEY} > {_ROS_KEYRING} && '
-        f'gpgconf --kill all && '
-        f'rm -rf "$GNUPGHOME"',
-    ], write)
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
     write("[green][ok][/green] Signing key installed")
-    _prog(60)
 
-    # Write the sources.list entry pointing at the stable ROS2 apt repository.
-    # Записываем строку sources.list, указывающую на стабильный репозиторий ROS2.
+    # Detect machine architecture and Ubuntu codename to build the sources.list line.
+    # Определяем архитектуру машины и кодовое имя Ubuntu для строки sources.list.
+    arch = subprocess.check_output(["dpkg", "--print-architecture"], text=True).strip()
     codename = subprocess.check_output(
         ["bash", "-c", ". /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}}"],
         text=True,
     ).strip()
     sources_line = (
-        f"deb [ signed-by={_ROS_KEYRING} ] "
+        f"deb [arch={arch} signed-by={_ROS_KEYRING}] "
         f"http://packages.ros.org/ros2/ubuntu {codename} main\n"
     )
     result = subprocess.run(
@@ -265,194 +339,242 @@ def _add_ros2_repo(
     )
     if result.returncode != 0:
         raise RuntimeError(f"Failed to write {_ROS_SOURCES}")
-    write(f"[dim]Sources: {_ROS_SOURCES}[/dim]")
-    _prog(65)
+    write(f"[dim]{_ROS_SOURCES}[/dim]")
 
-    # Update ONLY the ROS2 source we just wrote, not all Ubuntu repos.
-    # Обновляем ТОЛЬКО добавленный источник ROS2, а не все репозитории Ubuntu.
+    # Update only the ROS2 source - avoids downloading all Ubuntu mirror metadata.
+    # Обновляем только источник ROS2 - избегаем скачивания метаданных всех зеркал Ubuntu.
     write("[cyan][*][/cyan] Updating ROS2 package list...")
     _run_apt_with_progress(
         [
-            "sudo", "apt-get", "update"
-        ] + _APT_TIMEOUTS,
-        write,
-        lambda p: _prog(65 + p * 0.35),
-        _APT_ENV,
-        register_proc=register_proc,
+            "sudo", "apt-get", "update",
+            "-o", f"Dir::Etc::sourcelist={_ROS_SOURCES}",
+            "-o", "Dir::Etc::sourceparts=-",
+            "-o", "APT::Get::List-Cleanup=0",
+        ] + _APT_OPTS,
+        write, on_progress, _APT_ENV,
     )
     write("[green][ok][/green] ROS2 repository ready")
-    _prog(100)
 
 
-# Install the full ROS2 Jazzy Desktop and the developer tools (colcon, rosdep, etc.).
-# Устанавливаем полный ROS2 Jazzy Desktop и инструменты разработчика (colcon, rosdep и т.д.).
-def _install_ros2_jazzy(
+def _step_install_ros2(
     write: Write,
-    on_progress: Optional[Callable[[float], None]] = None,
+    on_progress: Callable[[float], None],
+    pkg: str,
     register_proc: Callable | None = None,
 ) -> None:
-    write("[cyan][*][/cyan] Installing ros-jazzy-desktop and ros-dev-tools...")
+    """Step 3 - Install the chosen ROS2 Jazzy package via apt.
+
+    pkg is either "desktop" (full install with GUI tools) or "ros-base"
+    (minimal headless install). The full package name becomes ros-jazzy-{pkg}.
+
+    Шаг 3 - Устанавливает выбранный пакет ROS2 Jazzy через apt.
+    pkg - это либо "desktop" (полная установка с GUI), либо "ros-base"
+    (минимальная установка без GUI). Полное имя пакета: ros-jazzy-{pkg}.
+    """
+    write(f"\n[bold]Step 3 / 5 - ros-{_DISTRO}-{pkg}[/bold]")
+    write(f"[cyan][*][/cyan] Installing ros-{_DISTRO}-{pkg}...")
     _run_apt_with_progress(
-        ["sudo", "apt-get", "install", "-y", "ros-jazzy-desktop", "ros-dev-tools"] + _APT_TIMEOUTS,
-        write,
-        on_progress or (lambda _: None),
-        _APT_ENV,
-        register_proc=register_proc,
+        ["sudo", "apt-get", "install", "-y", f"ros-{_DISTRO}-{pkg}"] + _APT_OPTS,
+        write, on_progress, _APT_ENV, register_proc,
     )
-    write("[green][ok][/green] ROS2 Jazzy Desktop installed")
+    write(f"[green][ok][/green] ros-{_DISTRO}-{pkg} installed")
 
 
-# Install colcon and rosdep if not already available.
-# Устанавливаем colcon и rosdep если они ещё не доступны.
-def _install_dev_tools(write: Write) -> None:
-    to_install = []
-    if not shutil.which("colcon"):
-        to_install.append("python3-colcon-common-extensions")
-    if not shutil.which("rosdep"):
-        to_install.append("python3-rosdep")
-    if not to_install:
-        write("[green][ok][/green] Dev tools already installed")
-        return
-    write(f"[cyan][*][/cyan] Installing: {', '.join(to_install)}...")
-    _run_logged(
-        ["sudo", "apt-get", "install", "-y", "--no-install-recommends"] + to_install + _APT_TIMEOUTS,
-        write, _APT_ENV,
+def _step_dev_tools(write: Write, on_progress: Callable[[float], None]) -> None:
+    """Step 4 - Install colcon, rosdep, vcstool and initialize rosdep.
+
+    Installs the Python packages needed to build and manage ROS2 workspaces.
+    Runs "rosdep init" only if it has not been run before, then always runs
+    "rosdep update" to fetch the latest package index.
+
+    Шаг 4 - Устанавливает colcon, rosdep, vcstool и инициализирует rosdep.
+    Устанавливает Python-пакеты, необходимые для сборки и управления рабочими
+    пространствами ROS2. Запускает "rosdep init" только если он ещё не запускался,
+    затем всегда запускает "rosdep update" для получения свежего индекса пакетов.
+    """
+    write("\n[bold]Step 4 / 5 - Dev tools[/bold]")
+    write("[cyan][*][/cyan] Installing colcon, rosdep, vcstool...")
+    _run_apt_with_progress(
+        [
+            "sudo", "apt-get", "install", "-y",
+            "python3-argcomplete",
+            "python3-colcon-clean",
+            "python3-colcon-common-extensions",
+            "python3-rosdep",
+            "python3-vcstool",
+        ] + _APT_OPTS,
+        write, on_progress, _APT_ENV,
     )
-    write("[green][ok][/green] Dev tools installed")
-
-
-_ROSDEP_SOURCES = Path("/etc/ros/rosdep/sources.list.d/20-default.list")
-
-
-# Initialize and update rosdep. Safe to call on repeated runs.
-# Инициализируем и обновляем rosdep. Безопасно вызывать при повторных запусках.
-def _setup_rosdep(write: Write) -> None:
     if not _ROSDEP_SOURCES.exists():
         write("[cyan][*][/cyan] Initializing rosdep...")
         _run_logged(["sudo", "rosdep", "init"], write)
     else:
         write("[green][ok][/green] rosdep already initialized")
     write("[cyan][*][/cyan] Updating rosdep...")
-    _run_logged(["rosdep", "update", "--rosdistro", "jazzy"], write)
+    _run_logged(["rosdep", "update", "--rosdistro", _DISTRO], write)
+    write("[green][ok][/green] Dev tools ready")
 
 
-# Add "source /opt/ros/jazzy/setup.bash" to the user's shell config file.
-# This makes ROS2 commands available in every new terminal session.
-# Добавляем "source /opt/ros/jazzy/setup.bash" в конфиг оболочки пользователя.
-# Это делает команды ROS2 доступными в каждой новой сессии терминала.
-def _setup_shell_rc(write: Write) -> None:
+def _step_shell_setup(write: Write) -> None:
+    """Step 5 - Append ROS2 environment setup lines to the user shell rc file.
+
+    Adds "source /opt/ros/jazzy/setup.bash" so ROS2 commands are available in
+    every new terminal. Also adds a commented-out ROS_AUTOMATIC_DISCOVERY_RANGE
+    line as a reminder for multi-machine setups. Both lines are added only once.
+
+    Шаг 5 - Добавляет строки настройки окружения ROS2 в rc-файл оболочки пользователя.
+    Добавляет "source /opt/ros/jazzy/setup.bash" чтобы команды ROS2 были доступны
+    в каждом новом терминале. Также добавляет закомментированную строку
+    ROS_AUTOMATIC_DISCOVERY_RANGE как напоминание для многомашинных настроек.
+    Обе строки добавляются только один раз.
+    """
+    write("\n[bold]Step 5 / 5 - Shell configuration[/bold]")
     shell_name = Path(os.environ.get("SHELL", "/bin/bash")).name
     rc = Path.home() / (".zshrc" if shell_name == "zsh" else ".bashrc")
-    source_line = "source /opt/ros/jazzy/setup.bash"
-    if rc.exists() and source_line in rc.read_text():
-        write(f"[green][ok][/green] ROS2 setup already in {rc.name}")
-        return
-    with rc.open("a") as f:
-        f.write(f"\n# ROS2 Jazzy\n{source_line}\n")
-    write(f"[green][ok][/green] Added ROS2 setup to ~/{rc.name}")
+    rc_text = rc.read_text() if rc.exists() else ""
+
+    source_line = f"source /opt/ros/{_DISTRO}/setup.bash"
+    discovery_comment = "# export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST"
+
+    additions = []
+    if source_line not in rc_text:
+        additions.append(source_line)
+    if discovery_comment not in rc_text:
+        additions.append(discovery_comment)
+
+    if additions:
+        with rc.open("a") as f:
+            f.write(f"\n# ROS2 {_DISTRO}\n")
+            for line in additions:
+                f.write(line + "\n")
+        write(f"[green][ok][/green] Added ROS2 setup to ~/{rc.name}")
+    else:
+        write(f"[green][ok][/green] ROS2 setup already in ~/{rc.name}")
 
 
-# Full ROS2 Jazzy installation split into 5 clearly visible steps with individual progress ranges.
-# Полная установка ROS2 Jazzy, разбитая на 5 наглядных шагов с отдельными диапазонами прогресса.
-def _task_install_jazzy(screen: LogScreen) -> None:
+# Tasks - long-running functions executed inside a LogScreen background thread
+# Задачи - долгие функции, выполняемые в фоновом потоке внутри LogScreen
+def _task_install(screen: LogScreen, pkg: str) -> None:
+    """Full ROS2 Jazzy installation task, split into 5 sequential steps.
+
+    Maps each step to a sub-range of the 0-100% progress bar so the bar
+    advances smoothly through prerequisites, repo setup, ROS2 install,
+    dev tools and shell configuration.
+
+    Полная задача установки ROS2 Jazzy, разбитая на 5 последовательных шагов.
+    Каждый шаг отображается в своём диапазоне прогресс-бара 0-100%, так что
+    бар плавно движется через prerequisites, настройку репозитория, установку
+    ROS2, инструменты разработчика и настройку оболочки.
+    """
     try:
-        # Step 1 — locale  (0 → 5 %)
-        screen.set_progress(0, "Setting up locale...")
-        screen.write("[bold]Step 1 / 6 — Locale[/bold]")
-        _setup_locale(screen.write)
+        def prog(lo: float, hi: float) -> Callable[[float], None]:
+            """Map a 0-100 apt percentage into the [lo, hi] sub-range of the progress bar.
+            Отображает 0-100% apt в поддиапазон [lo, hi] прогресс-бара.
+            """
+            return lambda p: screen.set_progress(lo + p / 100.0 * (hi - lo))
 
-        # Step 2 — ROS2 repo  (5 → 20 %)
-        screen.set_progress(5, "Adding ROS2 repository...")
-        screen.write("\n[bold]Step 2 / 6 — ROS2 repository[/bold]")
-        _add_ros2_repo(
-            screen.write,
-            on_progress=lambda p: screen.set_progress(5 + p * 0.15),
-            register_proc=screen.set_proc,
-        )
-
+        screen.set_progress(0, "Preparing...")
+        _step_prereqs(screen.write, prog(0, 15))
         if screen.is_stopped():
             return
 
-        # Step 3 — ROS2 Jazzy Desktop  (20 → 82 %)
-        screen.set_progress(20, "Installing ROS2 Jazzy Desktop...")
-        screen.write("\n[bold]Step 3 / 6 — ROS2 Jazzy Desktop[/bold]")
-        _install_ros2_jazzy(
-            screen.write,
-            on_progress=lambda p: screen.set_progress(20 + p * 0.62),
-            register_proc=screen.set_proc,
-        )
-
+        screen.set_progress(15, "Setting up ROS2 repository...")
+        _step_ros2_repo(screen.write, prog(15, 30))
         if screen.is_stopped():
             return
 
-        # Step 4 — dev tools  (82 → 90 %)
-        screen.set_progress(82, "Installing dev tools...")
-        screen.write("\n[bold]Step 4 / 6 — Dev tools (colcon, rosdep)[/bold]")
-        _install_dev_tools(screen.write)
+        screen.set_progress(30, f"Installing ros-{_DISTRO}-{pkg}...")
+        _step_install_ros2(screen.write, prog(30, 75), pkg, register_proc=screen.set_proc)
+        if screen.is_stopped():
+            return
 
-        # Step 5 — rosdep  (90 → 96 %)
-        screen.set_progress(90, "Setting up rosdep...")
-        screen.write("\n[bold]Step 5 / 6 — rosdep[/bold]")
-        _setup_rosdep(screen.write)
+        screen.set_progress(75, "Installing dev tools...")
+        _step_dev_tools(screen.write, prog(75, 95))
+        if screen.is_stopped():
+            return
 
-        # Step 6 — shell rc  (96 → 100 %)
-        screen.set_progress(96, "Configuring shell...")
-        screen.write("\n[bold]Step 6 / 6 — Shell configuration[/bold]")
-        _setup_shell_rc(screen.write)
+        screen.set_progress(95, "Configuring shell...")
+        _step_shell_setup(screen.write)
         screen.set_progress(100, "Done")
 
-        if not screen.is_stopped():
-            screen.write(
-                "\nRestart the terminal, then run [bold]cobot local-setup[/bold] again to build."
-            )
-            screen.finish(True)
+        screen.write(f"\n[green]ROS2 {_DISTRO} installed successfully.[/green]")
+        screen.finish(True)
     except Exception as exc:
         if not screen.is_stopped():
             screen.write(f"\n[red]Error:[/red] {exc}")
             screen.finish(False)
 
 
-# Build all project packages with colcon and track progress by counting finished packages.
-# Собираем все пакеты проекта с помощью colcon и отслеживаем прогресс по количеству завершённых пакетов.
 def _task_build(screen: LogScreen) -> None:
+    """Build the project workspace using rosdep and colcon.
+
+    Step 1 - runs "rosdep install --from-paths src" to pull in all package
+    dependencies declared in the src/ directory.
+    Step 2 - runs "colcon build --symlink-install" to compile every package.
+
+    Both commands receive a copy of os.environ extended with the sourced ROS2
+    setup so that ament CMake macros and ROS2 packages are visible even if the
+    user has not yet sourced setup.bash in this terminal session.
+
+    Собирает рабочее пространство проекта с помощью rosdep и colcon.
+    Шаг 1 - запускает "rosdep install --from-paths src" для установки всех
+    зависимостей пакетов, объявленных в директории src/.
+    Шаг 2 - запускает "colcon build --symlink-install" для компиляции каждого пакета.
+
+    Обе команды получают копию os.environ с подключённым окружением ROS2, так что
+    макросы ament CMake и пакеты ROS2 видны даже если пользователь ещё не выполнил
+    source setup.bash в этой сессии терминала.
+    """
     try:
-        if not shutil.which("colcon"):
+        env = _ros2_env()
+
+        if not shutil.which("colcon") and not Path(f"/opt/ros/{_DISTRO}/bin/colcon").exists():
             screen.write("[red]colcon not found.[/red]")
-            screen.write("Source ROS2 first:  [bold]source /opt/ros/jazzy/setup.bash[/bold]")
+            screen.write(f"Source ROS2 first:  [bold]source /opt/ros/{_DISTRO}/setup.bash[/bold]")
             screen.finish(False)
             return
 
-        # Step 1: install all src/ dependencies via rosdep  (0 → 25 %)
         screen.set_progress(0, "Installing dependencies...")
-        screen.write("[bold]Step 1 / 2 — rosdep install[/bold]\n")
+        screen.write("[bold]Step 1 / 2 - rosdep install[/bold]\n")
         _run_logged(
             ["rosdep", "install", "--from-paths", "src", "-i", "-r", "-y"],
             screen.write,
+            env=env,
             cwd=_PROJECT_DIR,
             register_proc=screen.set_proc,
         )
-
         if screen.is_stopped():
             return
 
-        # Step 2: build with colcon  (25 → 100 %)
-        screen.set_progress(25, "Building...")
+        screen.set_progress(30, "Building...")
         list_result = subprocess.run(
-            ["colcon", "list"], capture_output=True, text=True, cwd=_PROJECT_DIR,
+            ["colcon", "list"], capture_output=True, text=True,
+            cwd=_PROJECT_DIR, env=env,
         )
         total = max(len([l for l in list_result.stdout.splitlines() if l.strip()]), 1)
-        screen.write(f"\n[bold]Step 2 / 2 — colcon build ({total} packages)[/bold]\n")
+        screen.write(f"\n[bold]Step 2 / 2 - colcon build ({total} packages)[/bold]\n")
         built = 0
 
         def _track(line: str) -> None:
+            """Update the progress bar each time colcon finishes a package.
+            Обновляет прогресс-бар каждый раз, когда colcon завершает пакет.
+            """
             nonlocal built
             screen.write(line)
             if "Finished <<<" in line or "Failed <<<" in line:
                 built += 1
-                pct = 25 + built / total * 75
-                screen.set_progress(pct, f"{built} / {total} packages done")
+                screen.set_progress(
+                    30 + built / total * 70,
+                    f"{built} / {total} packages done",
+                )
 
-        _run_logged(["colcon", "build", "--symlink-install"], _track, cwd=_PROJECT_DIR, register_proc=screen.set_proc)
+        _run_logged(
+            ["colcon", "build", "--symlink-install"],
+            _track,
+            env=env,
+            cwd=_PROJECT_DIR,
+            register_proc=screen.set_proc,
+        )
 
         if not screen.is_stopped():
             screen.set_progress(100, "Build complete")
@@ -464,38 +586,26 @@ def _task_build(screen: LogScreen) -> None:
             screen.finish(False)
 
 
-# Webots version that matches the Docker images used in this project.
-# Версия Webots, соответствующая Docker-образам используемым в этом проекте.
-_WEBOTS_VERSION = "2025a"
-_WEBOTS_DEB_URL = (
-    f"https://github.com/cyberbotics/webots/releases/download/"
-    f"R{_WEBOTS_VERSION}/webots_{_WEBOTS_VERSION}_amd64.deb"
-)
-
-
-def webots_installed() -> bool:
-    """Return True if Webots is available on PATH."""
-    return shutil.which("webots") is not None
-
-
-# Download the Webots .deb from GitHub and install it with apt.
-# Progress: download (0-65%), apt install (65-100%).
-# Скачиваем .deb Webots с GitHub и устанавливаем через apt.
-# Прогресс: скачивание (0-65%), установка apt (65-100%).
 def _task_install_webots(screen: LogScreen) -> None:
+    """Download the Webots .deb from GitHub and install it with apt.
+
+    Progress is split into two phases:
+    - 0-65%: downloading the .deb file (streamed in 64 KB chunks).
+    - 65-100%: running apt-get install on the downloaded file.
+
+    Скачивает .deb Webots с GitHub и устанавливает его через apt.
+    Прогресс разделён на две фазы:
+    - 0-65%: скачивание .deb файла (потоковое, кусками по 64 КБ).
+    - 65-100%: запуск apt-get install для скачанного файла.
+    """
     try:
         screen.write(f"[bold]Installing Webots {_WEBOTS_VERSION}[/bold]\n")
+        screen.write(f"[dim]{_WEBOTS_DEB_URL}[/dim]\n")
+        screen.set_progress(0, "Downloading Webots...")
 
         with tempfile.TemporaryDirectory() as tmp:
             deb_path = Path(tmp) / f"webots_{_WEBOTS_VERSION}_amd64.deb"
 
-            screen.write(f"[dim]{_WEBOTS_DEB_URL}[/dim]\n")
-            screen.set_progress(0, "Downloading Webots...")
-
-            # Download in 64 KB chunks so we can update the progress bar and bail out if the user
-            # cancels midway through instead of blocking in urlretrieve until the full file arrives.
-            # Скачиваем по 64 КБ, чтобы обновлять прогресс-бар и прерваться при отмене пользователем,
-            # а не блокироваться в urlretrieve до получения всего файла.
             with urllib.request.urlopen(_WEBOTS_DEB_URL, timeout=30) as resp:
                 total = int(resp.headers.get("Content-Length", 0))
                 downloaded = 0
@@ -533,7 +643,7 @@ def _task_install_webots(screen: LogScreen) -> None:
             proc.wait()
 
         if proc.returncode not in (0, -9):
-            screen.write("\n[red]Installation failed.[/red]")
+            screen.write("\n[red]Webots installation failed.[/red]")
             screen.finish(False)
             return
 
@@ -549,99 +659,160 @@ def _task_install_webots(screen: LogScreen) -> None:
             screen.finish(False)
 
 
-# Minimal single-question app used between steps where a full wizard is not needed.
-# Минимальное приложение с одним вопросом, используемое между шагами где полный мастер не нужен.
-class _Ask(App[Optional[str]]):
-    CSS = SCREEN_CSS
+# TUI application - orchestrates screens and user choices
+# TUI приложение - управляет экранами и выборами пользователя
+class _LocalSetupApp(App[Optional[str]]):
+    """Main TUI application for the local-setup command.
 
-    def __init__(self, step: str, question: str, options: list, default: str):
-        super().__init__()
-        self._step = step
-        self._question = question
-        self._options = options
-        self._default = default
+    Guides the user through: install ROS2 choice, OS check, version choice,
+    installation log, build log, and optional Webots installation.
+    Returns "docker" if the user opts for Docker setup, None otherwise.
 
-    def on_mount(self) -> None:
-        self.push_screen(
-            PickScreen(self._step, self._question, self._options, self._default),
-            self.exit,
-        )
+    Главное TUI приложение для команды local-setup.
+    Проводит пользователя через: выбор установки ROS2, проверку ОС, выбор версии,
+    лог установки, лог сборки и опциональную установку Webots.
+    Возвращает "docker" если пользователь выбирает Docker, иначе None.
+    """
 
-
-def _ask(step: str, question: str, options: list, default: str) -> Optional[str]:
-    return _Ask(step, question, options, default).run()
-
-
-# Public app used by run.py to install Webots before launching locally.
-# Публичное приложение, используемое run.py для установки Webots перед локальным запуском.
-class WebotsInstallApp(App[bool]):
-    CSS = SCREEN_CSS
-
-    def on_mount(self) -> None:
-        self.push_screen(
-            LogScreen(f"Installing Webots {_WEBOTS_VERSION}", _task_install_webots, show_progress=True),
-            self.exit,
-        )
-
-
-
-# Ask the user if they want to install ROS2 Jazzy, then run the installer if they say yes.
-# Спрашиваем пользователя хочет ли он установить ROS2 Jazzy, и запускаем установщик если да.
-class _InstallJazzyApp(App[None]):
     CSS = SCREEN_CSS
 
     def on_mount(self) -> None:
         self.push_screen(
             PickScreen(
-                "ROS2 not found",
-                "ROS2 Jazzy is not installed. Install it now?",
-                ["Yes, install ROS2 Jazzy", "No, skip"],
-                "Yes, install ROS2 Jazzy",
+                "local-setup",
+                "Install ROS2 Jazzy?",
+                ["Yes, install", "No, exit"],
+                "Yes, install",
             ),
-            self._on_choice,
+            self._on_install_choice,
         )
 
-    def _on_choice(self, choice: Optional[str]) -> None:
-        if choice is None or choice.startswith("No"):
-            self.exit()
+    def _on_install_choice(self, choice: Optional[str]) -> None:
+        """Handle the initial yes/no choice to install ROS2.
+        Обрабатывает начальный выбор да/нет для установки ROS2.
+        """
+        if not choice or choice.startswith("No"):
+            self.exit(None)
             return
+        if not _detect_ubuntu_2404():
+            self.push_screen(
+                PickScreen(
+                    "Unsupported OS",
+                    "Ubuntu 24.04 not detected. Set up the environment via Docker instead?",
+                    ["Yes, run docker-setup", "No, exit"],
+                    "Yes, run docker-setup",
+                ),
+                self._on_docker_choice,
+            )
+        else:
+            self.push_screen(
+                PickScreen(
+                    "ROS2 version",
+                    "Which ROS2 Jazzy variant do you want to install?",
+                    ["Desktop (full install, includes GUI tools)", "Base (minimal, no GUI)"],
+                    "Desktop (full install, includes GUI tools)",
+                ),
+                self._on_version_choice,
+            )
+
+    def _on_docker_choice(self, choice: Optional[str]) -> None:
+        """Exit the app signalling whether docker-setup should be launched.
+        Завершает приложение, сигнализируя нужно ли запустить docker-setup.
+        """
+        self.exit("docker" if choice and choice.startswith("Yes") else None)
+
+    def _on_version_choice(self, choice: Optional[str]) -> None:
+        """Start the installation log screen for the chosen ROS2 variant.
+        Запускает экран лога установки для выбранного варианта ROS2.
+        """
+        if not choice:
+            self.exit(None)
+            return
+        pkg = "desktop" if choice.startswith("Desktop") else "ros-base"
         self.push_screen(
-            LogScreen("Installing ROS2 Jazzy", _task_install_jazzy, show_progress=True),
-            lambda _: self.exit(),
+            LogScreen(
+                f"Installing ROS2 Jazzy ({pkg})",
+                lambda s: _task_install(s, pkg),
+                show_progress=True,
+            ),
+            lambda _: self._after_install(),
         )
 
-
-# Run the colcon build without asking any questions - used when ROS2 is already installed.
-# Запускаем сборку colcon без лишних вопросов - используется когда ROS2 уже установлен.
-class _BuildApp(App[None]):
-    CSS = SCREEN_CSS
-
-    def on_mount(self) -> None:
+    def _after_install(self) -> None:
+        """After installation finishes, immediately start the project build.
+        После завершения установки сразу запускает сборку проекта.
+        """
         self.push_screen(
             LogScreen("Building project", _task_build, show_progress=True),
-            lambda _: self.exit(),
+            lambda _: self._after_build(),
         )
 
+    def _after_build(self) -> None:
+        """After the build, offer to install Webots if it is not already present.
+        После сборки предлагает установить Webots если он ещё не установлен.
+        """
+        if webots_installed():
+            self.exit(None)
+            return
+        self.push_screen(
+            PickScreen(
+                "Webots",
+                f"Install Webots {_WEBOTS_VERSION} simulator?",
+                [f"Yes, install Webots {_WEBOTS_VERSION}", "No, skip"],
+                "No, skip",
+            ),
+            self._on_webots_choice,
+        )
 
-# Shown when the OS is not Ubuntu 24.04. Offers to fall back to docker-setup instead.
-# Показывается когда ОС не Ubuntu 24.04. Предлагает перейти к docker-setup вместо этого.
-class _DockerPromptApp(App[bool]):
+    def _on_webots_choice(self, choice: Optional[str]) -> None:
+        """Start the Webots installer or exit depending on the user choice.
+        Запускает установщик Webots или завершает работу в зависимости от выбора.
+        """
+        if choice and choice.startswith("Yes"):
+            subprocess.run(["sudo", "-v"], check=False)
+            self.push_screen(
+                LogScreen(
+                    f"Installing Webots {_WEBOTS_VERSION}",
+                    _task_install_webots,
+                    show_progress=True,
+                ),
+                lambda _: self.exit(None),
+            )
+        else:
+            self.exit(None)
+
+
+class WebotsInstallApp(App[bool]):
+    """Standalone TUI app for installing Webots, used by the run command.
+
+    Launched by run.py when the user starts a local simulation but Webots
+    is not installed yet.
+
+    Отдельное TUI приложение для установки Webots, используемое командой run.
+    Запускается из run.py когда пользователь запускает локальную симуляцию,
+    но Webots ещё не установлен.
+    """
+
     CSS = SCREEN_CSS
 
     def on_mount(self) -> None:
         self.push_screen(
-            PickScreen(
-                "Unsupported OS",
-                "Ubuntu 24.04 not detected. Build a Docker image for development?",
-                ["Yes, run docker-setup", "No, exit"],
-                "Yes, run docker-setup",
+            LogScreen(
+                f"Installing Webots {_WEBOTS_VERSION}",
+                _task_install_webots,
+                show_progress=True,
             ),
-            lambda v: self.exit(v is not None and v.startswith("Yes")),
+            self.exit,
         )
 
 
-
+# Entry point - registered as the "local-setup" subcommand
+# Точка входа - зарегистрирована как подкоманда "local-setup"
 def register(subparsers: argparse._SubParsersAction) -> None:
+    """Register the local-setup subcommand with the CLI argument parser.
+
+    Регистрирует подкоманду local-setup в парсере аргументов командной строки.
+    """
     p = subparsers.add_parser(
         "local-setup",
         help="Install ROS2 Jazzy natively and build the project with colcon",
@@ -650,43 +821,18 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def run(args: argparse.Namespace) -> None:
-    # If this is not Ubuntu 24.04 we cannot install ROS2 Jazzy natively - offer Docker instead.
-    # Если это не Ubuntu 24.04 мы не можем установить ROS2 Jazzy нативно - предлагаем Docker вместо этого.
-    if not _detect_ubuntu_2404():
-        if _DockerPromptApp().run():
-            _docker_setup(args)
-        return
+    """Entry point for the local-setup command.
 
-    # ROS2 not installed yet - show the installer.
-    # After installation the user must restart the terminal, so we stop here.
-    # ROS2 ещё не установлен - показываем установщик.
-    # После установки пользователь должен перезапустить терминал, поэтому останавливаемся здесь.
-    if not _detect_ros2_jazzy():
-        # Cache the sudo token now, while the terminal is in normal mode and the password
-        # prompt is visible. Once Textual takes over the screen, sudo prompts become invisible
-        # and the process hangs silently waiting for input that never arrives.
-        # Кешируем sudo-токен сейчас, пока терминал работает в обычном режиме и запрос пароля
-        # виден пользователю. После запуска Textual sudo не может показать запрос и процесс
-        # зависает молча, ожидая ввод который никогда не придёт.
-        subprocess.run(["sudo", "-v"], check=False)
-        _InstallJazzyApp().run()
-        return
+    Pre-caches the sudo token while the terminal is in normal mode so that
+    subsequent sudo calls inside the Textual TUI do not hang waiting for
+    a password prompt that the user cannot see.
 
-    # ROS2 is ready - build the project.
-    # ROS2 готов - собираем проект.
-    _BuildApp().run()
-
-    # Ask about Webots only after a successful build, and only if it is not already installed.
-    # Спрашиваем про Webots только после успешной сборки и только если он ещё не установлен.
-    if not webots_installed():
-        v = _ask(
-            "Optional: Webots",
-            f"Install Webots {_WEBOTS_VERSION} simulator? (can also be done later via cobot run)",
-            [f"Yes, install Webots {_WEBOTS_VERSION}", "No, skip"],
-            "No, skip",
-        )
-        if v and v.startswith("Yes"):
-            # Same sudo pre-cache before launching the Webots installer TUI.
-            # Тот же предварительный кеш sudo перед запуском TUI установщика Webots.
-            subprocess.run(["sudo", "-v"], check=False)
-            WebotsInstallApp().run()
+    Точка входа для команды local-setup.
+    Предварительно кеширует sudo-токен пока терминал в обычном режиме, чтобы
+    последующие вызовы sudo внутри Textual TUI не зависали ожидая запрос пароля,
+    который пользователь не может увидеть.
+    """
+    subprocess.run(["sudo", "-v"], check=False)
+    result = _LocalSetupApp().run()
+    if result == "docker":
+        _docker_setup(args)
