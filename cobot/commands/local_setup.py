@@ -65,21 +65,6 @@ def _detect_ros2_jazzy() -> bool:
 Write = Callable[[str], None]
 
 
-# Run a command and capture output. Print it to the log only if the command fails.
-# Запускаем команду и перехватываем вывод. Выводим в лог только если команда завершилась с ошибкой.
-def _run_quiet(cmd: List[str], write: Write | None = None, env: dict | None = None, cwd=None) -> None:
-    result = subprocess.run(
-        cmd, capture_output=True, text=True,
-        env=env or os.environ, cwd=cwd,
-    )
-    if result.returncode != 0:
-        if write:
-            for line in (result.stdout + result.stderr).splitlines():
-                if line.strip():
-                    write(line)
-        raise RuntimeError(f"Command failed: {cmd[0]}")
-
-
 # Run a command and stream every output line to the log in real time.
 # Запускаем команду и транслируем каждую строку вывода в лог в реальном времени.
 def _run_logged(
@@ -171,10 +156,10 @@ def _setup_locale(write: Write) -> None:
         write("[green][ok][/green] UTF-8 locale active")
         return
     write("[cyan][*][/cyan] Configuring UTF-8 locale...")
-    _run_quiet(["sudo", "apt-get", "update", "-qq"] + _APT_TIMEOUTS, write)
-    _run_quiet(["sudo", "apt-get", "install", "-y", "--no-install-recommends", "locales"] + _APT_TIMEOUTS, write, _APT_ENV)
-    _run_quiet(["sudo", "locale-gen", "en_US.UTF-8"], write)
-    _run_quiet(["sudo", "update-locale", "LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8"], write)
+    _run_logged(["sudo", "apt-get", "update"] + _APT_TIMEOUTS, write)
+    _run_logged(["sudo", "apt-get", "install", "-y", "--no-install-recommends", "locales"] + _APT_TIMEOUTS, write, _APT_ENV)
+    _run_logged(["sudo", "locale-gen", "en_US.UTF-8"], write)
+    _run_logged(["sudo", "update-locale", "LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8"], write)
     write("[green][ok][/green] Locale configured")
 
 
@@ -200,17 +185,27 @@ def _add_ros2_repo(
     _cleanup_ros2_repo(write)
     write("[cyan][*][/cyan] Configuring ROS2 apt repository...")
 
-    # Install prerequisites for GPG key import and universe repo.
-    # Устанавливаем необходимые пакеты для импорта GPG-ключа и репозитория universe.
-    subprocess.run(["sudo", "apt-get", "update"] + _APT_TIMEOUTS, capture_output=True, timeout=120)
-    _prog(10)
-    _run_quiet(
-        ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
-         "dirmngr", "gnupg2", "software-properties-common"] + _APT_TIMEOUTS,
-        write, _APT_ENV,
-    )
+    # Only install tools that are not already present to avoid unnecessary network access.
+    # gnupg2 is a transitional metapackage — gpg/gpg2 binary is what we actually need.
+    to_install = []
+    if not shutil.which("gpg") and not shutil.which("gpg2"):
+        to_install.append("gnupg2")
+    if not shutil.which("dirmngr"):
+        to_install.append("dirmngr")
+    if not shutil.which("add-apt-repository"):
+        to_install.append("software-properties-common")
+
+    if to_install:
+        write(f"[cyan][*][/cyan] Installing prerequisites: {', '.join(to_install)}...")
+        _run_logged(["sudo", "apt-get", "update"] + _APT_TIMEOUTS, write)
+        _run_logged(
+            ["sudo", "apt-get", "install", "-y", "--no-install-recommends"] + to_install + _APT_TIMEOUTS,
+            write, _APT_ENV,
+        )
+    else:
+        write("[green][ok][/green] Prerequisites already installed")
     _prog(20)
-    _run_quiet(["sudo", "add-apt-repository", "-y", "universe"] + _APT_TIMEOUTS, write)
+    _run_logged(["sudo", "add-apt-repository", "-y", "universe"] + _APT_TIMEOUTS, write)
     _prog(30)
 
     # Import the official ROS2 signing key from the Ubuntu keyserver.
@@ -220,10 +215,10 @@ def _add_ros2_repo(
     # Именно так OSRF делает это в официальных Docker-образах.
     # Отпечаток ключа фиксирован для всех релизов ROS2 и никогда не меняется.
     write("[cyan][*][/cyan] Importing ROS2 signing key from keyserver.ubuntu.com...")
-    _run_quiet([
+    _run_logged([
         "sudo", "bash", "-c",
         f'export GNUPGHOME="$(mktemp -d)" && '
-        f'gpg --batch --keyserver keyserver.ubuntu.com --recv-keys {_ROS2_KEY} && '
+        f'gpg --batch --verbose --keyserver keyserver.ubuntu.com --recv-keys {_ROS2_KEY} && '
         f'mkdir -p /usr/share/keyrings && '
         f'gpg --batch --export {_ROS2_KEY} > {_ROS_KEYRING} && '
         f'gpgconf --kill all && '
@@ -295,9 +290,9 @@ def _install_colcon(write: Write) -> None:
         write("[green][ok][/green] colcon already available")
         return
     write("[cyan][*][/cyan] Installing colcon...")
-    _run_quiet(
+    _run_logged(
         ["sudo", "apt-get", "install", "-y", "--no-install-recommends",
-         "python3-colcon-common-extensions"],
+         "python3-colcon-common-extensions"] + _APT_TIMEOUTS,
         write, _APT_ENV,
     )
     write("[green][ok][/green] colcon installed")
