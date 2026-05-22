@@ -250,7 +250,11 @@ def _run_apt_with_progress(
 
 # Installation steps - each step maps to one visible phase in the log screen
 # Шаги установки - каждый шаг соответствует одной видимой фазе в экране лога
-def _step_prereqs(write: Write, on_progress: Callable[[float], None]) -> None:
+def _step_prereqs(
+    write: Write,
+    on_progress: Callable[[float], None],
+    register_proc: Callable | None = None,
+) -> None:
     """Step 1 - Refresh apt cache and install packages required for the ROS2 setup.
 
     Installs: software-properties-common, curl, gnupg2, lsb-release, build-essential.
@@ -264,7 +268,7 @@ def _step_prereqs(write: Write, on_progress: Callable[[float], None]) -> None:
     write("[cyan][*][/cyan] Updating package lists...")
     _run_apt_with_progress(
         ["sudo", "apt-get", "update"] + _APT_OPTS,
-        write, on_progress, _APT_ENV,
+        write, on_progress, _APT_ENV, register_proc,
     )
     write("[cyan][*][/cyan] Installing prerequisites...")
     _run_apt_with_progress(
@@ -273,18 +277,23 @@ def _step_prereqs(write: Write, on_progress: Callable[[float], None]) -> None:
             "software-properties-common", "curl", "gnupg2",
             "lsb-release", "build-essential",
         ] + _APT_OPTS,
-        write, on_progress, _APT_ENV,
+        write, on_progress, _APT_ENV, register_proc,
     )
     write("[cyan][*][/cyan] Adding universe repository...")
     # --no-update prevents add-apt-repository from running its own apt-get update,
     # which would ignore our timeout options and could hang indefinitely.
     # --no-update запрещает add-apt-repository запускать собственный apt-get update,
     # который игнорирует наши таймауты и может зависнуть.
-    _run_logged(["sudo", "add-apt-repository", "-y", "--no-update", "universe"], write)
+    _run_logged(["sudo", "add-apt-repository", "-y", "--no-update", "universe"], write,
+                register_proc=register_proc)
     write("[green][ok][/green] Prerequisites ready")
 
 
-def _step_ros2_repo(write: Write, on_progress: Callable[[float], None]) -> None:
+def _step_ros2_repo(
+    write: Write,
+    on_progress: Callable[[float], None],
+    register_proc: Callable | None = None,
+) -> None:
     """Step 2 - Download the ROS2 signing key and register the ROS2 apt repository.
 
     Removes any previous key and sources file first so re-runs always start clean.
@@ -351,7 +360,7 @@ def _step_ros2_repo(write: Write, on_progress: Callable[[float], None]) -> None:
             "-o", "Dir::Etc::sourceparts=-",
             "-o", "APT::Get::List-Cleanup=0",
         ] + _APT_OPTS,
-        write, on_progress, _APT_ENV,
+        write, on_progress, _APT_ENV, register_proc,
     )
     write("[green][ok][/green] ROS2 repository ready")
 
@@ -380,7 +389,11 @@ def _step_install_ros2(
     write(f"[green][ok][/green] ros-{_DISTRO}-{pkg} installed")
 
 
-def _step_dev_tools(write: Write, on_progress: Callable[[float], None]) -> None:
+def _step_dev_tools(
+    write: Write,
+    on_progress: Callable[[float], None],
+    register_proc: Callable | None = None,
+) -> None:
     """Step 4 - Install colcon, rosdep, vcstool and initialize rosdep.
 
     Installs the Python packages needed to build and manage ROS2 workspaces.
@@ -403,15 +416,16 @@ def _step_dev_tools(write: Write, on_progress: Callable[[float], None]) -> None:
             "python3-rosdep",
             "python3-vcstool",
         ] + _APT_OPTS,
-        write, on_progress, _APT_ENV,
+        write, on_progress, _APT_ENV, register_proc,
     )
     if not _ROSDEP_SOURCES.exists():
         write("[cyan][*][/cyan] Initializing rosdep...")
-        _run_logged(["sudo", "rosdep", "init"], write)
+        _run_logged(["sudo", "rosdep", "init"], write, register_proc=register_proc)
     else:
         write("[green][ok][/green] rosdep already initialized")
     write("[cyan][*][/cyan] Updating rosdep...")
-    _run_logged(["rosdep", "update", "--rosdistro", _DISTRO], write)
+    _run_logged(["rosdep", "update", "--rosdistro", _DISTRO], write,
+                register_proc=register_proc)
     write("[green][ok][/green] Dev tools ready")
 
 
@@ -474,12 +488,12 @@ def _task_install(screen: LogScreen, pkg: str) -> None:
             return lambda p: screen.set_progress(lo + p / 100.0 * (hi - lo))
 
         screen.set_progress(0, "Preparing...")
-        _step_prereqs(screen.write, prog(0, 15))
+        _step_prereqs(screen.write, prog(0, 15), register_proc=screen.set_proc)
         if screen.is_stopped():
             return
 
         screen.set_progress(15, "Setting up ROS2 repository...")
-        _step_ros2_repo(screen.write, prog(15, 30))
+        _step_ros2_repo(screen.write, prog(15, 30), register_proc=screen.set_proc)
         if screen.is_stopped():
             return
 
@@ -489,7 +503,7 @@ def _task_install(screen: LogScreen, pkg: str) -> None:
             return
 
         screen.set_progress(75, "Installing dev tools...")
-        _step_dev_tools(screen.write, prog(75, 95))
+        _step_dev_tools(screen.write, prog(75, 95), register_proc=screen.set_proc)
         if screen.is_stopped():
             return
 

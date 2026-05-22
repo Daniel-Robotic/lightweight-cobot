@@ -33,14 +33,16 @@ def _task_update(screen: LogScreen) -> None:
         # Fetch (0 → 30 %)
         screen.set_progress(0, "Fetching from remote...")
         screen.write("[cyan][*][/cyan] Fetching from remote...")
-        fetch = subprocess.run(
+        fetch_proc = subprocess.Popen(
             ["git", "fetch", "origin"],
-            cwd=_PROJECT_DIR, capture_output=True, text=True,
+            cwd=_PROJECT_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        screen.set_proc(fetch_proc)
+        fetch_out, fetch_err = fetch_proc.communicate()
         if screen.is_stopped():
             return
-        if fetch.returncode != 0:
-            screen.write(f"[red]Fetch failed:[/red] {fetch.stderr.strip()}")
+        if fetch_proc.returncode not in (0, -9):
+            screen.write(f"[red]Fetch failed:[/red] {fetch_err.strip()}")
             screen.finish(False)
             return
         screen.set_progress(30)
@@ -72,14 +74,16 @@ def _task_update(screen: LogScreen) -> None:
         # Pull (30 → 80 %)
         screen.set_progress(30, "Pulling changes...")
         screen.write("\n[cyan][*][/cyan] Pulling changes...")
-        pull = subprocess.run(
+        pull_proc = subprocess.Popen(
             ["git", "pull", "origin", branch],
-            capture_output=True, text=True, cwd=_PROJECT_DIR,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=_PROJECT_DIR,
         )
+        screen.set_proc(pull_proc)
+        pull_out, pull_err = pull_proc.communicate()
         if screen.is_stopped():
             return
-        if pull.returncode != 0:
-            for line in (pull.stdout + pull.stderr).splitlines():
+        if pull_proc.returncode not in (0, -9):
+            for line in (pull_out + pull_err).splitlines():
                 if line.strip():
                     screen.write(line)
             screen.write("[red]Pull failed.[/red]")
@@ -92,16 +96,18 @@ def _task_update(screen: LogScreen) -> None:
         # Переустанавливаем, чтобы бинарник cobot подхватил новые зависимости из pyproject.toml.
         screen.set_progress(80, "Reinstalling cobot CLI...")
         screen.write("\n[cyan][*][/cyan] Reinstalling cobot CLI...")
-        reinstall = subprocess.run(
+        reinstall_proc = subprocess.Popen(
             ["uv", "tool", "install", "--editable", str(_PROJECT_DIR)],
-            capture_output=True, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        screen.set_proc(reinstall_proc)
+        reinstall_out, reinstall_err = reinstall_proc.communicate()
         if screen.is_stopped():
             return
-        if reinstall.returncode == 0:
+        if reinstall_proc.returncode in (0, -9):
             screen.write("[green][ok][/green] cobot reinstalled")
         else:
-            screen.write(f"[yellow]Warning:[/yellow] reinstall failed — {reinstall.stderr.strip()}")
+            screen.write(f"[yellow]Warning:[/yellow] reinstall failed — {reinstall_err.strip()}")
 
         if not screen.is_stopped():
             screen.set_progress(100, "Done")

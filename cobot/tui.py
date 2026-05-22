@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import signal
 from typing import Callable, List, Optional
 
 from textual import on
@@ -195,9 +197,10 @@ class LogScreen(Screen[bool]):
         self._finished = False
         self._success = False
         self._show_progress = show_progress
-        # Tracks the subprocess that is currently running so on_unmount can kill it.
-        # Отслеживает текущий subprocess, чтобы on_unmount мог его завершить.
+        # All subprocesses registered via set_proc() - every one gets killed on unmount.
+        # Все подпроцессы зарегистрированные через set_proc() - каждый убивается при выходе.
         self._active_proc = None
+        self._procs: list = []
         self._stopped = False
 
     def compose(self) -> ComposeResult:
@@ -217,11 +220,12 @@ class LogScreen(Screen[bool]):
         self.app.run_worker(lambda: self._run_fn(self), thread=True)
 
     def set_proc(self, proc) -> None:
-        # Register the subprocess that is currently running.
-        # Called from the worker thread - GIL makes simple assignment safe here.
-        # Регистрируем текущий subprocess.
-        # Вызывается из рабочего потока - простое присваивание безопасно благодаря GIL.
+        # Register the subprocess that is currently running. Added to _procs so on_unmount
+        # can kill it even if another proc is registered afterwards.
+        # Регистрируем текущий subprocess. Добавляем в _procs, чтобы on_unmount мог его убить
+        # даже если после него будет зарегистрирован другой процесс.
         self._active_proc = proc
+        self._procs.append(proc)
 
     def is_stopped(self) -> bool:
         # Return True if the user has closed the screen before the task finished.
@@ -229,15 +233,24 @@ class LogScreen(Screen[bool]):
         return self._stopped
 
     def on_unmount(self) -> None:
-        # Kill the active subprocess when the screen closes so it does not keep running in the background.
-        # Убиваем активный subprocess при закрытии экрана, чтобы он не продолжал работать в фоне.
+        # Kill every registered subprocess so nothing keeps running in the background after exit.
+        # Use SIGKILL on the process group to also terminate any children spawned by the process
+        # (e.g. dpkg or apt subprocesses spawned under sudo). Falls back to proc.kill() if the
+        # process group is not available (e.g. already exited).
+        # Убиваем все зарегистрированные подпроцессы, чтобы ничего не висело в фоне после выхода.
+        # Используем SIGKILL по группе процессов, чтобы завершить и дочерние процессы
+        # (например dpkg или apt запущенные под sudo). Откат на proc.kill() если группа недоступна.
         self._stopped = True
-        proc = self._active_proc
-        if proc is not None:
+        for proc in list(self._procs):
             try:
-                proc.kill()
+                pgid = os.getpgid(proc.pid)
+                os.killpg(pgid, signal.SIGKILL)
             except Exception:
-                pass
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self._procs.clear()
 
     def set_progress(self, pct: float, label: str = "") -> None:
         # Thread-safe - this is called from the worker thread, not the UI thread.
@@ -305,6 +318,7 @@ class RunScreen(Screen[None]):
         self._kill_fn = None       # optional custom kill callable, set via set_kill_fn()
         self._finished = False
         self._stopped = False
+        self._procs: list = []     # all registered procs for cleanup on forced exit
 
     def compose(self) -> ComposeResult:
         yield Static(self._title, id="step")
@@ -323,6 +337,7 @@ class RunScreen(Screen[None]):
         # Register the subprocess so the Stop button knows what to terminate.
         # Регистрируем subprocess, чтобы кнопка Stop знала что завершать.
         self._proc = proc
+        self._procs.append(proc)
 
     def set_kill_fn(self, fn: Callable) -> None:
         # Override the default proc.terminate() with a custom kill function.
@@ -352,6 +367,26 @@ class RunScreen(Screen[None]):
         else:
             msg = "[green]Process exited.[/green]  Press [bold]Enter[/bold] to close."
         self.query_one("#hint", Static).update(msg)
+
+    def on_unmount(self) -> None:
+        # Kill all registered subprocesses when the screen is forcibly closed (e.g. Ctrl+Q).
+        # Убиваем все зарегистрированные подпроцессы при принудительном закрытии экрана (Ctrl+Q).
+        self._stopped = True
+        if self._kill_fn is not None:
+            try:
+                self._kill_fn()
+            except Exception:
+                pass
+        for proc in list(self._procs):
+            try:
+                pgid = os.getpgid(proc.pid)
+                os.killpg(pgid, signal.SIGKILL)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self._procs.clear()
 
     def action_stop_close(self) -> None:
         # This runs in the UI thread, so we call _append() directly instead of write()
