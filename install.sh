@@ -315,7 +315,6 @@ run_setup() {
     fi
 
     log_info "Running cobot setup..."
-    cobot setup
 
     # When run via curl | bash the child process cannot update the parent terminal's environment.
     # При запуске через curl | bash дочерний процесс не может обновить окружение родительского терминала.

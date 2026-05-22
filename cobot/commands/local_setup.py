@@ -27,6 +27,16 @@ _ROS_KEY_URL = "https://raw.githubusercontent.com/ros/rosdistro/master/ros.key"
 # Подавляем интерактивные запросы apt, например "перезапустить службы?".
 _APT_ENV = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
 
+# HTTP/HTTPS timeouts for apt so a stalled server does not hang the process forever.
+# 60 seconds per connection attempt is generous enough for any healthy mirror.
+# HTTP/HTTPS таймауты для apt, чтобы зависший сервер не блокировал процесс бесконечно.
+# 60 секунд на попытку подключения достаточно для любого нормального зеркала.
+_APT_TIMEOUTS = [
+    "-o", "Acquire::http::Timeout=60",
+    "-o", "Acquire::https::Timeout=60",
+    "-o", "Acquire::Retries=3",
+]
+
 
 # Check whether we are running on Ubuntu 24.04, which is required for ROS2 Jazzy.
 # Проверяем, запущены ли мы на Ubuntu 24.04, которая требуется для ROS2 Jazzy.
@@ -161,7 +171,8 @@ def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] 
 
     # Best-effort update - 60 second timeout so a bad mirror doesn't hang forever.
     # Фоновое обновление с таймаутом 60 секунд, чтобы зависший зеркальный сервер не блокировал процесс.
-    subprocess.run(["sudo", "apt-get", "update", "-qq"], capture_output=True, timeout=60)
+    # subprocess.run(["sudo", "apt-get", "update", "-qq"] + _APT_TIMEOUTS, capture_output=True, timeout=120)
+    subprocess.run(["sudo", "apt-get", "update"] + _APT_TIMEOUTS, capture_output=True, timeout=120)
     _prog(15)
 
     _run_quiet(
@@ -209,7 +220,7 @@ def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] 
 
     write("[cyan][*][/cyan] Updating apt cache...")
     _run_apt_with_progress(
-        ["sudo", "apt-get", "update", "-q"],
+        ["sudo", "apt-get", "update", "-q"] + _APT_TIMEOUTS,
         write,
         lambda p: _prog(70 + p * 0.30),
         _APT_ENV,
@@ -223,7 +234,7 @@ def _add_ros2_repo(write: Write, on_progress: Optional[Callable[[float], None]] 
 def _install_ros2_jazzy(write: Write, on_progress: Optional[Callable[[float], None]] = None) -> None:
     write("[cyan][*][/cyan] Installing ros-jazzy-desktop and ros-dev-tools...")
     _run_apt_with_progress(
-        ["sudo", "apt-get", "install", "-y", "ros-jazzy-desktop", "ros-dev-tools"],
+        ["sudo", "apt-get", "install", "-y", "ros-jazzy-desktop", "ros-dev-tools"] + _APT_TIMEOUTS,
         write,
         on_progress or (lambda _: None),
         _APT_ENV,
