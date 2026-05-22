@@ -34,9 +34,11 @@ _APT_ENV = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
 # HTTP/HTTPS таймауты для apt, чтобы зависший сервер не блокировал процесс бесконечно.
 # 60 секунд на попытку подключения достаточно для любого нормального зеркала.
 _APT_TIMEOUTS = [
-    "-o", "Acquire::http::Timeout=60",
-    "-o", "Acquire::https::Timeout=60",
-    "-o", "Acquire::Retries=3",
+    "-o", "Acquire::http::ConnectTimeout=15",
+    "-o", "Acquire::https::ConnectTimeout=15",
+    "-o", "Acquire::http::Timeout=30",
+    "-o", "Acquire::https::Timeout=30",
+    "-o", "Acquire::Retries=2",
     # Many VMs have broken IPv6 routing; force IPv4 to avoid silent hangs.
     "-o", "Acquire::ForceIPv4=true",
 ]
@@ -205,7 +207,7 @@ def _add_ros2_repo(
     else:
         write("[green][ok][/green] Prerequisites already installed")
     _prog(20)
-    _run_logged(["sudo", "add-apt-repository", "-y", "universe"], write)
+    _run_logged(["sudo", "add-apt-repository", "-y", "--no-update", "universe"], write)
     _prog(30)
 
     # Import the official ROS2 signing key from the Ubuntu keyserver.
