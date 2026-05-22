@@ -375,9 +375,26 @@ class _LocalSetupApp(App[Optional[str]]):
         )
 
     def _after_install(self) -> None:
-        """After installation finishes, immediately start the project build.
-        После завершения установки сразу запускает сборку проекта.
+        """After installation, ask whether to build the project workspace now.
+        После установки спрашивает, нужно ли собрать рабочее пространство прямо сейчас.
         """
+        self.push_screen(
+            PickScreen(
+                "Build",
+                "Build the project workspace now?\n(runs rosdep install + colcon build)",
+                ["Yes, build now", "No, skip"],
+                "Yes, build now",
+            ),
+            self._on_build_choice,
+        )
+
+    def _on_build_choice(self, choice: Optional[str]) -> None:
+        """Start the build log screen or skip directly to the Webots prompt.
+        Запускает экран сборки или пропускает к вопросу про Webots.
+        """
+        if not choice or choice.startswith("No"):
+            self._after_build()
+            return
         self.push_screen(
             LogScreen("Building project", _task_build, show_progress=True),
             lambda _: self._after_build(),
