@@ -84,6 +84,9 @@ RunScreen #hint {
 # Экран с вопросом и списком вариантов в виде радио-кнопок.
 # Пользователь выбирает один и нажимает Enter - выбранная строка возвращается как результат.
 class PickScreen(Screen[Optional[str]]):
+    """Single-choice radio button screen. Returns the selected option string, or None on Escape.
+    Экран выбора одного варианта с радио-кнопками. Возвращает выбранную строку или None при Escape.
+    """
     BINDINGS = [
         Binding("enter", "submit", "Confirm", priority=True),
         Binding("escape", "abort", "Cancel"),
@@ -133,6 +136,9 @@ class PickScreen(Screen[Optional[str]]):
 # Экран с вопросом и полем для ввода произвольного текста.
 # Пользователь вводит значение, нажимает Enter, и текст возвращается как результат.
 class InputScreen(Screen[Optional[str]]):
+    """Free-text input screen. Returns the trimmed value on Enter, or None on Escape.
+    Экран свободного ввода текста. Возвращает обрезанное значение при Enter или None при Escape.
+    """
     BINDINGS = [
         Binding("enter", "submit", "Confirm", priority=True),
         Binding("escape", "abort", "Cancel"),
@@ -175,6 +181,11 @@ class InputScreen(Screen[Optional[str]]):
 # Используется для долгих операций, таких как установка и сборка.
 # После завершения задачи закрывается по нажатию Enter или Escape.
 class LogScreen(Screen[bool]):
+    """Log screen for long-running background tasks. Shows a scrollable log and optional
+    progress bar. Returns True on success, False on failure after the task finishes.
+    Экран лога для долгих фоновых задач. Показывает прокручиваемый лог и опциональный
+    прогресс-бар. Возвращает True при успехе, False при ошибке после завершения задачи.
+    """
     BINDINGS = [Binding("enter,escape", "close", "Close", show=False)]
 
     def __init__(self, title: str, task: Callable[[LogScreen], None], show_progress: bool = False):
@@ -275,6 +286,11 @@ class LogScreen(Screen[bool]):
 # Экран для долго работающего процесса, который пользователь может остановить в любой момент.
 # Показывает живой лог и предлагает S / Enter / Escape для остановки или закрытия.
 class RunScreen(Screen[None]):
+    """Run screen for a persistent process (e.g. ROS2 launch). Shows a live log and allows
+    the user to stop the process with S or close after it exits with Enter/Escape.
+    Экран запуска для постоянно работающего процесса (например ros2 launch). Показывает живой
+    лог и позволяет остановить процесс клавишей S или закрыть после завершения через Enter/Escape.
+    """
     BINDINGS = [
         Binding("s", "stop_close", "Stop", show=True, priority=True),
         Binding("enter", "stop_close", "Close", show=False),

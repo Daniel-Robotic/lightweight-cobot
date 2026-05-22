@@ -39,6 +39,12 @@ _DESCRIPTION = "Lightweight Cobot"
 # Custom --help action that prints commands grouped by category instead of a flat list.
 # Кастомный обработчик --help, который выводит команды по категориям, а не одним списком.
 class _GroupedHelpAction(argparse.Action):
+    """Custom argparse action that replaces the default --help output with a grouped
+    command listing organized by category (Setup, Run, Management).
+    Кастомный обработчик argparse, заменяющий стандартный вывод --help на сгруппированный
+    список команд по категориям (Setup, Run, Management).
+    """
+
     def __init__(self, option_strings, dest, default=None, required=False, help=None):
         super().__init__(
             option_strings=option_strings,
@@ -63,6 +69,9 @@ class _GroupedHelpAction(argparse.Action):
 
 
 def main():
+    """Entry point for the cobot CLI. Parses arguments and dispatches to the correct command.
+    Точка входа CLI cobot. Разбирает аргументы и вызывает нужную команду.
+    """
     parser = argparse.ArgumentParser(
         prog="cobot",
         description=_DESCRIPTION,
@@ -85,6 +94,11 @@ def main():
 
 
 def _register_commands(subparsers):
+    """Register all command subparsers. Each command module calls register() which adds its
+    own subparser and sets args.func to its run() function.
+    Регистрирует все подпарсеры команд. Каждый модуль вызывает register(), добавляет свой
+    подпарсер и устанавливает args.func на свою функцию run().
+    """
     # Each module registers its own subparser and sets args.func to its run() function.
     # Каждый модуль регистрирует свой подпарсер и устанавливает args.func на свою функцию run().
     cmd_setup.register(subparsers)

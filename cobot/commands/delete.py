@@ -16,6 +16,9 @@ _PROJECT_DIR = Path(__file__).parent.parent.parent
 # Stop and remove all Docker containers whose name contains "lwc".
 # Останавливаем и удаляем все Docker-контейнеры, чьё имя содержит "lwc".
 def _stop_docker_containers(write) -> None:
+    """Stop and force-remove all Docker containers whose name contains "lwc".
+    Останавливает и принудительно удаляет все Docker-контейнеры с "lwc" в имени.
+    """
     write("[cyan][*][/cyan] Stopping Docker containers...")
     result = subprocess.run(
         ["docker", "ps", "-a", "--filter", "name=lwc", "--format", "{{.Names}}"],
@@ -33,6 +36,9 @@ def _stop_docker_containers(write) -> None:
 # Remove all Docker images whose repository or tag contains "lwc".
 # Удаляем все Docker-образы, репозиторий или тег которых содержит "lwc".
 def _remove_docker_images(write) -> None:
+    """Force-remove all local Docker images whose name or tag contains "lwc".
+    Принудительно удаляет все локальные Docker-образы с "lwc" в имени или теге.
+    """
     write("[cyan][*][/cyan] Removing Docker images...")
     result = subprocess.run(
         ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
@@ -53,6 +59,9 @@ def _remove_docker_images(write) -> None:
 # Remove the Docker volume that stores the Webots asset cache.
 # Удаляем Docker volume с кэшем ассетов Webots.
 def _remove_webots_volume(write) -> None:
+    """Remove the lwc-webots-cache Docker volume if it exists. Skips silently if absent.
+    Удаляет Docker volume lwc-webots-cache если он существует. Молча пропускает если отсутствует.
+    """
     result = subprocess.run(
         ["docker", "volume", "inspect", "lwc-webots-cache"],
         capture_output=True,
@@ -69,6 +78,11 @@ def _remove_webots_volume(write) -> None:
 # Удаляем пакеты ROS2 Jazzy через apt и очищаем строку source из конфигов оболочки.
 # Используем официальные команды удаления, которые также снимают регистрацию apt-репозитория ROS2.
 def _remove_ros2(write) -> None:
+    """Remove all ros-jazzy-* packages, the ros2-apt-source package, and the ROS2 source
+    line from .bashrc / .zshrc. Does nothing if /opt/ros/jazzy is not present.
+    Удаляет все пакеты ros-jazzy-*, пакет ros2-apt-source и строку source ROS2 из
+    .bashrc / .zshrc. Ничего не делает если /opt/ros/jazzy отсутствует.
+    """
     write("[cyan][*][/cyan] Removing ROS2 Jazzy packages...")
     if not Path("/opt/ros/jazzy").exists():
         write("[dim]ROS2 Jazzy not found, skipping.[/dim]")
@@ -113,6 +127,9 @@ def _remove_ros2(write) -> None:
 # Remove Webots from the system via apt.
 # Удаляем Webots из системы через apt.
 def _remove_webots(write) -> None:
+    """Remove the webots package via apt and run autoremove. Skips if webots is not found on PATH.
+    Удаляет пакет webots через apt и запускает autoremove. Пропускает если webots не найден в PATH.
+    """
     write("[cyan][*][/cyan] Removing Webots...")
     if not shutil.which("webots"):
         write("[dim]Webots not found, skipping.[/dim]")
@@ -125,6 +142,9 @@ def _remove_webots(write) -> None:
 # Uninstall the cobot CLI from the uv tool store.
 # Удаляем cobot CLI из хранилища инструментов uv.
 def _uninstall_cobot(write) -> None:
+    """Uninstall the lightweight-cobot package from the uv tool store.
+    Удаляет пакет lightweight-cobot из хранилища инструментов uv.
+    """
     write("[cyan][*][/cyan] Uninstalling cobot CLI...")
     result = subprocess.run(
         ["uv", "tool", "uninstall", "lightweight-cobot"],
@@ -139,6 +159,9 @@ def _uninstall_cobot(write) -> None:
 # Delete the entire project directory from disk.
 # Удаляем всю директорию проекта с диска.
 def _remove_project_dir(write) -> None:
+    """Recursively delete the entire project directory (_PROJECT_DIR) from disk.
+    Рекурсивно удаляет всю директорию проекта (_PROJECT_DIR) с диска.
+    """
     write(f"[cyan][*][/cyan] Removing project directory...")
     try:
         shutil.rmtree(_PROJECT_DIR)
@@ -153,6 +176,11 @@ def _remove_project_dir(write) -> None:
 # Выполняем все шаги удаления по порядку.
 # Диапазоны прогресса делятся равномерно между активными шагами, чтобы бар всегда доходил до 100%.
 def _task_delete(screen: LogScreen, remove_ros: bool, remove_webots: bool) -> None:
+    """Worker function that runs inside LogScreen. Runs all deletion steps in order:
+    containers -> images -> ROS2 (optional) -> Webots (optional) -> cobot CLI -> project dir.
+    Рабочая функция внутри LogScreen. Выполняет все шаги удаления по порядку:
+    контейнеры -> образы -> ROS2 (опционально) -> Webots (опционально) -> cobot CLI -> директория.
+    """
     try:
         screen.set_progress(0, "Stopping containers...")
         _stop_docker_containers(screen.write)
@@ -194,6 +222,11 @@ def _task_delete(screen: LogScreen, remove_ros: bool, remove_webots: bool) -> No
 # Многошаговый мастер подтверждения перед удалением.
 # Дополнительные вопросы показываются только если соответствующее ПО действительно установлено.
 class _DeleteApp(App[None]):
+    """Deletion wizard that asks for confirmation, then optionally asks about ROS2 and Webots,
+    then launches LogScreen running _task_delete.
+    Мастер удаления: просит подтверждение, затем опционально спрашивает про ROS2 и Webots,
+    затем запускает LogScreen с _task_delete.
+    """
     CSS = SCREEN_CSS
 
     def on_mount(self) -> None:

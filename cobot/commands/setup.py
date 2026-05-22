@@ -17,6 +17,9 @@ from cobot.tui import SCREEN_CSS, PickScreen
 # Минимальное Textual-приложение, которое задаёт один вопрос и выходит с выбранным значением.
 # Нам это нужно, потому что экраны Textual не могут работать вне контекста приложения.
 class _Ask(App[Optional[str]]):
+    """Minimal one-question Textual app. Pushes a PickScreen and exits with the chosen value.
+    Минимальное однвопросное Textual-приложение. Открывает PickScreen и завершается с выбранным значением.
+    """
     CSS = SCREEN_CSS
 
     def __init__(self, step: str, question: str, options: List[str], default: str):
@@ -34,17 +37,26 @@ class _Ask(App[Optional[str]]):
 
 
 def _ask(step: str, question: str, options: List[str], default: str) -> Optional[str]:
+    """Show a PickScreen and return the selected value, or None if the user pressed Escape.
+    Показывает PickScreen и возвращает выбранное значение или None если пользователь нажал Escape.
+    """
     # Returns None if the user pressed Escape to cancel the whole wizard.
     # Возвращает None если пользователь нажал Escape для отмены всего мастера.
     return _Ask(step, question, options, default).run()
 
 
 def register(subparsers):
+    """Register the "setup" subparser.
+    Регистрирует подпарсер "setup".
+    """
     p = subparsers.add_parser("setup", help="First-time project setup")
     p.set_defaults(func=run)
 
 
 def run(args: argparse.Namespace) -> None:
+    """Run the three-step first-time setup wizard: doc server -> build env -> robot config.
+    Запускает трёхшаговый мастер первоначальной настройки: сервер документации -> среда сборки -> конфиг.
+    """
     # Step 1 - documentation server.
     # Шаг 1 - сервер документации.
     v = _ask("Step 1 of 3", "Set up the documentation server?", ["Yes", "No"], "Yes")

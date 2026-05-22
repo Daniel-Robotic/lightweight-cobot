@@ -16,6 +16,11 @@ _PROJECT_DIR = Path(__file__).parent.parent.parent
 # Скачиваем последние коммиты с удалённого репозитория и переустанавливаем cobot CLI за один раз.
 # Прогресс-бар: fetch (0-30%), pull (30-80%), переустановка (80-100%).
 def _task_update(screen: LogScreen) -> None:
+    """Worker function that runs inside LogScreen. Fetches the current branch, shows incoming
+    commits, pulls changes, then reinstalls the cobot CLI via uv tool install --editable.
+    Рабочая функция, выполняемая внутри LogScreen. Получает текущую ветку, показывает входящие
+    коммиты, вытягивает изменения, затем переустанавливает cobot CLI через uv tool install --editable.
+    """
     try:
         # Find out which branch we are on so we can fetch and pull the right one.
         # Определяем на какой ветке мы находимся, чтобы делать fetch и pull нужной ветки.
@@ -110,6 +115,10 @@ def _task_update(screen: LogScreen) -> None:
 
 
 class _UpdateApp(App[None]):
+    """Minimal Textual app that opens a LogScreen running _task_update and exits when it closes.
+    Минимальное Textual-приложение, открывающее LogScreen с _task_update и завершающееся при закрытии.
+    """
+
     CSS = SCREEN_CSS
 
     def on_mount(self) -> None:

@@ -30,12 +30,18 @@ Write = Callable[[str], None]
 # Thin wrapper around docker so we do not repeat ["docker", ...] everywhere.
 # Тонкая обёртка вокруг docker, чтобы не повторять ["docker", ...] везде.
 def _docker(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
+    """Run a docker subcommand. Pass capture=True to capture stdout/stderr instead of printing.
+    Запускает подкоманду docker. capture=True перехватывает stdout/stderr вместо вывода на экран.
+    """
     return subprocess.run(["docker", *args], capture_output=capture, text=True)
 
 
 # Check whether the docs container is currently running.
 # Проверяем, запущен ли сейчас контейнер с документацией.
 def _is_running() -> bool:
+    """Return True if the lwc-docs container is currently running.
+    Возвращает True если контейнер lwc-docs в данный момент запущен.
+    """
     r = _docker("ps", "--filter", f"name={_CONTAINER_NAME}", "--format", "{{.Names}}", capture=True)
     return _CONTAINER_NAME in r.stdout
 
@@ -43,6 +49,9 @@ def _is_running() -> bool:
 # Check whether the docs Docker image has already been built.
 # Проверяем, был ли уже собран Docker-образ для документации.
 def _image_exists() -> bool:
+    """Return True if the lwc-docs Docker image exists locally.
+    Возвращает True если Docker-образ lwc-docs существует локально.
+    """
     return bool(_docker("images", "-q", _IMAGE_NAME, capture=True).stdout.strip())
 
 
@@ -55,6 +64,9 @@ def _build_docs_image(
     on_progress: Optional[Callable[[float], None]] = None,
     register_proc: Optional[Callable] = None,
 ) -> bool:
+    """Build the lwc-docs Docker image from the doc/lwc-doc directory. Returns True on success.
+    Собирает Docker-образ lwc-docs из директории doc/lwc-doc. Возвращает True при успехе.
+    """
     write("[cyan][*][/cyan] Building documentation image (runs once)...")
     # DOCKER_BUILDKIT=0 gives us "Step X/Y" lines that we can parse for progress.
     # DOCKER_BUILDKIT=0 даёт нам строки "Step X/Y", которые можно парсить для прогресса.
@@ -87,6 +99,9 @@ def _build_docs_image(
 # Start the docs server. Builds the image first if it does not exist yet.
 # Запускаем сервер документации. Сначала собирает образ, если он ещё не существует.
 def _task_up(screen: LogScreen, port: str) -> None:
+    """Worker function for the "up" action. Builds the image if missing, then starts the container.
+    Рабочая функция для действия "up". Собирает образ если отсутствует, затем запускает контейнер.
+    """
     try:
         if _is_running():
             screen.write(f"[green]Docs already running at:[/green] http://localhost:{port}")
@@ -153,6 +168,9 @@ def _task_up(screen: LogScreen, port: str) -> None:
 # Stop the running docs container.
 # Останавливаем работающий контейнер с документацией.
 def _task_down(screen: LogScreen) -> None:
+    """Worker function for the "down" action. Stops the lwc-docs container if it is running.
+    Рабочая функция для действия "down". Останавливает контейнер lwc-docs если он запущен.
+    """
     try:
         if not _is_running():
             screen.write("[yellow]Docs container is not running.[/yellow]")
@@ -176,6 +194,11 @@ def _task_down(screen: LogScreen) -> None:
 # Stop the container, remove the old image, rebuild it, and start a new container.
 # Останавливаем контейнер, удаляем старый образ, пересобираем и запускаем новый контейнер.
 def _task_rebuild(screen: LogScreen, port: str) -> None:
+    """Worker function for the "rebuild" action. Stops the container, removes the old image,
+    rebuilds it, and starts a fresh container on the given port.
+    Рабочая функция для действия "rebuild". Останавливает контейнер, удаляет старый образ,
+    пересобирает его и запускает новый контейнер на указанном порту.
+    """
     try:
         if _is_running():
             screen.set_progress(5, "Stopping container...")
@@ -236,6 +259,11 @@ def _task_rebuild(screen: LogScreen, port: str) -> None:
 # One app handles all three actions (up/down/rebuild) by branching in on_mount.
 # Одно приложение обрабатывает все три действия (up/down/rebuild), разветвляясь в on_mount.
 class _DocApp(App[None]):
+    """Documentation server app. Handles "up", "down", and "rebuild" actions by branching
+    in on_mount to the appropriate LogScreen task.
+    Приложение сервера документации. Обрабатывает действия "up", "down" и "rebuild",
+    разветвляясь в on_mount к соответствующей задаче LogScreen.
+    """
     CSS = SCREEN_CSS
 
     def __init__(self, action: str):

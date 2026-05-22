@@ -70,6 +70,11 @@ def _build_image(
     build_type: str = "release",
     register_proc: Optional[Callable] = None,
 ) -> bool:
+    """Build a single Docker image from a Dockerfile and stream its output line by line.
+    Returns True on success, False if the build failed or was cancelled.
+    Собирает один Docker-образ из Dockerfile и транслирует вывод построчно.
+    Возвращает True при успехе, False если сборка завершилась ошибкой или была отменена.
+    """
     write(f"[cyan][*][/cyan] Building [bold]{name}[/bold]...")
     # DOCKER_BUILDKIT=0 gives us "Step X/Y" lines in the output which we parse for progress.
     # DOCKER_BUILDKIT=0 даёт нам строки "Step X/Y" в выводе, которые мы парсим для прогресса.
@@ -115,6 +120,11 @@ def _pull_image(
     on_progress: Optional[Callable[[float], None]] = None,
     register_proc: Optional[Callable] = None,
 ) -> bool:
+    """Pull a Docker image from Docker Hub and report layer-by-layer progress.
+    Returns True on success, False if the pull failed or was cancelled.
+    Скачивает Docker-образ с Docker Hub и сообщает о прогрессе по слоям.
+    Возвращает True при успехе, False если скачивание завершилось ошибкой или было отменено.
+    """
     write(f"[cyan][*][/cyan] Pulling [bold]{name}[/bold]  ({tag})...")
     if on_progress:
         on_progress(5)
@@ -156,6 +166,11 @@ def _pull_image(
 # Основная работа - собираем или скачиваем все образы в зависимости от выбора пользователя.
 # Каждый образ получает свой кусок прогресс-бара, чтобы общий бар двигался равномерно.
 def _task_execute(screen: LogScreen, cfg: _Config) -> None:
+    """Worker function that runs inside LogScreen. Builds or pulls all images in the chain
+    defined by the user's choices and updates the progress bar after each image.
+    Рабочая функция, выполняемая внутри LogScreen. Собирает или скачивает все образы из цепочки
+    согласно выбору пользователя и обновляет прогресс-бар после каждого образа.
+    """
     try:
         chain = _WEBOTS_CHAIN if cfg.variant == "webots" else _CONTROLLER_CHAIN
         n = len(chain)
@@ -244,6 +259,11 @@ def _task_execute(screen: LogScreen, cfg: _Config) -> None:
 # Сканируем директорию docker/ на наличие поддиректорий с именами версий ROS (например jazzy).
 # Если ничего не найдено, используем "jazzy" по умолчанию, чтобы мастер всё равно работал.
 def _discover_versions() -> List[str]:
+    """Return a sorted list of ROS versions found in docker/. Jazzy is placed first.
+    Falls back to ["jazzy"] if the directory does not exist or is empty.
+    Возвращает отсортированный список версий ROS найденных в docker/. Jazzy идёт первым.
+    Возвращает ["jazzy"] если директория не существует или пуста.
+    """
     if not _DOCKER_DIR.exists():
         return ["jazzy"]
     dirs = sorted(d.name for d in _DOCKER_DIR.iterdir() if d.is_dir())
@@ -257,6 +277,11 @@ def _discover_versions() -> List[str]:
 # Multi-step wizard that collects all build options before starting the actual image build.
 # Многошаговый мастер, который собирает все параметры сборки перед запуском фактической сборки образа.
 class _Wizard(App[None]):
+    """Five-step wizard: ROS version -> source (pull/build) -> variant -> build type -> repo/prefix.
+    Collects all options, then hands off to LogScreen which runs _task_execute.
+    Пятишаговый мастер: версия ROS -> источник (pull/build) -> вариант -> тип сборки -> репо/префикс.
+    Собирает все параметры, затем передаёт управление LogScreen который запускает _task_execute.
+    """
     CSS = SCREEN_CSS
 
     def __init__(self, versions: List[str], default_version: str = "jazzy"):

@@ -125,6 +125,9 @@ _BLOCKS: List[_Block] = [
 # Пытаемся сохранить исходный тип YAML (bool, int, float) при записи значения обратно.
 # Сохранение типа предотвращает превращение "true" в обычную строку в YAML-файле.
 def _coerce(value: str, original: Any) -> Any:
+    """Convert a string value to match the type of the original YAML value (bool, int, float, str).
+    Преобразует строковое значение к типу исходного значения YAML (bool, int, float, str).
+    """
     if isinstance(original, bool):
         return value.lower() == "true"
     if isinstance(original, int):
@@ -143,6 +146,9 @@ def _coerce(value: str, original: Any) -> Any:
 # Read a value from a nested YAML mapping using a dot-separated key like "webots.transform".
 # Читаем значение из вложенного YAML-словаря по ключу с точками, например "webots.transform".
 def _get_nested(mapping: Any, path: str) -> Any:
+    """Return the value at a dot-separated path inside a nested YAML mapping, or None if missing.
+    Возвращает значение по пути с точками внутри вложенного YAML-словаря, или None если отсутствует.
+    """
     keys = path.split(".")
     cur = mapping
     for k in keys:
@@ -155,6 +161,9 @@ def _get_nested(mapping: Any, path: str) -> Any:
 # Write a value into a nested YAML mapping using a dot-separated key.
 # Записываем значение в вложенный YAML-словарь по ключу с точками.
 def _set_nested(mapping: Any, path: str, value: Any) -> None:
+    """Set the value at a dot-separated path inside a nested YAML mapping, coercing type to match.
+    Устанавливает значение по пути с точками во вложенном YAML-словаре, приводя тип к исходному.
+    """
     keys = path.split(".")
     cur = mapping
     for k in keys[:-1]:
@@ -166,6 +175,9 @@ def _set_nested(mapping: Any, path: str, value: Any) -> None:
 # Shown after all blocks have been configured to confirm the file was saved.
 # Показывается после настройки всех блоков для подтверждения сохранения файла.
 class _SavedScreen(Screen[None]):
+    """Confirmation screen shown after all configuration blocks are saved. Press Enter to close.
+    Экран подтверждения, показываемый после сохранения всех блоков конфигурации. Enter для закрытия.
+    """
     BINDINGS = [Binding("enter,escape", "close", "Close")]
 
     def compose(self) -> ComposeResult:
@@ -183,6 +195,13 @@ class _SavedScreen(Screen[None]):
 # Главный мастер конфигурации. Проходит по каждому блоку по порядку.
 # Для каждого блока сначала спрашивает "Настроить X?" а затем проходит по всем его полям.
 class _Wizard(App[None]):
+    """Configuration wizard that iterates over all _BLOCKS. For each block it asks
+    "Configure X?" and if confirmed steps through every field with PickScreen or InputScreen.
+    Saves to cobot-setting.yaml when all blocks are done and shows _SavedScreen.
+    Мастер конфигурации, проходящий по всем _BLOCKS. Для каждого блока спрашивает
+    "Настроить X?" и при подтверждении проходит по всем полям через PickScreen или InputScreen.
+    Сохраняет в cobot-setting.yaml по завершении и показывает _SavedScreen.
+    """
     CSS = SCREEN_CSS
 
     def __init__(self, data: Any):
@@ -275,6 +294,9 @@ class _Wizard(App[None]):
 # Load the config file preserving all comments and key order.
 # Загружаем конфиг-файл, сохраняя все комментарии и порядок ключей.
 def _load_config() -> Any:
+    """Load cobot-setting.yaml with ruamel.yaml, preserving comments and key order.
+    Загружает cobot-setting.yaml с помощью ruamel.yaml, сохраняя комментарии и порядок ключей.
+    """
     with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
         return _yaml.load(fh)
 
@@ -282,6 +304,9 @@ def _load_config() -> Any:
 # Write the modified config back to disk preserving comments and formatting.
 # Записываем изменённый конфиг обратно на диск, сохраняя комментарии и форматирование.
 def _save_config(data: Any) -> None:
+    """Write the modified YAML data back to cobot-setting.yaml, preserving comments.
+    Записывает изменённые данные YAML обратно в cobot-setting.yaml, сохраняя комментарии.
+    """
     with open(_CONFIG_PATH, "w", encoding="utf-8") as fh:
         _yaml.dump(data, fh)
 

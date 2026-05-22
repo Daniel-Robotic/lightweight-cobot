@@ -58,6 +58,9 @@ _WEBOTS_IMAGES = [
 # Минимальное приложение, которое задаёт один вопрос и сразу выходит с выбранным значением.
 # Нам нужен полноценный App, потому что экраны Textual не могут работать вне него.
 class _Ask(App[Optional[str]]):
+    """Minimal one-question Textual app. Pushes a PickScreen and exits with the chosen value.
+    Минимальное однвопросное Textual-приложение. Открывает PickScreen и завершается с выбранным значением.
+    """
     CSS = SCREEN_CSS
 
     def __init__(self, step: str, question: str, options: List[str], default: str):
@@ -75,6 +78,9 @@ class _Ask(App[Optional[str]]):
 
 
 def _ask(step: str, question: str, options: List[str], default: str) -> Optional[str]:
+    """Show a single-choice PickScreen and return the selected value, or None on Escape.
+    Показывает PickScreen с одним выбором и возвращает выбранное значение или None при Escape.
+    """
     # Returns None when the user pressed Escape to cancel.
     # Возвращает None когда пользователь нажал Escape для отмены.
     return _Ask(step, question, options, default).run()
@@ -83,6 +89,9 @@ def _ask(step: str, question: str, options: List[str], default: str) -> Optional
 # Detect the GPU type so we can pass the right flags to docker run for Webots rendering.
 # Определяем тип GPU, чтобы передать нужные флаги в docker run для рендеринга Webots.
 def _detect_gpu() -> str:
+    """Return "nvidia", "mesa", or "software" based on what GPU drivers are available.
+    Возвращает "nvidia", "mesa" или "software" в зависимости от доступных драйверов GPU.
+    """
     if shutil.which("nvidia-smi"):
         if subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0:
             return "nvidia"
@@ -94,6 +103,9 @@ def _detect_gpu() -> str:
 # List all Docker images currently available on this machine.
 # Получаем список всех Docker-образов доступных на этой машине.
 def _docker_images() -> set:
+    """Return the set of "repository:tag" strings for all locally available Docker images.
+    Возвращает множество строк "репозиторий:тег" для всех локально доступных Docker-образов.
+    """
     r = subprocess.run(
         ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
         capture_output=True, text=True,
@@ -104,6 +116,9 @@ def _docker_images() -> set:
 # Return the first image from the candidates list that is already present locally.
 # Возвращаем первый образ из списка кандидатов, который уже присутствует локально.
 def _find_image(candidates: List[str]) -> Optional[str]:
+    """Return the first candidate image that exists locally, or None if none are available.
+    Возвращает первый образ-кандидат, присутствующий локально, или None если ни один не найден.
+    """
     available = _docker_images()
     for img in candidates:
         if img in available:
@@ -116,6 +131,11 @@ def _find_image(candidates: List[str]) -> Optional[str]:
 # Собираем ROS2-проект локально с помощью colcon. Используется при запуске в локальном режиме,
 # если директория install/ ещё не существует.
 def _task_build(screen: LogScreen) -> None:
+    """Worker function that runs inside LogScreen. Counts packages, then runs colcon build
+    with release mixin and updates progress as each package finishes.
+    Рабочая функция внутри LogScreen. Подсчитывает пакеты, запускает colcon build с mixin release
+    и обновляет прогресс по мере завершения каждого пакета.
+    """
     try:
         screen.write("[bold]Building project with colcon[/bold]\n")
 
@@ -160,6 +180,10 @@ def _task_build(screen: LogScreen) -> None:
 
 
 class _BuildApp(App[bool]):
+    """Minimal app that opens a LogScreen running _task_build and exits with the build result.
+    Минимальное приложение, открывающее LogScreen с _task_build и завершающееся с результатом сборки.
+    """
+
     CSS = SCREEN_CSS
 
     def on_mount(self) -> None:
@@ -174,6 +198,11 @@ class _BuildApp(App[bool]):
 # Запускаем launch-файл ROS2 напрямую на этой машине без Docker.
 # Используем start_new_session, чтобы можно было убить всю группу процессов одним сигналом.
 def _task_run_local(screen: RunScreen, mode: str) -> None:
+    """Worker function that runs inside RunScreen. Launches iiwa.launch.py locally by sourcing
+    ROS2 and install/setup.bash, then streams output until the process exits or is stopped.
+    Рабочая функция внутри RunScreen. Запускает iiwa.launch.py локально через source ROS2 и
+    install/setup.bash, затем транслирует вывод до завершения процесса или его остановки.
+    """
     config = str(_CONFIG_PATH)
     ros_cmd = f"ros2 launch iiwa_bringup iiwa.launch.py setting:={config}"
     if mode == "webots":
@@ -223,6 +252,11 @@ def _task_run_local(screen: RunScreen, mode: str) -> None:
 # Запускаем launch-файл ROS2 внутри Docker-контейнера.
 # Для режима Webots также пробрасываем X11 и доступ к GPU, чтобы окно симулятора появилось на экране.
 def _task_run_docker(screen: RunScreen, image: str, mode: str, gpu: str) -> None:
+    """Worker function that runs inside RunScreen. Builds the docker run command with the
+    appropriate GPU/X11 flags for Webots, then streams container output until stopped or exited.
+    Рабочая функция внутри RunScreen. Формирует команду docker run с нужными флагами GPU/X11
+    для Webots, затем транслирует вывод контейнера до остановки или завершения.
+    """
     container = _CONTAINER_WEBOTS if mode == "webots" else _CONTAINER_CONTROLLER
 
     ros_cmd = (
@@ -317,6 +351,9 @@ def _task_run_docker(screen: RunScreen, image: str, mode: str, gpu: str) -> None
 # Wraps a RunScreen in an App so it can be launched with .run().
 # Оборачивает RunScreen в App, чтобы его можно было запустить через .run().
 class _RunApp(App[None]):
+    """Minimal app that wraps a RunScreen so it can be started with .run().
+    Минимальное приложение, оборачивающее RunScreen чтобы его можно было запустить через .run().
+    """
     CSS = SCREEN_CSS
 
     def __init__(self, title: str, task: Callable):
@@ -333,6 +370,11 @@ class _RunApp(App[None]):
 # Ведёт пользователя через локальный запуск - спрашивает что запустить, проверяет
 # предварительные условия, устанавливает Webots и собирает проект при необходимости, затем запускает.
 def _local_flow(args: argparse.Namespace) -> None:
+    """Interactive flow for local (non-Docker) launch. Checks Webots, ROS2, and build state,
+    offers to install/build missing pieces, then starts RunScreen.
+    Интерактивный сценарий для локального (не Docker) запуска. Проверяет Webots, ROS2 и состояние
+    сборки, предлагает установить/собрать недостающее, затем запускает RunScreen.
+    """
     mode_v = _ask(
         "Run local",
         "What do you want to launch?",
@@ -393,6 +435,11 @@ def _local_flow(args: argparse.Namespace) -> None:
 # Ведёт пользователя через запуск в Docker - спрашивает что запустить, ищет подходящий образ,
 # определяет GPU для Webots и запускает.
 def _docker_flow(args: argparse.Namespace) -> None:
+    """Interactive flow for Docker launch. Finds the best available image, detects the GPU
+    for Webots mode, then starts RunScreen with the docker run task.
+    Интерактивный сценарий для запуска в Docker. Находит лучший доступный образ, определяет GPU
+    для режима Webots, затем запускает RunScreen с задачей docker run.
+    """
     if not shutil.which("docker"):
         from rich.console import Console
         Console().print("[red]Error:[/red] Docker is not installed or not on PATH.")
