@@ -127,8 +127,10 @@ def _remove_ros2(write) -> None:
 # Remove Webots from the system via apt.
 # Удаляем Webots из системы через apt.
 def _remove_webots(write) -> None:
-    """Remove the webots package via apt and run autoremove. Skips if webots is not found on PATH.
-    Удаляет пакет webots через apt и запускает autoremove. Пропускает если webots не найден в PATH.
+    """Remove the webots package via apt, run autoremove, and clean up WEBOTS_HOME
+    from .bashrc / .zshrc. Skips if webots is not found on PATH.
+    Удаляет пакет webots через apt, запускает autoremove и очищает WEBOTS_HOME из
+    .bashrc / .zshrc. Пропускает если webots не найден в PATH.
     """
     write("[cyan][*][/cyan] Removing Webots...")
     if not shutil.which("webots"):
@@ -137,6 +139,22 @@ def _remove_webots(write) -> None:
     subprocess.run(["sudo", "apt", "remove", "-y", "webots"], capture_output=True)
     subprocess.run(["sudo", "apt", "autoremove", "-y"], capture_output=True)
     write("[green][ok][/green] Webots removed")
+
+    # Remove the WEBOTS_HOME block that install_webots.sh added to shell configs.
+    # Удаляем блок WEBOTS_HOME, добавленный install_webots.sh в конфиги оболочки.
+    for rc_name in [".bashrc", ".zshrc"]:
+        rc = Path.home() / rc_name
+        if not rc.exists():
+            continue
+        content = rc.read_text()
+        if "WEBOTS_HOME" not in content:
+            continue
+        new_content = content.replace("\n# Webots\nexport WEBOTS_HOME=/usr/local/webots\n", "\n")
+        new_content = new_content.replace("export WEBOTS_HOME=/usr/local/webots\n", "")
+        new_content = new_content.replace("# Webots\n", "")
+        if new_content != content:
+            rc.write_text(new_content)
+            write(f"[green][ok][/green] Cleaned WEBOTS_HOME from ~/{rc_name}")
 
 
 # Uninstall the cobot CLI from the uv tool store.

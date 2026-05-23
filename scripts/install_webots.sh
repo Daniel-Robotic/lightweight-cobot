@@ -9,6 +9,7 @@ export DEBIAN_FRONTEND=noninteractive
 PROGRESS() { echo "PROGRESS:$1:$2"; }
 
 WEBOTS_VERSION="2025a"
+WEBOTS_HOME="/usr/local/webots"
 DEB_URL="https://github.com/cyberbotics/webots/releases/download/R${WEBOTS_VERSION}/webots_${WEBOTS_VERSION}_amd64.deb"
 TMP_DIR="$(mktemp -d)"
 DEB_PATH="${TMP_DIR}/webots_${WEBOTS_VERSION}_amd64.deb"
@@ -27,6 +28,21 @@ PROGRESS 70 "Installing Webots package..."
 echo "Download complete. Installing..."
 
 sudo apt-get install -y "$DEB_PATH"
+
+PROGRESS 90 "Configuring WEBOTS_HOME..."
+echo "Setting WEBOTS_HOME=${WEBOTS_HOME}..."
+
+WEBOTS_BLOCK="# Webots\nexport WEBOTS_HOME=${WEBOTS_HOME}"
+
+for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    [ -f "$RC" ] || continue
+    if ! grep -q "WEBOTS_HOME" "$RC"; then
+        printf "\n%b\n" "$WEBOTS_BLOCK" >> "$RC"
+        echo "  Added WEBOTS_HOME to $RC"
+    fi
+done
+
+export WEBOTS_HOME="${WEBOTS_HOME}"
 
 PROGRESS 100 "Done"
 echo "Webots ${WEBOTS_VERSION} installed successfully."

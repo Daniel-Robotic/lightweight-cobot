@@ -18,6 +18,9 @@ _PROJECT_DIR = Path(__file__).parent.parent.parent
 _CONFIG_PATH = _PROJECT_DIR / "cobot-setting.yaml"
 _INSTALL_DIR = _PROJECT_DIR / "install"
 _JAZZY_DIR = Path("/opt/ros/jazzy")
+# Default Webots installation path for the official .deb package.
+# Путь установки Webots по умолчанию для официального .deb-пакета.
+_WEBOTS_DEFAULT_HOME = Path("/usr/local/webots")
 
 # Path where the config file is mounted inside the Docker container.
 # Путь по которому конфиг-файл монтируется внутри Docker-контейнера.
@@ -84,6 +87,28 @@ def _ask(step: str, question: str, options: List[str], default: str) -> Optional
     # Returns None when the user pressed Escape to cancel.
     # Возвращает None когда пользователь нажал Escape для отмены.
     return _Ask(step, question, options, default).run()
+
+
+def _detect_webots_home() -> str:
+    """Return the WEBOTS_HOME path for the locally installed Webots.
+
+    Checks the environment variable first, then the default deb install path,
+    then resolves the 'webots' symlink to find the real installation directory.
+    Returns an empty string if Webots cannot be located.
+
+    Возвращает путь WEBOTS_HOME для локально установленного Webots.
+    Сначала проверяет переменную окружения, затем стандартный путь deb-установки,
+    затем разворачивает симлинк 'webots' до реальной директории установки.
+    Возвращает пустую строку если Webots не найден.
+    """
+    if "WEBOTS_HOME" in os.environ:
+        return os.environ["WEBOTS_HOME"]
+    if _WEBOTS_DEFAULT_HOME.is_dir():
+        return str(_WEBOTS_DEFAULT_HOME)
+    webots_bin = shutil.which("webots")
+    if webots_bin:
+        return str(Path(webots_bin).resolve().parent)
+    return ""
 
 
 # Detect the GPU type so we can pass the right flags to docker run for Webots rendering.
@@ -208,7 +233,11 @@ def _task_run_local(screen: RunScreen, mode: str) -> None:
     if mode == "webots":
         ros_cmd += " simulate:=1"
 
+    webots_home = _detect_webots_home() if mode == "webots" else ""
+    webots_export = f"export WEBOTS_HOME={webots_home} && " if webots_home else ""
+
     full_cmd = (
+        f"{webots_export}"
         f"source {_JAZZY_DIR}/setup.bash && "
         f"source {_INSTALL_DIR}/setup.bash && "
         f"{ros_cmd}"
@@ -216,7 +245,10 @@ def _task_run_local(screen: RunScreen, mode: str) -> None:
 
     label = "Webots simulator" if mode == "webots" else "Controller"
     screen.write(f"[bold]Launching {label} (local)[/bold]")
-    screen.write(f"[dim]{ros_cmd}[/dim]\n")
+    screen.write(f"[dim]{ros_cmd}[/dim]")
+    if webots_home:
+        screen.write(f"[dim]WEBOTS_HOME: {webots_home}[/dim]")
+    screen.write("")
 
     proc = subprocess.Popen(
         ["bash", "-c", full_cmd],
