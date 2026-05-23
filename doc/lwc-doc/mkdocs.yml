@@ -33,7 +33,7 @@ markdown_extensions:
 nav:
   - Главная: index.md
 
-  - Getting Started:
+  - Быстрый старт:
     - Обзор: getting-started/overview.md
     - Быстрый старт: getting-started/quick-start.md
     - Ручная установка: getting-started/manual-install.md
@@ -45,7 +45,7 @@ nav:
     - Настройка сети: sunrise/network.md
     - Загрузка на контроллер: sunrise/deployment.md
 
-  - Architecture:
+  - Архитектура:
     - Обзор системы: architecture/system-overview.md
     - Пакеты:
       - iiwa_controller: architecture/packages/iiwa-controller.md
@@ -59,20 +59,20 @@ nav:
       - RealSense: architecture/packages/realsense.md
     - Потоки данных: architecture/data-flow.md
 
-  - Control:
+  - Управление:
     - Foxglove Studio: control/foxglove.md
     - Терминал: control/terminal.md
     - Web-интерфейс: control/web-interface.md
     - Симуляция: control/simulation.md
 
-  - Examples:
+  - Примеры:
     - Joint Position: examples/joint-position.md
     - Cartesian Goal: examples/cartesian-goal.md
     - Траектория: examples/trajectory.md
     - MoveIt Python API: examples/moveit-python.md
     - RealSense данные: examples/realsense-data.md
 
-  - Development:
+  - Разработка:
     - Сборка и пересборка: development/build-rebuild.md
     - CLI Reference: development/cli-reference.md
     - Решение проблем: development/troubleshooting.md
