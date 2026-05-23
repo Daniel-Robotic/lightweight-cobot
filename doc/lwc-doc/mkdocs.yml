@@ -4,6 +4,7 @@ site_author: Даниил Грабарь
 
 theme:
   name: material
+  custom_dir: overrides
   language: ru
   features:
     - navigation.tabs
@@ -18,7 +19,7 @@ plugins:
   - with-pdf:
       author: Даниил Грабарь
       cover_title: Документация LWC
-      cover_subtitle: KUKA LBR iiwa7 ROS2 Control Framework
+      cover_subtitle: Lightweight Cobot
       output_path: pdf/document.pdf
 
 extra_javascript:
@@ -32,23 +33,46 @@ markdown_extensions:
 nav:
   - Главная: index.md
 
-  # - Обзор проекта:
-  #   - Введение: overview/intro.md
-  #   - Архитектура: overview/architecture.md
-  #   - Зависимости: overview/dependencies.md
+  - Getting Started:
+    - Обзор: getting-started/overview.md
+    - Быстрый старт: getting-started/quick-start.md
+    - Ручная установка: getting-started/manual-install.md
+    - Настройка: getting-started/configuration.md
 
-  # - Установка:
-  #   - Требования: install/requirements.md
-  #   - ROS2: install/ros2.md
-  #   - KUKA FRI: install/fri.md
+  - Sunrise Workbench:
+    - Обзор: sunrise/overview.md
+    - Настройка проекта: sunrise/project-setup.md
+    - Настройка сети: sunrise/network.md
+    - Загрузка на контроллер: sunrise/deployment.md
 
-  # - Разработка:
-  #   - Структура пакетов: dev/packages.md
-  #   - Камеры RealSense: dev/realsense.md
-  #   - Управление KUKA: dev/kuka.md
-  #   - Сборка: dev/build.md
+  - Architecture:
+    - Обзор системы: architecture/system-overview.md
+    - Пакеты:
+      - iiwa_controller: architecture/packages/iiwa-controller.md
+      - iiwa_bringup: architecture/packages/iiwa-bringup.md
+      - iiwa_planning: architecture/packages/iiwa-planning.md
+      - iiwa_msgs: architecture/packages/iiwa-msgs.md
+      - iiwa_config: architecture/packages/iiwa-config.md
+      - iiwa_description: architecture/packages/iiwa-description.md
+      - iiwa_sunrise: architecture/packages/iiwa-sunrise.md
+      - iiwa_utils: architecture/packages/iiwa-utils.md
+      - RealSense: architecture/packages/realsense.md
+    - Потоки данных: architecture/data-flow.md
 
-  # - API:
-  #   - Обзор: api/overview.md
-  #   - Топики: api/topics.md
-  #   - Сервисы: api/services.md
+  - Control:
+    - Foxglove Studio: control/foxglove.md
+    - Терминал: control/terminal.md
+    - Web-интерфейс: control/web-interface.md
+    - Симуляция: control/simulation.md
+
+  - Examples:
+    - Joint Position: examples/joint-position.md
+    - Cartesian Goal: examples/cartesian-goal.md
+    - Траектория: examples/trajectory.md
+    - MoveIt Python API: examples/moveit-python.md
+    - RealSense данные: examples/realsense-data.md
+
+  - Development:
+    - Сборка и пересборка: development/build-rebuild.md
+    - CLI Reference: development/cli-reference.md
+    - Решение проблем: development/troubleshooting.md
