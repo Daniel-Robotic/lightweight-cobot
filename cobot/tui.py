@@ -8,7 +8,8 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import Checkbox, Footer, Input, LoadingIndicator, ProgressBar, RadioButton, RadioSet, RichLog, Static
+from textual.widgets import Footer, Input, LoadingIndicator, ProgressBar, RadioButton, RadioSet, RichLog, SelectionList, Static
+from textual.widgets.selection_list import Selection
 
 # Shared CSS applied to every screen in the app.
 # Общий CSS, применяемый ко всем экранам приложения.
@@ -78,12 +79,11 @@ RunScreen #hint {
     color: $text-muted;
     text-style: dim;
 }
-MultiPickScreen #choices {
+MultiPickScreen SelectionList {
     height: auto;
+    border: none;
+    padding: 0;
     margin-bottom: 1;
-}
-MultiPickScreen Checkbox {
-    margin: 0;
 }
 """
 
@@ -306,8 +306,10 @@ class LogScreen(Screen[bool]):
 # Экран с чекбоксами для множественного выбора.
 # Пользователь переключает пункты пробелом, подтверждает Enter, отменяет Escape.
 class MultiPickScreen(Screen[Optional[List[str]]]):
-    """Multi-choice checkbox screen. Returns the list of selected option strings, or None on Escape.
-    Экран множественного выбора с чекбоксами. Возвращает список выбранных строк или None при Escape.
+    """Multi-choice screen using SelectionList. Navigate with arrows, toggle with Space,
+    confirm with Enter, cancel with Escape. Returns selected option strings or None.
+    Экран множественного выбора через SelectionList. Стрелки — навигация, пробел — выбор,
+    Enter — подтверждение, Escape — отмена. Возвращает выбранные строки или None.
     """
     BINDINGS = [
         Binding("enter", "submit", "Confirm", priority=True),
@@ -320,8 +322,8 @@ class MultiPickScreen(Screen[Optional[List[str]]]):
         self._step = step
         self._question = question
         self._options = options
-        # All options are checked by default when defaults is None.
-        # Все пункты отмечены по умолчанию если defaults не передан.
+        # All options are selected by default when defaults is None.
+        # Все пункты выбраны по умолчанию если defaults не передан.
         self._defaults = set(defaults) if defaults is not None else set(options)
         self._note = note
 
@@ -330,19 +332,16 @@ class MultiPickScreen(Screen[Optional[List[str]]]):
         yield Static(self._question, id="question")
         if self._note:
             yield Static(self._note, id="note")
-        with Static(id="choices"):
-            for opt in self._options:
-                yield Checkbox(opt, value=(opt in self._defaults))
+        yield SelectionList(
+            *[Selection(opt, opt, opt in self._defaults) for opt in self._options]
+        )
         yield Footer()
 
     def on_mount(self) -> None:
-        checkboxes = list(self.query(Checkbox))
-        if checkboxes:
-            checkboxes[0].focus()
+        self.query_one(SelectionList).focus()
 
     def action_submit(self) -> None:
-        selected = [str(cb.label) for cb in self.query(Checkbox) if cb.value]
-        self.dismiss(selected)
+        self.dismiss(list(self.query_one(SelectionList).selected))
 
     def action_abort(self) -> None:
         self.app.exit(None)
