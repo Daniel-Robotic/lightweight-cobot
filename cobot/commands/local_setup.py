@@ -94,10 +94,17 @@ def _ros2_env() -> dict:
             k, _, v = line.partition("=")
             env[k] = v
 
-    # Put system dirs first so ament_cmake picks up system Python (where catkin_pkg
-    # lives) instead of a user-local Python installed by uv or pyenv.
-    # Ставим системные пути первыми, чтобы ament_cmake использовал системный Python
-    # (где установлен catkin_pkg), а не пользовательский Python от uv или pyenv.
+    # CMake's find_package(Python3) ignores PATH and uses its own search logic,
+    # so we must pin it explicitly to the system Python where catkin_pkg is installed.
+    # PATH reordering alone is not enough.
+    # CMake игнорирует PATH при поиске Python через find_package(Python3),
+    # поэтому явно указываем системный Python, где установлен catkin_pkg.
+    # Одного изменения PATH недостаточно.
+    env["Python3_EXECUTABLE"] = "/usr/bin/python3"
+    env["PYTHON_EXECUTABLE"] = "/usr/bin/python3"
+
+    # Also keep PATH clean so other tools (rosdep, colcon itself) use system Python.
+    # Заодно чистим PATH чтобы другие инструменты тоже использовали системный Python.
     _SYSTEM_PATHS = ["/usr/bin", "/usr/local/bin"]
     existing = env.get("PATH", "").split(":")
     env["PATH"] = ":".join(
