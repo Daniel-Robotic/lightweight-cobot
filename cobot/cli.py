@@ -3,10 +3,12 @@ import sys
 
 # Import each command module so we can register its subparser.
 # Импортируем каждый модуль команды, чтобы зарегистрировать его подпарсер.
+from cobot.commands import clean as cmd_clean
 from cobot.commands import delete as cmd_delete
 from cobot.commands import docker_setup as cmd_docker_setup
 from cobot.commands import doc_setup as cmd_doc_setup
 from cobot.commands import local_setup as cmd_local_setup
+from cobot.commands import rebuild as cmd_rebuild
 from cobot.commands import robot_setup as cmd_robot_setup
 from cobot.commands import run as cmd_run
 from cobot.commands import setup as cmd_setup
@@ -26,6 +28,10 @@ _GROUPS = [
     ]),
     ("Run", [
         ("run", "launch the robot controller or Webots simulator (local or Docker)"),
+    ]),
+    ("Build", [
+        ("rebuild", "rebuild ROS2 packages in src/ with colcon"),
+        ("clean",   "remove colcon build artifacts (build/ install/ log/)"),
     ]),
     ("Management", [
         ("update", "pull latest changes from the remote git branch and reinstall cobot"),
@@ -107,5 +113,7 @@ def _register_commands(subparsers):
     cmd_doc_setup.register(subparsers)
     cmd_robot_setup.register(subparsers)
     cmd_run.register(subparsers)
+    cmd_rebuild.register(subparsers)
+    cmd_clean.register(subparsers)
     cmd_update.register(subparsers)
     cmd_delete.register(subparsers)
