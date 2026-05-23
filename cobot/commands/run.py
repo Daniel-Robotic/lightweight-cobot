@@ -90,24 +90,29 @@ def _ask(step: str, question: str, options: List[str], default: str) -> Optional
 
 
 def _detect_webots_home() -> str:
-    """Return the WEBOTS_HOME path for the locally installed Webots.
+    """Return the WEBOTS_HOME path for the locally installed Linux Webots.
 
-    Checks the environment variable first, then the default deb install path,
-    then resolves the 'webots' symlink to find the real installation directory.
-    Returns an empty string if Webots cannot be located.
+    Validates that the candidate directory contains the Linux 'webots' binary
 
-    Возвращает путь WEBOTS_HOME для локально установленного Webots.
-    Сначала проверяет переменную окружения, затем стандартный путь deb-установки,
-    затем разворачивает симлинк 'webots' до реальной директории установки.
-    Возвращает пустую строку если Webots не найден.
+    Возвращает путь WEBOTS_HOME для локально установленного Linux Webots.
     """
+    def _is_linux_webots(home: str) -> bool:
+        # Accept only directories that have the Linux 'webots' binary directly inside.
+        # Принимаем только директории с Linux-бинарником 'webots' напрямую внутри.
+        return (Path(home) / "webots").is_file()
+
     if "WEBOTS_HOME" in os.environ:
-        return os.environ["WEBOTS_HOME"]
-    if _WEBOTS_DEFAULT_HOME.is_dir():
+        home = os.environ["WEBOTS_HOME"]
+        if _is_linux_webots(home):
+            return home
+        return ""
+    if _WEBOTS_DEFAULT_HOME.is_dir() and _is_linux_webots(str(_WEBOTS_DEFAULT_HOME)):
         return str(_WEBOTS_DEFAULT_HOME)
     webots_bin = shutil.which("webots")
     if webots_bin:
-        return str(Path(webots_bin).resolve().parent)
+        home = str(Path(webots_bin).resolve().parent)
+        if _is_linux_webots(home):
+            return home
     return ""
 
 

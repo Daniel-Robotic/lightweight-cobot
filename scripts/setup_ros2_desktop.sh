@@ -8,6 +8,15 @@ export DEBIAN_FRONTEND=noninteractive
 
 PROGRESS() { echo "PROGRESS:$1:$2"; }
 
+# Keep sudo credentials alive throughout the installation so the build step that
+# follows (rosdep/colcon) does not trigger a password prompt inside the TUI.
+# Обновляем sudo-токен в фоне чтобы он не истёк за время установки и не запросил
+# пароль повторно во время rosdep/colcon внутри TUI.
+sudo -v
+( while true; do sudo -v; sleep 240; done ) &
+_SUDO_KEEPALIVE_PID=$!
+trap 'kill "$_SUDO_KEEPALIVE_PID" 2>/dev/null || true' EXIT
+
 PROGRESS 0 "Checking dpkg state..."
 echo "Checking dpkg state..."
 sudo dpkg --configure -a
