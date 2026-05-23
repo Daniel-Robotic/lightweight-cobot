@@ -8,7 +8,7 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import Footer, Input, LoadingIndicator, ProgressBar, RadioButton, RadioSet, RichLog, Static
+from textual.widgets import Checkbox, Footer, Input, LoadingIndicator, ProgressBar, RadioButton, RadioSet, RichLog, Static
 
 # Shared CSS applied to every screen in the app.
 # Общий CSS, применяемый ко всем экранам приложения.
@@ -77,6 +77,13 @@ RunScreen #hint {
     margin-top: 1;
     color: $text-muted;
     text-style: dim;
+}
+MultiPickScreen #choices {
+    height: auto;
+    margin-bottom: 1;
+}
+MultiPickScreen Checkbox {
+    margin: 0;
 }
 """
 
@@ -292,6 +299,53 @@ class LogScreen(Screen[bool]):
         # Разрешаем закрытие только после завершения задачи, а не во время её работы.
         if self._finished:
             self.dismiss(self._success)
+
+
+# A screen that shows a list of checkboxes for multi-selection.
+# The user toggles items with Space, confirms with Enter, cancels with Escape.
+# Экран с чекбоксами для множественного выбора.
+# Пользователь переключает пункты пробелом, подтверждает Enter, отменяет Escape.
+class MultiPickScreen(Screen[Optional[List[str]]]):
+    """Multi-choice checkbox screen. Returns the list of selected option strings, or None on Escape.
+    Экран множественного выбора с чекбоксами. Возвращает список выбранных строк или None при Escape.
+    """
+    BINDINGS = [
+        Binding("enter", "submit", "Confirm", priority=True),
+        Binding("escape", "abort", "Cancel"),
+    ]
+
+    def __init__(self, step: str, question: str, options: List[str],
+                 defaults: Optional[List[str]] = None, note: str = ""):
+        super().__init__()
+        self._step = step
+        self._question = question
+        self._options = options
+        # All options are checked by default when defaults is None.
+        # Все пункты отмечены по умолчанию если defaults не передан.
+        self._defaults = set(defaults) if defaults is not None else set(options)
+        self._note = note
+
+    def compose(self) -> ComposeResult:
+        yield Static(self._step, id="step")
+        yield Static(self._question, id="question")
+        if self._note:
+            yield Static(self._note, id="note")
+        with Static(id="choices"):
+            for opt in self._options:
+                yield Checkbox(opt, value=(opt in self._defaults))
+        yield Footer()
+
+    def on_mount(self) -> None:
+        checkboxes = list(self.query(Checkbox))
+        if checkboxes:
+            checkboxes[0].focus()
+
+    def action_submit(self) -> None:
+        selected = [str(cb.label) for cb in self.query(Checkbox) if cb.value]
+        self.dismiss(selected)
+
+    def action_abort(self) -> None:
+        self.app.exit(None)
 
 
 # A screen for a long-running process that the user can stop at any time.

@@ -3,104 +3,44 @@ from __future__ import annotations
 import argparse
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from textual.app import App
 
-from cobot.tui import SCREEN_CSS, InputScreen, LogScreen, PickScreen
+from cobot.tui import SCREEN_CSS, LogScreen, MultiPickScreen
 
 _PROJECT_DIR = Path(__file__).parent.parent.parent
-_BUILD_DIR = _PROJECT_DIR / "build"
-_INSTALL_DIR = _PROJECT_DIR / "install"
-_LOG_DIR = _PROJECT_DIR / "log"
+
+_DIR_OPTIONS = ["build/", "install/", "log/"]
+_DIR_MAP = {
+    "build/":   _PROJECT_DIR / "build",
+    "install/": _PROJECT_DIR / "install",
+    "log/":     _PROJECT_DIR / "log",
+}
 
 
-def _remove_dir(path: Path, write) -> None:
-    """Remove a directory tree if it exists, logging the result.
-    Рекурсивно удаляет директорию если она существует, выводя результат в лог.
-    """
-    if path.exists():
-        shutil.rmtree(path)
-        write(f"[green][ok][/green] Removed  {path.relative_to(_PROJECT_DIR)}")
-    else:
-        write(f"[dim]Not found: {path.relative_to(_PROJECT_DIR)}[/dim]")
-
-
-def _task_clean_all(screen: LogScreen) -> None:
-    """Delete build/, install/, and log/ directories entirely.
-    Полностью удаляет директории build/, install/ и log/.
+def _task_clean(screen: LogScreen, dirs: List[str]) -> None:
+    """Delete the selected top-level directories.
+    Удаляет выбранные директории верхнего уровня.
     """
     try:
-        screen.set_progress(0, "Cleaning build/...")
-        screen.write("[bold]Cleaning all build artifacts[/bold]\n")
+        screen.write("[bold]Cleaning build artifacts[/bold]\n")
+        total = len(dirs)
+        for i, label in enumerate(dirs):
+            if screen.is_stopped():
+                return
+            screen.set_progress(i / total * 100, f"Removing {label}...")
+            path = _DIR_MAP[label]
+            if path.exists():
+                shutil.rmtree(path)
+                screen.write(f"[green][ok][/green] Removed  {label}")
+            else:
+                screen.write(f"[dim]Not found: {label}[/dim]")
 
-        _remove_dir(_BUILD_DIR, screen.write)
-        if screen.is_stopped():
-            return
-
-        screen.set_progress(40, "Cleaning install/...")
-        _remove_dir(_INSTALL_DIR, screen.write)
-        if screen.is_stopped():
-            return
-
-        screen.set_progress(75, "Cleaning log/...")
-        _remove_dir(_LOG_DIR, screen.write)
-        if screen.is_stopped():
-            return
-
-        screen.set_progress(100, "Done")
-        screen.write("\n[green]All build artifacts removed.[/green]")
-        screen.finish(True)
-
-    except Exception as exc:
         if not screen.is_stopped():
-            screen.write(f"\n[red]Error:[/red] {exc}")
-            screen.finish(False)
-
-
-def _task_clean_package(screen: LogScreen, package: str) -> None:
-    """Delete build/<pkg>, install/<pkg>, and all log/*/<pkg> directories.
-    Удаляет build/<pkg>, install/<pkg> и все log/*/<pkg> директории.
-    """
-    try:
-        screen.set_progress(0, f"Cleaning {package}...")
-        screen.write(f"[bold]Cleaning package: {package}[/bold]\n")
-
-        _remove_dir(_BUILD_DIR / package, screen.write)
-        if screen.is_stopped():
-            return
-
-        screen.set_progress(40, f"Cleaning install/{package}...")
-        _remove_dir(_INSTALL_DIR / package, screen.write)
-        if screen.is_stopped():
-            return
-
-        screen.set_progress(70, f"Cleaning log entries for {package}...")
-        # colcon creates one subdirectory per package inside each timestamped log run.
-        # colcon создаёт по одной поддиректории на пакет внутри каждого лога с временной меткой.
-        if _LOG_DIR.exists():
-            removed = 0
-            for log_run in _LOG_DIR.iterdir():
-                if not log_run.is_dir():
-                    continue
-                pkg_log = log_run / package
-                if pkg_log.exists():
-                    shutil.rmtree(pkg_log)
-                    screen.write(
-                        f"[green][ok][/green] Removed  log/{log_run.name}/{package}"
-                    )
-                    removed += 1
-            if removed == 0:
-                screen.write(f"[dim]No log entries found for {package}[/dim]")
-        else:
-            screen.write("[dim]Not found: log/[/dim]")
-
-        if screen.is_stopped():
-            return
-
-        screen.set_progress(100, "Done")
-        screen.write(f"\n[green]Package '{package}' artifacts removed.[/green]")
-        screen.finish(True)
+            screen.set_progress(100, "Done")
+            screen.write("\n[green]Done.[/green]")
+            screen.finish(True)
 
     except Exception as exc:
         if not screen.is_stopped():
@@ -109,74 +49,46 @@ def _task_clean_package(screen: LogScreen, package: str) -> None:
 
 
 class _CleanApp(App[None]):
-    """Clean wizard: asks what to clean (all / specific package) then runs deletion.
-    Мастер очистки: спрашивает что удалить (всё / конкретный пакет), затем выполняет удаление.
+    """Clean wizard: lets the user pick which directories to delete, then removes them.
+    Мастер очистки: позволяет выбрать директории для удаления, затем удаляет их.
     """
 
     CSS = SCREEN_CSS
 
-    def __init__(self, target: Optional[str]):
+    def __init__(self, all_dirs: bool):
         super().__init__()
-        # None = ask, "all" = delete everything, anything else = package name.
-        # None = спросить, "all" = удалить всё, иначе = имя пакета.
-        self._target = target
+        # True = skip the question and delete everything right away.
+        # True = пропустить вопрос и сразу удалить всё.
+        self._all_dirs = all_dirs
 
     def on_mount(self) -> None:
-        if self._target is None:
-            self._ask_target()
-        elif self._target == "all":
-            self._start_all()
+        if self._all_dirs:
+            self._start(_DIR_OPTIONS)
         else:
-            self._start_package(self._target)
+            self._ask_dirs()
 
-    def _ask_target(self) -> None:
+    def _ask_dirs(self) -> None:
         self.push_screen(
-            PickScreen(
+            MultiPickScreen(
                 "clean",
-                "What do you want to clean?",
-                ["All (build/ install/ log/)", "Specific package"],
-                "All (build/ install/ log/)",
+                "Which directories to delete?",
+                _DIR_OPTIONS,
+                note="Space — toggle  ·  Enter — confirm",
             ),
-            self._got_target_choice,
+            self._got_dirs,
         )
 
-    def _got_target_choice(self, value: Optional[str]) -> None:
-        if value is None:
+    def _got_dirs(self, dirs: Optional[List[str]]) -> None:
+        if not dirs:
             self.exit()
             return
-        if value.startswith("All"):
-            self._start_all()
-        else:
-            self._ask_package()
+        self._start(dirs)
 
-    def _ask_package(self) -> None:
-        self.push_screen(
-            InputScreen(
-                "clean",
-                "Package name to clean:",
-                "",
-                note="Example: iiwa_controller",
-            ),
-            self._got_package,
-        )
-
-    def _got_package(self, value: Optional[str]) -> None:
-        if value is None or not value.strip():
-            self.exit()
-            return
-        self._start_package(value.strip())
-
-    def _start_all(self) -> None:
-        self.push_screen(
-            LogScreen("Cleaning all artifacts", _task_clean_all, show_progress=True),
-            lambda _: self.exit(),
-        )
-
-    def _start_package(self, package: str) -> None:
+    def _start(self, dirs: List[str]) -> None:
         self.push_screen(
             LogScreen(
-                f"Cleaning package: {package}",
-                lambda s: _task_clean_package(s, package),
+                "Cleaning",
+                lambda s: _task_clean(s, dirs),
                 show_progress=True,
             ),
             lambda _: self.exit(),
@@ -191,9 +103,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "target",
         nargs="?",
-        metavar="all | PACKAGE",
+        metavar="all",
         default=None,
-        help="'all' to remove everything, or a package name to clean only that package",
+        help="'all' to skip the prompt and delete all three directories at once",
     )
     p.set_defaults(func=run)
 
@@ -202,4 +114,4 @@ def run(args: argparse.Namespace) -> None:
     """Entry point for the clean command.
     Точка входа для команды clean.
     """
-    _CleanApp(getattr(args, "target", None)).run()
+    _CleanApp(all_dirs=(getattr(args, "target", None) == "all")).run()
