@@ -1,14 +1,149 @@
-## Описание пакетов
+# Lightweight Cobot
 
-|Наименование|описание|
-|---|---|
-|iiwa_bringup|Все необходимые файлы запуска расположены в этом пакете|
-|iiwa_config|Файлы конфигурации и основной `setting.yam` файл расположены внутри этого пакета|
-|iiwa_controller|Самописный контроллер на физического робота|
-|iiwa_description|urdf/xacro файлы, а также все 3D объекты и webots миры находятся в этом пакете|
-|iiwa_utils|Вспомогательные модули или функции для рабоы всей системы|
+> **Тестовая версия документации — будет дополнена**
 
+ROS 2 пакеты для управления роботом **KUKA LBR IIWA 7 R800**: связь с реальным роботом через библиотеку [FRI](https://github.com/lbr-stack/fri) (Fast Robot Interface) и симуляция в среде [Webots](https://cyberbotics.com/).
 
+<table>
+  <tr>
+    <th align="center">LBR IIWA 7 R800</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/lbr-stack/lbr_fri_ros2_stack/jazzy/lbr_fri_ros2_stack/doc/img/foxglove/iiwa7_r800.png" alt="LBR IIWA 7 R800" width="300">
+    </td>
+  </tr>
+</table>
+
+---
+
+## Статус
+
+| ОС | Дистрибутив ROS | Версия FRI |
+| :--- | :--- | :--- |
+| `Ubuntu 24.04` | `jazzy` | `1.15` |
+
+---
+
+## Быстрый старт
+
+Для установки запустите скрипт одной командой:
+
+```bash
+curl -fsSL https://gitverse.ru/api/repos/daniel-robotics/lightweight-cobot/raw/branch/main/install.sh
+```
+
+Скрипт установит ROS 2 Jazzy, Webots, соберёт рабочее пространство и установит CLI `cobot`.
+
+---
+
+## Команды `cobot`
+
+После установки управляйте системой через CLI:
+
+```
+cobot <команда>
+```
+
+### Настройка
+
+| Команда | Описание |
+| :--- | :--- |
+| `cobot setup` | Первоначальная настройка: документация, среда сборки, конфигурация робота |
+| `cobot local-setup` | Установка ROS 2 Jazzy локально и сборка проекта через colcon |
+| `cobot docker-setup` | Сборка или загрузка Docker-образов |
+| `cobot doc-setup` | Запуск или остановка сервера документации MkDocs |
+| `cobot robot-setup` | Интерактивная настройка файла `cobot-setting.yaml` |
+
+### Запуск
+
+| Команда | Описание |
+| :--- | :--- |
+| `cobot run` | Запуск контроллера робота или симулятора Webots (локально или через Docker) |
+
+### Сборка
+
+| Команда | Описание |
+| :--- | :--- |
+| `cobot rebuild` | Пересборка ROS 2 пакетов из `src/` с помощью colcon |
+| `cobot clean` | Удаление артефактов сборки (`build/` `install/` `log/`) |
+
+### Управление
+
+| Команда | Описание |
+| :--- | :--- |
+| `cobot update` | Получение последних изменений из удалённой ветки и переустановка `cobot` |
+| `cobot delete` | Удаление проекта, Docker-образов, контейнеров и опционально ROS 2 |
+
+---
+
+## Демонстрация
+
+> GIF-анимации будут добавлены в следующих версиях
+
+<table>
+  <tr>
+    <th align="center" width="33%">Симуляция в Webots</th>
+    <th align="center" width="33%">Управление по суставам</th>
+    <th align="center" width="33%">Декартово управление</th>
+  </tr>
+  <tr>
+    <td align="center"><i>— скоро —</i></td>
+    <td align="center"><i>— скоро —</i></td>
+    <td align="center"><i>— скоро —</i></td>
+  </tr>
+</table>
+
+---
+
+## Пакеты
+
+| Пакет | Описание |
+| :--- | :--- |
+| `iiwa_bringup` | Launch-файлы: симуляция Webots, реальный робот через FRI, MoveIt и RViz |
+| `iiwa_config` | Конфигурационные файлы: MoveIt, контроллеры ros2_control, кинематика и общие параметры |
+| `iiwa_controller` | Hardware interface: управление суставами в реальном времени через FRI |
+| `iiwa_description` | URDF/XACRO описание робота и конфигурация мира Webots |
+| `iiwa_msgs` | ROS 2 интерфейсы: action-сообщения для движения по суставам и в декартовых координатах, сервисы именованных поз |
+| `iiwa_planning` | Планирование движения: C++ и Python узлы на базе MoveIt 2 (OMPL, Pilz, moveit_py) |
+| `iiwa_utils` | Утилиты системы: загрузка конфигурации, спавн объектов и камер в Webots, конвертация данных |
+| `iiwa_web` | Веб-интерфейс для мониторинга и дистанционного управления через браузер |
+
+---
+
+## Цитирование
+
+Если вы используете этот проект в своей работе, пожалуйста, оставьте звёздочку ⭐ и укажите ссылку:
+
+```bibtex
+@software{lightweight_cobot_2026,
+  author  = {Грабарь, Даниил},
+  title   = {Lightweight Cobot: ROS 2 stack for KUKA LBR IIWA 7},
+  year    = {2026},
+  url     = {https://gitverse.ru/daniel-robotics/lightweight-cobot}
+}
+```
+
+---
+
+## Благодарности
+
+Выражаем благодарность следующим организациям и грантам:
+
+| Организация | Примечание |
+| :--- | :--- |
+| [Комсомольский-на-Амуре государственный университет](https://knastu.ru/) | Исследования проводились на базе КнАГУ |
+| [Российский научный фонд](https://rscf.ru/) | Работа выполнена при поддержке Российского научного фонда |
+| <!-- TODO --> | <!-- TODO --> |
+| <!-- TODO --> | <!-- TODO --> |
+
+---
+
+<!-- ============================================================ -->
+<!-- Черновые команды — будут удалены в следующих версиях         -->
+<!-- ============================================================ -->
+
+## Черновые команды
 
 > Вроде уже не обязательно
 Подмена файла по пути обязательна: `/opt/ros/rolling/lib/webots_ros2_driver/ros2_supervisor.py`
@@ -165,8 +300,10 @@ docker build -t evilfisru/lwc:... -f docker/jazzy/.../Dockerfile .
 docker run -it --rm --network host evilfisru/lwa:jazzy-lwa7-noble
 ```
 
+```bash
 # release - src/build/log удаляются (по умолчанию)
 `docker build -t my-image .`
 
 # dev - src остаётся для отладки
 `docker build --build-arg BUILD_TYPE=dev -t my-image .`
+```
