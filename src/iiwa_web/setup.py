@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'iiwa_utils'
+package_name = 'iiwa_web'
 
 setup(
     name=package_name,
@@ -10,19 +10,17 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name, ['iiwa_utils/motion_config.json']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='daniel',
     maintainer_email='grabardm@ml-dev.ru',
-    description='cobot system utilities: configuration loading, object and camera spawning in Webots, geometric data conversion, test motion sequences',
+    description='Web interface for monitoring and remote control of the cobot via browser',
     license='Apache-2.0',
+    extras_require={
+    },
     entry_points={
         'console_scripts': [
-            "object_spawner = iiwa_utils.object_spawner:main",
-            "camera_spawner = iiwa_utils.camera_spawner:main",
-            "test_motion_sequence = iiwa_utils.test_motion_sequence:main",
         ],
     },
 )

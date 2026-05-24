@@ -2,8 +2,8 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>iiwa_bringup</name>
-  <version>0.2.0</version>
-  <description>Launch-файлы для запуска KUKA iiwa7: симуляция Webots, реальный робот через FRI, MoveIt и RViz</description>
+  <version>2026.05.31</version>
+  <description>Launch files for cobot: Webots simulation, real robot via FRI, MoveIt motion planning and RViz visualization</description>
   <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>
 

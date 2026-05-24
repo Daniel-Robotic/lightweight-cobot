@@ -2,8 +2,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="lightweight-cobot",
-    version="0.1.0",
-    description="Lightweight Cobot",
+    version="2026.05.31",
+    description="CLI tool for installing, configuring and managing the ROS 2 cobot workspace",
     packages=find_packages(),
     python_requires=">=3.11",
     install_requires=[

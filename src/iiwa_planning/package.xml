@@ -2,8 +2,8 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>iiwa_planning</name>
-  <version>0.0.0</version>
-  <description>Планирование движения KUKA iiwa7: C++ и Python узлы на основе MoveIt 2 (OMPL, Pilz, moveit_py)</description>
+  <version>2026.05.31</version>
+  <description>Motion planning for cobot: C++ and Python nodes built on MoveIt 2 with OMPL, Pilz Industrial Motion and moveit_py support</description>
   <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>
 
