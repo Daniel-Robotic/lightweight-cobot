@@ -1,0 +1,78 @@
+site_name: Документация LWC
+site_description: Документация по использованию коллаборативного робота KUKA LBR iiwa 7 и его программированию в среде ROS 2.
+site_author: Даниил Грабарь
+
+theme:
+  name: material
+  custom_dir: overrides
+  language: ru
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+
+plugins:
+  - search
+  - with-pdf:
+      author: Даниил Грабарь
+      cover_title: Документация LWC
+      cover_subtitle: Lightweight Cobot
+      output_path: pdf/document.pdf
+
+extra_javascript:
+  - assets/pdf_button.js
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Главная: index.md
+
+  - Быстрый старт:
+    - Обзор: getting-started/overview.md
+    - Быстрый старт: getting-started/quick-start.md
+    - Ручная установка: getting-started/manual-install.md
+    - Настройка: getting-started/configuration.md
+
+  - Sunrise Workbench:
+    - Обзор: sunrise/overview.md
+    - Настройка проекта: sunrise/project-setup.md
+    - Настройка сети: sunrise/network.md
+    - Загрузка на контроллер: sunrise/deployment.md
+
+  - Архитектура:
+    - Обзор системы: architecture/system-overview.md
+    - Пакеты:
+      - iiwa_controller: architecture/packages/iiwa-controller.md
+      - iiwa_bringup: architecture/packages/iiwa-bringup.md
+      - iiwa_planning: architecture/packages/iiwa-planning.md
+      - iiwa_msgs: architecture/packages/iiwa-msgs.md
+      - iiwa_config: architecture/packages/iiwa-config.md
+      - iiwa_description: architecture/packages/iiwa-description.md
+      - iiwa_sunrise: architecture/packages/iiwa-sunrise.md
+      - iiwa_utils: architecture/packages/iiwa-utils.md
+      - RealSense: architecture/packages/realsense.md
+    - Потоки данных: architecture/data-flow.md
+
+  - Управление:
+    - Foxglove Studio: control/foxglove.md
+    - Терминал: control/terminal.md
+    - Web-интерфейс: control/web-interface.md
+    - Симуляция: control/simulation.md
+
+  - Примеры:
+    - Joint Position: examples/joint-position.md
+    - Cartesian Goal: examples/cartesian-goal.md
+    - Траектория: examples/trajectory.md
+    - MoveIt Python API: examples/moveit-python.md
+    - RealSense данные: examples/realsense-data.md
+
+  - Разработка:
+    - Сборка и пересборка: development/build-rebuild.md
+    - CLI Reference: development/cli-reference.md
+    - Решение проблем: development/troubleshooting.md

@@ -27,16 +27,19 @@
                 </geometry>
             </collision>
         </link>
+
     </xacro:macro>
 
     <!-- Макрос для описания соединений -->
-    <xacro:macro name="revolute_joint" params="jname parent child xyz rpy axis lower upper effort velocity">
+    <xacro:macro name="revolute_joint" params="jname parent child xyz rpy axis lower upper effort velocity damping friction soft_lower soft_upper k_velocity">
         <joint name="${jname}" type="revolute">
             <origin xyz="${xyz}" rpy="${rpy}"/>
             <parent link="${parent}"/>
             <child link="${child}"/>
             <axis xyz="${axis}"/>
             <limit lower="${lower}" upper="${upper}" effort="${effort}" velocity="${velocity}"/>
+            <dynamics damping="${damping}" friction="${friction}"/>
+            <safety_controller soft_lower_limit="${soft_lower}" soft_upper_limit="${soft_upper}" k_velocity="${k_velocity}"/>
         </joint>
     </xacro:macro>
 

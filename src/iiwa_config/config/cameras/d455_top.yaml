@@ -1,0 +1,52 @@
+# Имя камеры - используется как:
+#   - имя Robot-ноды в Webots: "{name}_robot"
+#   - имя Camera-девайса: "{name}"
+#   - имя RangeFinder-девайса: "{name}_depth"
+#   - префикс ROS2-топиков
+
+name: d455_top
+# Положение в сцене (x y z)
+translation: "0.25 0 2.49"
+# Ориентация (ось_x ось_y ось_z угол_рад)
+rotation: "0 1 0 1.5708"
+
+# Блок camera
+# Если блок отсутствует — Camera-девайс не создаётся
+# Поля соответствуют документации Webots:
+# https://cyberbotics.com/doc/reference/camera
+camera:
+  width: 640
+  height: 480
+  fieldOfView: 1.047        # ~60° в радианах
+  near: 0.1
+  far: 0.0                  # 0 = без ограничений
+  exposure: 1.0
+  antiAliasing: false
+  ambientOcclusionRadius: 0.0
+  bloomThreshold: -1.0      # -1 = отключён
+  noise: 0.0
+  motionBlur: 0.0
+
+  # Параметры публикации в ROS2 (не часть Webots-ноды, обрабатываются отдельно)
+  ros:
+    topic: /d455_top/image_raw
+    update_rate: 30
+
+
+# Блок range_finder
+# Если блок отсутствует - RangeFinder-девайс не создаётся
+# Поля соответствуют документации Webots:
+# https://cyberbotics.com/doc/reference/rangefinder
+range_finder:
+  width: 640
+  height: 480
+  fieldOfView: 1.047
+  minRange: 0.1
+  maxRange: 5.0
+  resolution: -1.0          # -1 = без ограничений по дискретизации
+  noise: 0.0
+
+  # Параметры публикации в ROS2
+  ros:
+    topic: /d455_top/depth/image_raw
+    update_rate: 15

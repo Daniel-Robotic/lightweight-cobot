@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
+
+    <xacro:property name="gripper_pkg"
+                    value="package://iiwa_description/resource/meshes/gripper"/>
+
+    <xacro:property name="mesh_gripper_base_frame" value="${gripper_pkg}/base_frame.stl"/>
+    <xacro:property name="mesh_gripper_plate" value="${gripper_pkg}/plate.stl"/>
+    <xacro:property name="mesh_gripper_screw" value="${gripper_pkg}/screw.stl"/>
+    <xacro:property name="mesh_gripper_finger" value="${gripper_pkg}/finger_plates.stl"/>
+
+</robot>

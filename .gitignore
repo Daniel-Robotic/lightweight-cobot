@@ -3,3 +3,10 @@ install/
 build/
 .vscode
 .idea
+venv
+.venv
+.claude
+__pycache__
+
+*.egg-info
+**.FCBak

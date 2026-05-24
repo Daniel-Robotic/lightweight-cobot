@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
+
+    <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper_macros.xacro"/>
+    <xacro:arg name="simulate" default="false"/>
+
+    <joint name="base_joint" type="fixed">
+        <origin xyz="0.0 0.0 0.0613" rpy="0.0 0.0 0.0"/>
+        <parent link="base_frame"/>
+        <child link="plate"/>
+    </joint>
+
+    <xacro:prismatic_joint jname="base_screw"
+        parent="base_frame" child="screw"
+        xyz="0.0 0.0 0.072" rpy="0.0 0.0 0.0"
+        axis="0.0 0.0 1"
+        lower="-0.007" upper="0.0"
+        effort="50.0" velocity="0.05"/>
+
+    <xacro:mimic_revolute_joint jname="finger1_joint"
+        parent="plate" child="finger1"
+        xyz="0.0315 -0.0185 0.028" rpy="0.0 0.0 -2.12"
+        axis="1 0.0 0"
+        lower="-0.2" upper="0.07" effort="5.0" velocity="1.0" damping="0.0"
+        mimic_joint="base_screw" multiplier="-50" mimic_offset="-0.2"/>
+
+    <xacro:mimic_revolute_joint jname="finger2_joint"
+        parent="plate" child="finger2"
+        xyz="-0.0315 -0.0185 0.028" rpy="0.0 0.0 2.12"
+        axis="1 0.0 0"
+        lower="-0.2" upper="0.07" effort="5.0" velocity="1.0" damping="0.0"
+        mimic_joint="base_screw" multiplier="-50" mimic_offset="-0.2"/>
+
+    <xacro:mimic_revolute_joint jname="finger3_joint"
+        parent="plate" child="finger3"
+        xyz="0 0.037 0.028" rpy="0.0 0.0 0.0"
+        axis="1 0.0 0"
+        lower="-0.2" upper="0.07" effort="5.0" velocity="1.0" damping="0.0"
+        mimic_joint="base_screw" multiplier="-50" mimic_offset="-0.2"/>
+
+</robot>

@@ -1,0 +1,17 @@
+# Position in metres
+float64 x
+float64 y
+float64 z
+# Orientation as ZYX Euler angles in degrees (KUKA ABC convention: A=yaw, B=pitch, C=roll)
+float64 a
+float64 b
+float64 c
+# Velocity scaling factor 0–100 (%)
+float32 speed
+# Planner: "ompl" | "ptp" | "lin" | "chomp" (default: "ompl")
+string planner
+# Reference frame, defaults to "base_link" if empty
+string frame_id
+---
+bool success
+string message

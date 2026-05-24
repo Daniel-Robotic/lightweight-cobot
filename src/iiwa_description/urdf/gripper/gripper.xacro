@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" xacro:version="1.0">
+
+    <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper_links.xacro"/>
+    <xacro:include filename="$(find iiwa_description)/urdf/gripper/gripper_joints.xacro"/>
+
+    <joint name="gripper_attach_joint" type="fixed">
+        <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <parent link="link_ee"/>
+        <child link="base_frame"/>
+    </joint>
+
+</robot>

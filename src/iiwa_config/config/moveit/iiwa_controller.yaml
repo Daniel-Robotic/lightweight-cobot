@@ -1,0 +1,72 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 200  # резервное значение; при запуске через launch: 1000 // fri_cycle_ms
+
+    joint_state_broadcaster:
+      type: "joint_state_broadcaster/JointStateBroadcaster"
+
+    iiwa_arm_controller:
+      type: "joint_trajectory_controller/JointTrajectoryController"
+
+    forward_position_controller:
+      type: "forward_command_controller/ForwardCommandController"
+
+joint_state_broadcaster:
+  ros__parameters:
+    interfaces:
+      - position
+      - velocity
+      - effort
+      - external_torque
+      # commanded_torque и ipo_joint_position доступны только при активном v2
+      # при переключении на v2 — раскомментировать:
+      # - commanded_torque
+      # - ipo_joint_position
+
+iiwa_arm_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - joint7
+
+    command_interfaces:
+      - position
+
+    state_interfaces:
+      - position
+      - velocity
+
+    interpolate_from_desired_state: true
+    allow_partial_joints_goal: false
+    allow_nonzero_velocity_at_trajectory_end: false
+
+    state_publish_rate: 50.0   # половина от update_rate, как в референсе lbr_fri_ros2_stack
+    action_monitor_rate: 20.0
+
+    # constraints:
+    #   stopped_velocity_tolerance: 0.01  # [рад/с] — допуск скорости в конечной точке
+    #   goal_time: 2.0                    # [с] — допуск на время достижения цели
+    #   joint1: { trajectory: 0.1, goal: 0.01 }
+    #   joint2: { trajectory: 0.1, goal: 0.01 }
+    #   joint3: { trajectory: 0.1, goal: 0.01 }
+    #   joint4: { trajectory: 0.1, goal: 0.01 }
+    #   joint5: { trajectory: 0.1, goal: 0.01 }
+    #   joint6: { trajectory: 0.1, goal: 0.01 }
+    #   joint7: { trajectory: 0.1, goal: 0.01 }
+
+forward_position_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - joint7
+    interface_name: position

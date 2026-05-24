@@ -1,79 +1,182 @@
 #include "iiwa_controller/FRIClient.h"
-#include "rclcpp/rclcpp.hpp"
 
-using namespace KUKA::FRI;
+#include <cmath>
+#include <cstring>
 
-inline const char* to_string(KUKA::FRI::ESessionState s)
+#include <rclcpp/rclcpp.hpp>
+
+namespace iiwa_controller
 {
-  using namespace KUKA::FRI;
-  switch (s)
-  {
-    case IDLE:               return "IDLE";
-    case MONITORING_WAIT:    return "MONITORING_WAIT";
-    case MONITORING_READY:   return "MONITORING_READY";
-    case COMMANDING_WAIT:    return "COMMANDING_WAIT";
-    case COMMANDING_ACTIVE:  return "COMMANDING_ACTIVE";
-    default:                 return "UNKNOWN";
+
+static const char * friStateName(KUKA::FRI::ESessionState s)
+{
+  switch (s) {
+    case KUKA::FRI::IDLE: return "IDLE";
+    case KUKA::FRI::MONITORING_WAIT: return "MONITORING_WAIT";
+    case KUKA::FRI::MONITORING_READY: return "MONITORING_READY";
+    case KUKA::FRI::COMMANDING_WAIT: return "COMMANDING_WAIT";
+    case KUKA::FRI::COMMANDING_ACTIVE: return "COMMANDING_ACTIVE";
+    default: return "UNKNOWN";
   }
 }
 
-FRIClient::FRIClient() {
-    targetJointPositions_.fill(0.0);
-    measuredJointPositions_.fill(0.0);
-    measuredTorque_.fill(0.0);
-};
+FRIClient::FRIClient(CommandMode mode, double joint_position_tau)
+: cmd_mode_(mode), joint_position_tau_(joint_position_tau)
+{
+  target_pos_.fill(0.0);
+  target_tau_.fill(0.0);
+  filtered_pos_.fill(0.0);
+}
 
+// Вызывается только в Monitor-состояниях.
+// В Monitor-режиме getIpoJointPosition() бросает FRIException, поэтому здесь не зовём.
+void FRIClient::captureMonitoringData()
+{
+  std::memcpy(
+    snapshot_.measured_pos.data(),
+    robotState().getMeasuredJointPosition(), N_JOINTS * sizeof(double));
+  std::memcpy(
+    snapshot_.measured_tau.data(),
+    robotState().getMeasuredTorque(), N_JOINTS * sizeof(double));
+  std::memcpy(
+    snapshot_.external_tau.data(),
+    robotState().getExternalTorque(), N_JOINTS * sizeof(double));
+  snapshot_.sample_time = robotState().getSampleTime();
+  snapshot_.quality = robotState().getConnectionQuality();
+  snapshot_.ipo_valid = false;
+  snapshot_.time_stamp_sec = robotState().getTimestampSec();
+  snapshot_.time_stamp_nano_sec = robotState().getTimestampNanoSec();
+}
+
+// Вызывается из Commanding-состояний (COMMANDING_WAIT и COMMANDING_ACTIVE).
+// В отличие от Monitor, здесь getIpoJointPosition() доступна.
+void FRIClient::captureCommandingData()
+{
+  captureMonitoringData();
+  std::memcpy(
+    snapshot_.ipo_pos.data(),
+    robotState().getIpoJointPosition(), N_JOINTS * sizeof(double));
+  snapshot_.ipo_valid = true;
+  // Open-loop: JTC видит filtered_pos_ как «измеренную» позицию — как в lbr_fri_ros2_stack.
+  // Благодаря этому JTC не видит расхождения и не генерирует коррекций.
+  snapshot_.measured_pos = filtered_pos_;
+}
+
+// Вызывается в MONITORING_WAIT и MONITORING_READY
 void FRIClient::monitor()
 {
-  std::memcpy(measuredJointPositions_.data(),
-              robotState().getMeasuredJointPosition(),
-              7 * sizeof(double));
-
-  std::memcpy(measuredTorque_.data(),
-              robotState().getMeasuredTorque(),
-              7 * sizeof(double));
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  captureMonitoringData();
 }
 
-void FRIClient::setTargetJointPositions(const std::array<double, 7> target_pos) {
-    targetJointPositions_ = target_pos;
-}
-
-std::array<double, 7> FRIClient::getMeasuredJointPositions() const {
-    return measuredJointPositions_;
-}
-
-std::array<double, 7> FRIClient::getMeasuredTorque() const {
-    return measuredTorque_;
-}
-
-void FRIClient::onStateChange(ESessionState oldState, ESessionState newState) {
-    RCLCPP_INFO_STREAM(
-        rclcpp::get_logger("FRIClient"),
-            "[FRI Client] FRI state: " << to_string(oldState) << " --> " << to_string(newState));
-}
-
-
+// Вызывается в COMMANDING_WAIT.
+// По документации FRI (п. 6.2.2) клиент должен отправлять команды в каждом цикле.
+// Переход в COMMANDING_ACTIVE происходит только когда разница между commanded_position
+// и IPO_position меньше 0.001 рад для всех суставов.
+// Важно эхировать именно IPO-позицию, не measured. Если взять measured,
+// статическое отклонение не даст выполниться этому условию.
 void FRIClient::waitForCommand()
 {
-    std::memcpy(targetJointPositions_.data(),
-              robotState().getMeasuredJointPosition(),
-              7 * sizeof(double));
-    
-    std::memcpy(measuredJointPositions_.data(),
-                robotState().getMeasuredJointPosition(),
-              7 * sizeof(double));
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  captureCommandingData();
 
-    std::memcpy(measuredTorque_.data(),
-              robotState().getMeasuredTorque(),
-              7 * sizeof(double));
+  // Инициализируем цель и фильтр IPO-позицией.
+  // Фильтр стартует с IPO — это гарантирует нулевой скачок при переходе в COMMANDING_ACTIVE.
+  std::memcpy(target_pos_.data(), snapshot_.ipo_pos.data(), N_JOINTS * sizeof(double));
+  std::memcpy(filtered_pos_.data(), snapshot_.ipo_pos.data(), N_JOINTS * sizeof(double));
 
-  robotCommand().setJointPosition(targetJointPositions_.data());
+  robotCommand().setJointPosition(filtered_pos_.data());
+
+  if (cmd_mode_ == CommandMode::TORQUE) {
+    // Пока контроллер не синхронизирован, момент держим на нуле
+    target_tau_.fill(0.0);
+    robotCommand().setTorque(target_tau_.data());
+  }
 }
 
-void FRIClient::command() {
-    std::memcpy(measuredJointPositions_.data(),
-                robotState().getMeasuredJointPosition(),
-                7 * sizeof(double));
+// Вызывается в COMMANDING_ACTIVE, основной цикл управления
+void FRIClient::command()
+{
+  std::lock_guard<std::mutex> lock(data_mutex_);
 
-    robotCommand().setJointPosition(targetJointPositions_.data());
+  // EMA-фильтр применяется ДО захвата снимка — тогда snapshot_.measured_pos = filtered_pos_
+  // будет содержать то, что реально отправлено роботу в этом цикле (не прошлом).
+  // Это соответствует lbr_fri_ros2_stack: снимок захватывается post-EMA.
+  const double dt = robotState().getSampleTime();
+  const double alpha = (joint_position_tau_ > 0.0) ? dt / (joint_position_tau_ + dt) : 1.0;
+  for (size_t i = 0; i < N_JOINTS; ++i) {
+    filtered_pos_[i] = alpha * target_pos_[i] + (1.0 - alpha) * filtered_pos_[i];
+  }
+
+  robotCommand().setJointPosition(filtered_pos_.data());
+
+  if (cmd_mode_ == CommandMode::TORQUE) {
+    robotCommand().setTorque(target_tau_.data());
+  }
+
+  // Захватываем снимок ПОСЛЕ EMA: measured_pos = filtered_pos_ = что робот только что получил.
+  captureCommandingData();
 }
+
+void FRIClient::onStateChange(
+  KUKA::FRI::ESessionState oldState, KUKA::FRI::ESessionState newState)
+{
+  session_state_.store(newState, std::memory_order_relaxed);
+
+  RCLCPP_INFO(
+    rclcpp::get_logger("FRIClient"),
+    "FRI смена состояния: %s, теперь %s", friStateName(oldState), friStateName(newState));
+
+  if (newState == KUKA::FRI::IDLE ||
+    newState == KUKA::FRI::MONITORING_WAIT ||
+    newState == KUKA::FRI::MONITORING_READY)
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    target_tau_.fill(0.0);
+    RCLCPP_WARN(
+      rclcpp::get_logger("FRIClient"),
+      "FRI сессия неактивна, моменты обнулены");
+  }
+}
+
+void FRIClient::setTargetJointPositions(const std::array<double, N_JOINTS> & q)
+{
+  // До первой команды контроллера интерфейс содержит NaN.
+  // Если отправить NaN роботу в COMMANDING_ACTIVE, получим CK_COMPOUND_RETURN_ERROR.
+  for (const auto & v : q) {
+    if (!std::isfinite(v)) {
+      return;
+    }
+  }
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  target_pos_ = q;
+}
+
+void FRIClient::setTargetJointTorques(const std::array<double, N_JOINTS> & tau)
+{
+  for (const auto & v : tau) {
+    if (!std::isfinite(v)) {
+      return;
+    }
+  }
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  target_tau_ = tau;
+}
+
+IIWAStateSnapshot FRIClient::getStateSnapshot() const
+{
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  return snapshot_;
+}
+
+bool FRIClient::isCommandingActive() const
+{
+  return session_state_.load(std::memory_order_relaxed) == KUKA::FRI::COMMANDING_ACTIVE;
+}
+
+KUKA::FRI::ESessionState FRIClient::getSessionState() const
+{
+  return session_state_.load(std::memory_order_relaxed);
+}
+
+}  // namespace iiwa_controller

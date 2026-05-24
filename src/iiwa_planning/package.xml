@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>iiwa_planning</name>
+  <version>2026.05.31</version>
+  <description>Motion planning for cobot: C++ and Python nodes built on MoveIt 2 with OMPL, Pilz Industrial Motion and moveit_py support</description>
+  <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclpy</depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <depend>moveit_core</depend>
+  <depend>moveit_ros_planning</depend>
+  <depend>moveit_planners_ompl</depend>
+  <depend>pilz_industrial_motion_planner</depend>
+  <depend>moveit_planners_chomp</depend>
+  <depend>moveit_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>moveit_py</depend>
+  <depend>tf_transformations</depend>
+  <depend>python3-scipy</depend>
+  <depend>iiwa_msgs</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -2,18 +2,43 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>iiwa_bringup</name>
-  <version>0.0.1</version>
-  <description>TODO: Package description</description>
-  <maintainer email="grabardm@ml-dev.ru">Grabar Daniil</maintainer>
+  <version>2026.05.31</version>
+  <description>Launch files for cobot: Webots simulation, real robot via FRI, MoveIt motion planning and RViz visualization</description>
+  <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>
 
-  <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
-  <test_depend>ament_xmllint</test_depend>
-  <test_depend>python3-pytest</test_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Внутренние пакеты проекта -->
+  <exec_depend>iiwa_utils</exec_depend>
+  <exec_depend>iiwa_config</exec_depend>
+  <exec_depend>iiwa_description</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
+
+  <!-- ROS 2 infrastructure -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+
+  <!-- MoveIt 2 -->
+  <exec_depend>moveit_ros_move_group</exec_depend>
+  <exec_depend>moveit_configs_utils</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <!-- ros2_control -->
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>forward_command_controller</exec_depend>
+
+  <!-- Webots -->
+  <exec_depend>webots_ros2_driver</exec_depend>
+  <exec_depend>webots_ros2_control</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
 
   <export>
-    <build_type>ament_python</build_type>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>

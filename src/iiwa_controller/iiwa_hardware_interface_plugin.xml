@@ -1,0 +1,11 @@
+<library path="iiwa_controller">
+  <class
+    name="iiwa_controller/IIWAHardwareInterface"
+    type="iiwa_controller::IIWAHardwareInterface"
+    base_class_type="hardware_interface::SystemInterface">
+    <description>
+      ROS2 hardware interface для KUKA iiwa 7 через FRI (Fast Robot Interface).
+      Поддерживает режимы управления: position, torque.
+    </description>
+  </class>
+</library>

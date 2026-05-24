@@ -1,0 +1,177 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tool_patron">
+
+    <link name="camera_holder">
+        <inertial>
+            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.15"/>
+            <inertia ixx="0.000073" ixy="0.0" ixz="0.0"
+                     iyy="0.000136" iyz="0.0" izz="0.000186"/>
+        </inertial>
+        <visual name="">
+            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://iiwa_description/resource/meshes/tools/CameraHolder.dae" />
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.0 0.0 0.015" rpy="0.0 0.0 0.0"/>
+            <geometry>
+                <cylinder radius="0.035" length="0.03"/>
+            </geometry>
+        </collision>
+        <collision>
+            <origin xyz="0.0 0.08 0.015" rpy="0.0 0.0 0.0"/>
+            <geometry>
+                <box size="0.03 0.1 0.03"/>
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="patron">
+        <inertial>
+            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.35"/>
+            <inertia ixx="0.000127" ixy="0.0" ixz="0.0"
+                     iyy="0.000127" iyz="0.0" izz="0.000077"/>
+        </inertial>
+        <visual name="">
+            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://iiwa_description/resource/meshes/tools/patron.dae" />
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.0 0.0 0.027" rpy="0.0 0.0 0.0"/>
+            <geometry>
+                <cylinder radius="0.021" length="0.055"/>
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="camera_corner">
+        <inertial>
+            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.1"/>
+            <inertia ixx="0.0000094" ixy="0.0" ixz="0.0"
+                     iyy="0.000131"  iyz="0.0" izz="0.000135"/>
+        </inertial>
+        <visual name="">
+            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://iiwa_description/resource/meshes/tools/camera_corner.dae" />
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0 0.116 0.022" rpy="0.0 0.0 0.0"/>
+            <geometry>
+                <box size="0.124 0.029 0.017"/>
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="camera_hand">
+        <inertial>
+            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.2"/>
+            <inertia ixx="0.000021" ixy="0.0" ixz="0.0"
+                     iyy="0.000250" iyz="0.0" izz="0.000250"/>
+        </inertial>
+        <visual>
+            <origin xyz="-0.06 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://iiwa_description/resource/meshes/tools/cameraD455.dae" />
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.0 0.014 0.0125" rpy="0.0 0.0 0.0"/>
+            <geometry>
+                <box size="0.12 0.025 0.025"/>
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="camera_optical_frame"/>
+    <link name="tcp" />
+
+    <joint name="tool" type="fixed">
+        <parent link="link_ee"/>
+        <child link="camera_holder"/>
+        <origin xyz="0 0 0" rpy="0 0 1.5708"/>
+    </joint>
+
+    <joint name="camera_holder_patron" type="fixed">
+        <origin xyz="0.0 0.0 0.032" rpy="0.0 0.0 0.0"/>
+        <parent link="camera_holder"/>
+        <child link="patron"/>
+    </joint>
+
+    <joint name="patron_tcp" type="fixed">
+        <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 -1.5708"/>
+        <parent link="patron"/>
+        <child link="tcp"/>
+    </joint>
+
+    <joint name="camera_holder_corner" type="fixed">
+        <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <parent link="camera_holder"/>
+        <child link="camera_corner"/>
+    </joint>
+
+    <joint name="camera_corner_camera" type="fixed">
+        <origin xyz="0.0 0.1 0.014" rpy="0.61 0.0 0.0"/>
+        <parent link="camera_corner"/>
+        <child link="camera_hand"/>
+    </joint>
+
+    <joint name="camera_hand_to_optical" type="fixed">
+        <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <parent link="camera_hand"/>
+        <child link="camera_optical_frame"/>
+    </joint>
+
+    <gazebo reference="camera_optical_frame">
+        <sensor type="camera" name="camera_rgb">
+            <camera>
+                <horizontal_fov>1.3089969</horizontal_fov>
+                <image>
+                    <width>640</width>
+                    <height>480</height>
+                    <format>R8G8B8</format>
+                </image>
+                <clip>
+                    <near>0.1</near>
+                    <far>10.0</far>
+                </clip>
+                <noise>
+                    <type>gaussian</type>
+                    <stddev>0.005</stddev>
+                </noise>
+            </camera>
+        </sensor>
+
+        <sensor type="depth" name="camera_depth">
+            <camera>
+                <horizontal_fov>1.3089969</horizontal_fov>
+                <image>
+                    <width>640</width>
+                    <height>480</height>
+                </image>
+                <clip>
+                    <near>0.52</near>
+                    <far>6.0</far>
+                </clip>
+            </camera>
+            <range>
+                <min>0.52</min>
+                <max>6.0</max>
+                <resolution>0.001</resolution>
+            </range>
+            <noise>
+                <type>gaussian</type>
+                <stddev>0.02</stddev>
+            </noise>
+        </sensor>
+    </gazebo> 
+
+</robot>
