@@ -24,8 +24,13 @@ COPY src/iiwa_description src/iiwa_description
 COPY src/iiwa_msgs src/iiwa_msgs
 COPY src/iiwa_planning src/iiwa_planning
 COPY src/iiwa_utils src/iiwa_utils
+COPY src/iiwa_web src/iiwa_web
+COPY rosdep.yaml rosdep.yaml
 
-RUN apt-get update && \
+RUN echo "yaml file:///ros2_ws/rosdep.yaml" \
+        > /etc/ros/rosdep/sources.list.d/50-kuka-local.list && \
+    rosdep update && \
+    apt-get update && \
     rosdep install --from-paths src -i -r -y && \
     rm -rf /var/lib/apt/lists/*
 

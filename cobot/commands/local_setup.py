@@ -239,6 +239,25 @@ def _task_build(screen: LogScreen) -> None:
 
         screen.set_progress(0, "Installing dependencies...")
         screen.write("[bold]Step 1 / 2 - rosdep install[/bold]\n")
+
+        rosdep_yaml = _PROJECT_DIR / "rosdep.yaml"
+        sources_list = Path("/etc/ros/rosdep/sources.list.d/50-kuka-local.list")
+        rosdep_entry = f"yaml file://{rosdep_yaml}\n"
+        if rosdep_yaml.exists() and (
+            not sources_list.exists() or sources_list.read_text() != rosdep_entry
+        ):
+            try:
+                sources_list.write_text(rosdep_entry)
+                screen.write(f"Registered local rosdep source: {rosdep_yaml}")
+                _run_logged(["rosdep", "update"], screen.write, env=env, cwd=_PROJECT_DIR)
+            except PermissionError:
+                _run_logged(
+                    ["sudo", "bash", "-c",
+                     f"echo '{rosdep_entry.strip()}' > {sources_list}"],
+                    screen.write, env=env,
+                )
+                _run_logged(["rosdep", "update"], screen.write, env=env, cwd=_PROJECT_DIR)
+
         _run_logged(
             ["rosdep", "install", "--from-paths", "src", "-i", "-r", "-y"],
             screen.write,
