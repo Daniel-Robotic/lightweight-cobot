@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>iiwa_utils</name>
-  <version>2026.05.31</version>
+  <version>2026.5.31</version>
   <description>Utilities for the cobot system: configuration loading, URDF/XACRO processing, object and camera spawning in Webots, geometric data conversion</description>
   <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>

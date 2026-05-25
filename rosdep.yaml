@@ -1,0 +1,9 @@
+python3-fastapi:
+  ubuntu:
+    pip:
+      packages: [fastapi]
+
+python3-uvicorn:
+  ubuntu:
+    pip:
+      packages: ["uvicorn[standard]"]

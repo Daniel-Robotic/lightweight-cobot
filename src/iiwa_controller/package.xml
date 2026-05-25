@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>iiwa_controller</name>
-  <version>2026.05.31</version>
+  <version>2026.5.31</version>
   <description>Hardware interface for cobot: real-time joint control via FRI (Fast Robot Interface) within the ros2_control ecosystem</description>
   <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>

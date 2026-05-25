@@ -2,10 +2,13 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>iiwa_web</name>
-  <version>2026.05.31</version>
+  <version>2026.5.31</version>
   <description>Web interface for monitoring and remote control of the cobot via browser</description>
   <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>
+
+  <exec_depend>python3-fastapi</exec_depend>
+  <exec_depend>python3-uvicorn</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
