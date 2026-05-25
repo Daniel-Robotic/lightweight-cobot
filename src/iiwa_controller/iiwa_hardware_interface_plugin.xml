@@ -5,7 +5,7 @@
     base_class_type="hardware_interface::SystemInterface">
     <description>
       ROS2 hardware interface для KUKA iiwa 7 через FRI (Fast Robot Interface).
-      Поддерживает режимы управления: position, torque.
+      Поддерживает управление в режиме position через FRI.
     </description>
   </class>
 </library>

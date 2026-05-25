@@ -46,15 +46,13 @@ CallbackReturn IIWAHardwareInterface::on_init(
   robot_ip_            = getParam(info, "robot_ip", "192.170.10.2");
   fri_port_            = std::stoi(getParam(info, "fri_port", "30200"));
   simulate_            = (getParam(info, "simulate", "false") == "true");
-  cmd_mode_str_        = getParam(info, "command_mode", "position");
   joint_position_tau_  = std::stod(getParam(info, "joint_position_tau", "0.04"));
   joint_velocity_tau_  = std::stod(getParam(info, "joint_velocity_tau", "0.01"));
 
   RCLCPP_INFO(rclcpp::get_logger(LOG),
-    "on_init: ip=%s port=%d simulate=%s mode=%s pos_tau=%.3f vel_tau=%.3f",
+    "on_init: ip=%s port=%d simulate=%s pos_tau=%.3f vel_tau=%.3f",
     robot_ip_.c_str(), fri_port_,
     simulate_ ? "true" : "false",
-    cmd_mode_str_.c_str(),
     joint_position_tau_,
     joint_velocity_tau_);
 
@@ -99,7 +97,7 @@ CallbackReturn IIWAHardwareInterface::on_configure(const rclcpp_lifecycle::State
     return CallbackReturn::SUCCESS;
   }
 
-  fri_client_ = std::make_unique<FRIClient>(parseCommandMode(cmd_mode_str_), joint_position_tau_);
+  fri_client_ = std::make_unique<FRIClient>(joint_position_tau_);
   // 100 мс таймаут recvfrom — поток корректно завершится после disconnect().
   connection_ = std::make_unique<KUKA::FRI::UdpConnection>(100);
   app_        = std::make_unique<KUKA::FRI::ClientApplication>(*connection_, *fri_client_);
@@ -132,10 +130,8 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
     h_eff_[i]     = get_state_interface_handle(jn + "/" + hardware_interface::HW_IF_EFFORT);
     h_ext_[i]     = get_state_interface_handle(jn + "/external_torque");
     h_cmd_pos_[i] = get_command_interface_handle(jn + "/" + hardware_interface::HW_IF_POSITION);
-    h_cmd_eff_[i] = get_command_interface_handle(jn + "/" + hardware_interface::HW_IF_EFFORT);
 
-    if (!h_pos_[i] || !h_vel_[i] || !h_eff_[i] || !h_ext_[i] ||
-        !h_cmd_pos_[i] || !h_cmd_eff_[i])
+    if (!h_pos_[i] || !h_vel_[i] || !h_eff_[i] || !h_ext_[i] || !h_cmd_pos_[i])
     {
       RCLCPP_FATAL(rclcpp::get_logger(LOG),
         "Не удалось получить хэндл интерфейса для сустава '%s'. "
@@ -199,7 +195,7 @@ CallbackReturn IIWAHardwareInterface::on_deactivate(const rclcpp_lifecycle::Stat
 
   for (size_t i = 0; i < N_JOINTS; ++i) {
     h_pos_[i] = h_vel_[i] = h_eff_[i] = h_ext_[i] = nullptr;
-    h_cmd_pos_[i] = h_cmd_eff_[i] = nullptr;
+    h_cmd_pos_[i] = nullptr;
   }
 
   velocity_initialized_ = false;
@@ -342,23 +338,14 @@ hardware_interface::return_type IIWAHardwareInterface::write(
     return hardware_interface::return_type::OK;
   }
 
-  std::array<double, N_JOINTS> pos_cmd{}, tau_cmd{};
+  std::array<double, N_JOINTS> pos_cmd{};
   for (size_t i = 0; i < N_JOINTS; ++i) {
     get_command(h_cmd_pos_[i], pos_cmd[i], false);
-    get_command(h_cmd_eff_[i], tau_cmd[i], false);
   }
 
   fri_client_->setTargetJointPositions(pos_cmd);
-  fri_client_->setTargetJointTorques(tau_cmd);
 
   return hardware_interface::return_type::OK;
-}
-
-// ── parseCommandMode ───────────────────────────────────────────────────────────
-
-CommandMode IIWAHardwareInterface::parseCommandMode(const std::string & mode_str) const
-{
-  return (mode_str == "torque") ? CommandMode::TORQUE : CommandMode::POSITION;
 }
 
 }  // namespace iiwa_controller

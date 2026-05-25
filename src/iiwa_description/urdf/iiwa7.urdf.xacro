@@ -6,7 +6,6 @@
     <xacro:arg name="simulate" default="false"/>
     <xacro:arg name="robot_ip" default="192.170.10.2"/>
     <xacro:arg name="fri_port" default="30200"/>
-    <xacro:arg name="command_mode" default="position"/>
     <xacro:arg name="joint_position_tau" default="0.04"/>
     <xacro:arg name="joint_velocity_tau" default="0.01"/>
 
@@ -147,7 +146,6 @@
                 <param name="robot_ip">$(arg robot_ip)</param>
                 <param name="fri_port">$(arg fri_port)</param>
                 <param name="simulate">false</param>
-                <param name="command_mode">$(arg command_mode)</param>
                 <param name="joint_position_tau">$(arg joint_position_tau)</param>
                 <param name="joint_velocity_tau">$(arg joint_velocity_tau)</param>
             </hardware>
@@ -157,10 +155,7 @@
                     <param name="min">-2.97</param>
                     <param name="max"> 2.97</param>
                 </command_interface>
-                <command_interface name="effort">
-                    <param name="min">-200</param>
-                    <param name="max"> 200</param>
-                </command_interface>
+
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint1']}</param>
                 </state_interface>
@@ -173,10 +168,7 @@
                     <param name="min">-2.09</param>
                     <param name="max"> 2.09</param>
                 </command_interface>
-                <command_interface name="effort">
-                    <param name="min">-200</param>
-                    <param name="max"> 200</param>
-                </command_interface>
+
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint2']}</param>
                 </state_interface>
@@ -189,10 +181,7 @@
                     <param name="min">-2.97</param>
                     <param name="max"> 2.97</param>
                 </command_interface>
-                <command_interface name="effort">
-                    <param name="min">-200</param>
-                    <param name="max"> 200</param>
-                </command_interface>
+
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint3']}</param>
                 </state_interface>
@@ -205,10 +194,7 @@
                     <param name="min">-2.09</param>
                     <param name="max"> 2.09</param>
                 </command_interface>
-                <command_interface name="effort">
-                    <param name="min">-200</param>
-                    <param name="max"> 200</param>
-                </command_interface>
+
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint4']}</param>
                 </state_interface>
@@ -221,10 +207,7 @@
                     <param name="min">-2.97</param>
                     <param name="max"> 2.97</param>
                 </command_interface>
-                <command_interface name="effort">
-                    <param name="min">-200</param>
-                    <param name="max"> 200</param>
-                </command_interface>
+
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint5']}</param>
                 </state_interface>
@@ -237,10 +220,7 @@
                     <param name="min">-2.09</param>
                     <param name="max"> 2.09</param>
                 </command_interface>
-                <command_interface name="effort">
-                    <param name="min">-200</param>
-                    <param name="max"> 200</param>
-                </command_interface>
+
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint6']}</param>
                 </state_interface>
@@ -253,10 +233,7 @@
                     <param name="min">-3.05</param>
                     <param name="max"> 3.05</param>
                 </command_interface>
-                <command_interface name="effort">
-                    <param name="min">-200</param>
-                    <param name="max"> 200</param>
-                </command_interface>
+
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint7']}</param>
                 </state_interface>

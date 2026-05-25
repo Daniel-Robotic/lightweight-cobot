@@ -59,7 +59,6 @@ private:
   std::string robot_ip_;
   int fri_port_{30200};
   bool simulate_{false};
-  std::string cmd_mode_str_{"position"};
   double joint_position_tau_{0.04};
   // EMA-фильтр скорости: сглаживает одиночные выбросы конечных разностей.
   // joint_velocity_tau = 0 отключает фильтр (raw finite difference).
@@ -82,9 +81,7 @@ private:
   std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_eff_;
   std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_ext_;
 
-  // Хэндлы командных интерфейсов
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_pos_;
-  std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_eff_;
 
   // Вычисление скорости: конечные разности + EMA-фильтр
   std::array<double, N_JOINTS> prev_pos_{};
@@ -100,7 +97,6 @@ private:
 
   rclcpp::Clock throttle_clock_{RCL_STEADY_TIME};
 
-  CommandMode parseCommandMode(const std::string & mode_str) const;
 };
 
 }  // namespace iiwa_controller

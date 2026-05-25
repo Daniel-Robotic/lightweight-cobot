@@ -65,7 +65,6 @@ def _runtime_setup(context, *args, **kwargs):
             "robot_ip": settings.robot.ip,
             "fri_port": str(settings.robot.port),
             "simulate": "false",
-            "command_mode": settings.robot.command_mode,
             "joint_position_tau": str(settings.robot.joint_position_tau),
         }
         use_sim_time = False
@@ -168,7 +167,6 @@ def _runtime_setup(context, *args, **kwargs):
             "transform": str(settings.digital_twin.webots.transform),
             "rotation": str(settings.digital_twin.webots.rotation),
             "simulate": "false",
-            "command_mode": settings.robot.command_mode,
             "controller_timer": str(settings.digital_twin.webots.controller_timer),
             "fri_cycle_ms": str(settings.robot.fri_cycle_ms),
             "joint_position_tau": str(settings.robot.joint_position_tau),
