@@ -25,6 +25,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'iiwa_web_server = iiwa_web.main:main',
         ],
     },
 )
