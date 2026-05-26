@@ -80,7 +80,6 @@ class MotionSequenceRunner(Node):
         else:
             self.get_logger().info('bag_path not set — recording disabled')
 
-    # ── Config ──────────────────────────────────────────────────────────────
 
     def _load_config(self, config_path: str) -> dict:
         path = (
@@ -91,7 +90,6 @@ class MotionSequenceRunner(Node):
         with open(path) as f:
             return json.load(f)
 
-    # ── Bag recording ────────────────────────────────────────────────────────
 
     def _init_bag(self):
         bag_dir = Path(self._bag_path)
@@ -161,7 +159,6 @@ class MotionSequenceRunner(Node):
             self._writer = None
             self.get_logger().info(f'Bag closed → {self._bag_path}')
 
-    # ── Action helpers ────────────────────────────────────────────────────────
 
     def _send_joints_goal(self, wp: dict) -> bool:
         goal = MoveToJoints.Goal()
@@ -233,7 +230,6 @@ class MotionSequenceRunner(Node):
             return self._send_joints_goal(wp)
         return self._send_pose_goal(wp, idx=idx)
 
-    # ── Main sequence ─────────────────────────────────────────────────────────
 
     def run(self, done_event: threading.Event):
         try:
