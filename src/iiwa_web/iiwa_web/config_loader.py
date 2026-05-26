@@ -25,9 +25,9 @@ class FieldDef:
 class EndpointDef:
     path: str
     method: str           # GET | POST
-    type: str             # topic | service | action
-    ros_name: str
-    msg_type: str
+    type: str             # topic | service | action | tf
+    ros_name: str = ""
+    msg_type: str = ""
     summary: str = ""
     description: str = ""
     tags: list = field(default_factory=list)
@@ -37,6 +37,8 @@ class EndpointDef:
     timeout: float = 5.0
     deprecated: bool = False
     enabled: bool = True
+    parent_frame: str = ""  # tf: родительский фрейм
+    child_frame: str = ""   # tf: дочерний фрейм
 
 
 def _resolve_path(package: str, relative: str) -> Path:
@@ -49,6 +51,31 @@ def _resolve_path(package: str, relative: str) -> Path:
         return src / package / relative
 
 
+def _parse_joint_limits_data(data: dict) -> tuple[list[str], list[tuple[float, float]]]:
+    joints = data["joint_limits"]
+    names: list[str] = []
+    limits: list[tuple[float, float]] = []
+    i = 1
+    while f"joint{i}" in joints:
+        j = joints[f"joint{i}"]
+        names.append(f"joint{i}")
+        limits.append((j["min_position"], j["max_position"]))
+        i += 1
+    return names, limits
+
+
+def load_joint_names(
+    package: str = "iiwa_config",
+    relative: str = "config/moveit/joint_limits.yaml",
+) -> list[str]:
+    """Возвращает упорядоченный список имён суставов из joint_limits.yaml."""
+    path = _resolve_path(package, relative)
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    names, _ = _parse_joint_limits_data(data)
+    return names
+
+
 def load_joint_limits(
     package: str = "iiwa_config",
     relative: str = "config/moveit/joint_limits.yaml",
@@ -57,13 +84,7 @@ def load_joint_limits(
     path = _resolve_path(package, relative)
     with open(path) as f:
         data = yaml.safe_load(f)
-    joints = data["joint_limits"]
-    limits: list[tuple[float, float]] = []
-    i = 1
-    while f"joint{i}" in joints:
-        j = joints[f"joint{i}"]
-        limits.append((j["min_position"], j["max_position"]))
-        i += 1
+    _, limits = _parse_joint_limits_data(data)
     return limits
 
 
@@ -102,8 +123,8 @@ def load_api_config(
             path=ep["path"],
             method=ep["method"].upper(),
             type=ep["type"],
-            ros_name=ep["ros_name"],
-            msg_type=ep["msg_type"],
+            ros_name=ep.get("ros_name", ""),
+            msg_type=ep.get("msg_type", ""),
             summary=ep.get("summary", ""),
             description=ep.get("description", ""),
             tags=ep.get("tags", []),
@@ -112,6 +133,8 @@ def load_api_config(
             request_fields=request_fields,
             timeout=ep.get("timeout", 5.0),
             deprecated=ep.get("deprecated", False),
+            parent_frame=ep.get("parent_frame", ""),
+            child_frame=ep.get("child_frame", ""),
         ))
 
     return endpoints

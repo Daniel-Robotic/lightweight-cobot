@@ -160,6 +160,54 @@ def _make_action_handler(ep: EndpointDef, Body: type, joint_limits: list[tuple[f
     return handler
 
 
+def _quat_to_euler_zyx(x: float, y: float, z: float, w: float) -> tuple[float, float, float]:
+    """Quaternion → ZYX Euler (KUKA ABC: A=yaw, B=pitch, C=roll)."""
+    sinr = 2 * (w * x + y * z)
+    cosr = 1 - 2 * (x * x + y * y)
+    roll = math.atan2(sinr, cosr)
+
+    sinp = 2 * (w * y - z * x)
+    pitch = math.copysign(math.pi / 2, sinp) if abs(sinp) >= 1 else math.asin(sinp)
+
+    siny = 2 * (w * z + x * y)
+    cosy = 1 - 2 * (y * y + z * z)
+    yaw = math.atan2(siny, cosy)
+
+    return roll, pitch, yaw  # C, B, A
+
+
+def _make_tf_handler(ep: EndpointDef):
+    parent = ep.parent_frame
+    child = ep.child_frame
+    timeout = ep.timeout
+
+    def handler():
+        try:
+            tf = get_bridge().lookup_transform(parent, child, timeout)
+        except RuntimeError as e:
+            raise HTTPException(503, str(e))
+
+        t = tf.transform.translation
+        r = tf.transform.rotation
+        roll, pitch, yaw = _quat_to_euler_zyx(r.x, r.y, r.z, r.w)
+
+        return {
+            "position": {"x": t.x, "y": t.y, "z": t.z},
+            "orientation": {
+                "quaternion": {"x": r.x, "y": r.y, "z": r.z, "w": r.w},
+                "euler_rad": {"a": yaw, "b": pitch, "c": roll},
+                "euler_deg": {
+                    "a": math.degrees(yaw),
+                    "b": math.degrees(pitch),
+                    "c": math.degrees(roll),
+                },
+            },
+            "frame": {"parent": parent, "child": child},
+        }
+
+    return handler
+
+
 def build_dynamic_router() -> APIRouter:
     """Читает api_endpoints.yaml и joint_limits.yaml, возвращает готовый APIRouter."""
     endpoints = load_api_config()
@@ -183,6 +231,10 @@ def build_dynamic_router() -> APIRouter:
             if Body is None:
                 raise ValueError(f"Action-эндпоинт '{ep.path}' не имеет request_fields")
             handler = _make_action_handler(ep, Body, joint_limits)
+        elif ep.type == "tf":
+            if not ep.parent_frame or not ep.child_frame:
+                raise ValueError(f"TF-эндпоинт '{ep.path}' требует parent_frame и child_frame")
+            handler = _make_tf_handler(ep)
         else:
             raise ValueError(f"Неизвестный тип эндпоинта: '{ep.type}'")
 

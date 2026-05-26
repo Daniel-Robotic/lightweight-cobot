@@ -4,6 +4,7 @@ import threading
 
 from rclpy.node import Node
 from rclpy.action import ActionClient
+import tf2_ros
 
 
 class CobotWebNode(Node):
@@ -11,10 +12,13 @@ class CobotWebNode(Node):
         super().__init__('cobot_web_node')
 
         self._topic_cache: dict = {}
-        self._publishers: dict = {}
+        self._pub_registry: dict = {}
         self._service_clients: dict = {}
         self._action_clients: dict = {}
         self._lock = threading.Lock()
+
+        self._tf_buffer = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
     def subscribe(self, topic_name: str, msg_type):
         if topic_name not in self._topic_cache:
@@ -28,11 +32,11 @@ class CobotWebNode(Node):
             self.get_logger().info(f'Subscribed to topic: {topic_name}')
 
     def publish(self, topic_name: str, message_type, msg):
-        if topic_name not in self._publishers:
-            self._publishers[topic_name] = self.create_publisher(message_type, topic_name, 10)
+        if topic_name not in self._pub_registry:
+            self._pub_registry[topic_name] = self.create_publisher(message_type, topic_name, 10)
             self.get_logger().info(f'Created publisher for topic: {topic_name}')
-        
-        self._publishers[topic_name].publish(msg)
+
+        self._pub_registry[topic_name].publish(msg)
 
     def get_latest(self, topic_name: str):
         with self._lock:
@@ -59,16 +63,27 @@ class CobotWebNode(Node):
 
         return future.result()
 
+    def lookup_transform(self, parent_frame: str, child_frame: str, timeout: float = 1.0):
+        try:
+            return self._tf_buffer.lookup_transform(
+                parent_frame,
+                child_frame,
+                rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=timeout),
+            )
+        except Exception as e:
+            raise RuntimeError(f"TF lookup {parent_frame} → {child_frame}: {e}")
+
     def send_action(self, action_type, action_name: str, goal, timeout: float = 30.0):
         if action_name not in self._action_clients:
             self._action_clients[action_name] = ActionClient(self, action_type, action_name)
 
         client = self._action_clients[action_name]
-        if not client.wait_for_server(timeout_sec=5.0):
+        if not client.wait_for_server(timeout_sec=10.0):
             raise RuntimeError(f"Action сервер '{action_name}' недоступен")
 
         goal_future = client.send_goal_async(goal)
-        deadline = time.monotonic() + 5.0
+        deadline = time.monotonic() + 10.0
         while not goal_future.done():
             if time.monotonic() > deadline:
                 raise TimeoutError(f"Таймаут принятия goal '{action_name}'")
