@@ -66,6 +66,15 @@ class PlanningCfg:
 
 
 @dataclass(frozen=True)
+class WebCfg:
+    enabled: bool
+    host: str
+    port: int
+    endpoints: str    # resolved absolute path to api_endpoints.yaml
+    joint_limits: str  # resolved absolute path to joint_limits.yaml
+
+
+@dataclass(frozen=True)
 class FoxgloveCfg:
     enabled: bool                       # Запускать ли foxglove_bridge
     port: int                           # WebSocket-порт (обычно 8765)
@@ -100,6 +109,7 @@ class Settings:
     controller: ControllerCfg
     planning: PlanningCfg
     foxglove: FoxgloveCfg
+    web: WebCfg
 
     def to_dict(self) -> Dict[str, Any]:
         def _convert(obj: Any) -> Any:
@@ -166,6 +176,32 @@ def assert_file(path: str, key: str) -> None:
         raise SettingsError(f"file for '{key}' does not exist: {path}")
     if not os.path.isfile(path):
         raise SettingsError(f"path for '{key}' is not a file: {path}")
+
+
+# Web defaults
+_WEB_DEFAULTS: Dict[str, Any] = {
+    "enabled": False,
+    "host": "0.0.0.0",
+    "port": 8007,
+    "endpoints": "pkg://iiwa_config/config/api_endpoints.yaml",
+    "joint_limits": "pkg://iiwa_config/config/moveit/joint_limits.yaml",
+}
+
+
+def _parse_web(raw: Optional[Dict[str, Any]], settings_dir: str) -> WebCfg:
+    if raw is None:
+        raw = {}
+
+    def get(key: str) -> Any:
+        return raw.get(key, _WEB_DEFAULTS[key])
+
+    return WebCfg(
+        enabled=bool(get("enabled")),
+        host=str(get("host")),
+        port=int(get("port")),
+        endpoints=resolve_path(str(get("endpoints")), settings_dir),
+        joint_limits=resolve_path(str(get("joint_limits")), settings_dir),
+    )
 
 
 # Foxglove defaults
@@ -303,12 +339,16 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
     # foxglove
     foxglove = _parse_foxglove(raw.get("foxglove"))
 
+    # web
+    web = _parse_web(raw.get("web"), settings_dir)
+
     s = Settings(
         robot=robot,
         digital_twin=digital_twin,
         controller=controller,
         planning=planning,
         foxglove=foxglove,
+        web=web,
     )
 
     if check_files:
@@ -326,5 +366,8 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         assert_file(s.controller.moveit.initial_positions, "controller.moveit.initial_positions")
         assert_file(s.controller.moveit.moveit_controllers, "controller.moveit.moveit_controllers")
         assert_file(s.controller.moveit.moveit_cpp, "controller.moveit.moveit_cpp")
+        if s.web.enabled:
+            assert_file(s.web.endpoints, "web.endpoints")
+            assert_file(s.web.joint_limits, "web.joint_limits")
 
     return s

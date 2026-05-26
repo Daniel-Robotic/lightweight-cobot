@@ -208,10 +208,13 @@ def _make_tf_handler(ep: EndpointDef):
     return handler
 
 
-def build_dynamic_router() -> APIRouter:
+def build_dynamic_router(
+    endpoints_path: str | None = None,
+    joint_limits_path: str | None = None,
+) -> APIRouter:
     """Читает api_endpoints.yaml и joint_limits.yaml, возвращает готовый APIRouter."""
-    endpoints = load_api_config()
-    joint_limits = load_joint_limits()
+    endpoints = load_api_config(path=endpoints_path)
+    joint_limits = load_joint_limits(path=joint_limits_path)
 
     router = APIRouter()
 

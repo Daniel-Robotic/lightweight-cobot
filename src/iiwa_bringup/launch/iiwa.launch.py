@@ -278,6 +278,23 @@ def _runtime_setup(context, *args, **kwargs):
 
         setup += [foxglove_bridge]
 
+    if settings.web.enabled:
+        web_server = Node(
+            package="iiwa_web",
+            executable="iiwa_web_server",
+            output="screen",
+            name="iiwa_web_server",
+            parameters=[{
+                "host": settings.web.host,
+                "port": settings.web.port,
+                "endpoints_path": settings.web.endpoints,
+                "joint_limits_path": settings.web.joint_limits,
+                "use_sim_time": use_sim_time,
+            }],
+        )
+
+        setup += [web_server]
+
     return setup
 
 def generate_launch_description():

@@ -11,6 +11,11 @@ class CobotWebNode(Node):
     def __init__(self):
         super().__init__('cobot_web_node')
 
+        self.declare_parameter('host', '0.0.0.0')
+        self.declare_parameter('port', 8007)
+        self.declare_parameter('endpoints_path', '')
+        self.declare_parameter('joint_limits_path', '')
+
         self._topic_cache: dict = {}
         self._pub_registry: dict = {}
         self._service_clients: dict = {}
@@ -106,11 +111,16 @@ class CobotWebNode(Node):
 
 _bridge: CobotWebNode = None
 
+
+def set_bridge(node: CobotWebNode) -> None:
+    global _bridge
+    _bridge = node
+
+
 def init_ros_node() -> None:
     global _bridge
     rclpy.init()
     _bridge = CobotWebNode()
-    
     thread = threading.Thread(target=rclpy.spin, args=(_bridge,), daemon=True)
     thread.start()
 

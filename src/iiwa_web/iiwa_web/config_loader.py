@@ -65,36 +65,39 @@ def _parse_joint_limits_data(data: dict) -> tuple[list[str], list[tuple[float, f
 
 
 def load_joint_names(
+    path: str | None = None,
     package: str = "iiwa_config",
     relative: str = "config/moveit/joint_limits.yaml",
 ) -> list[str]:
     """Возвращает упорядоченный список имён суставов из joint_limits.yaml."""
-    path = _resolve_path(package, relative)
-    with open(path) as f:
+    resolved = Path(path) if path else _resolve_path(package, relative)
+    with open(resolved) as f:
         data = yaml.safe_load(f)
     names, _ = _parse_joint_limits_data(data)
     return names
 
 
 def load_joint_limits(
+    path: str | None = None,
     package: str = "iiwa_config",
     relative: str = "config/moveit/joint_limits.yaml",
 ) -> list[tuple[float, float]]:
     """Возвращает список (min, max) для каждого сустава по порядку joint1..jointN."""
-    path = _resolve_path(package, relative)
-    with open(path) as f:
+    resolved = Path(path) if path else _resolve_path(package, relative)
+    with open(resolved) as f:
         data = yaml.safe_load(f)
     _, limits = _parse_joint_limits_data(data)
     return limits
 
 
 def load_api_config(
+    path: str | None = None,
     package: str = "iiwa_config",
     relative: str = "config/api_endpoints.yaml",
 ) -> list[EndpointDef]:
     """Загружает описания эндпоинтов из YAML и возвращает список EndpointDef."""
-    path = _resolve_path(package, relative)
-    with open(path) as f:
+    resolved = Path(path) if path else _resolve_path(package, relative)
+    with open(resolved) as f:
         data = yaml.safe_load(f)
 
     endpoints: list[EndpointDef] = []

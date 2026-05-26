@@ -43,6 +43,13 @@ planning:
   default_planner: "ompl"     # Планировщик по умолчанию
   planning_attempts: 3        # Число попыток планирования
 
+web:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8007
+  endpoints: pkg://iiwa_config/config/api_endpoints.yaml
+  joint_limits: pkg://iiwa_config/config/moveit/joint_limits.yaml
+
 foxglove:
   enabled: true  # Запускать ли foxglove_bridge вместе с роботом
   port: 8765 # WebSocket-порт, к которому подключается Foxglove Studio (по умолчанию 8765)

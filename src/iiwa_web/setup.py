@@ -14,7 +14,8 @@ setup(
     install_requires=[
         'setuptools',
         'fastapi',
-        'uvicorn[standard]'
+        'uvicorn[standard]',
+        'python-multipart',
     ],
     zip_safe=True,
     maintainer='daniel',
