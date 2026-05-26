@@ -1,0 +1,132 @@
+endpoints:
+
+  - path: /robot/joint_states
+    method: GET
+    type: topic
+    ros_name: /joint_states
+    msg_type: sensor_msgs/msg/JointState
+    summary: "Текущее состояние суставов"
+    description: "Возвращает имена, позиции, скорости и усилия всех суставов."
+    tags: [robot]
+    fields: [name, position, velocity, effort]
+    timeout: 2.0
+    enabled: true
+
+  - path: /robot/stop
+    method: POST
+    type: service
+    ros_name: cobot/stop
+    msg_type: std_srvs/srv/Trigger
+    summary: "[Service] Немедленно остановить движение"
+    description: "Вызывает сервис экстренной остановки — движение прерывается немедленно."
+    tags: [robot]
+    response_fields: [success, message]
+    timeout: 5.0
+    enabled: true
+
+  - path: /robot/move/named
+    method: POST
+    type: service
+    ros_name: cobot/move_to_named
+    msg_type: iiwa_msgs/srv/MoveToNamedPose
+    summary: "[Action] Переместить в именованную позу из SRDF"
+    description: "Перемещает робота в позу, определённую по имени в SRDF-файле (например, home, work)."
+    tags: [motion]
+    timeout: 30.0
+    request_fields:
+      - name: name
+        type: string
+        required: true
+        description: "Имя позиции из SRDF"
+      - name: speed
+        type: float
+        default: 0.1
+        min: 0.01
+        max: 1.0
+        description: "Скорость [0.01–1.0]"
+      - name: accel_scale
+        type: float
+        default: 0.0
+        min: 0.0
+        max: 1.0
+        description: "Масштаб ускорения (0 = равно speed)"
+    response_fields: [success, message]
+    enabled: true
+
+  - path: /robot/move/pose
+    method: POST
+    type: action
+    ros_name: cobot/move_to_pose
+    msg_type: iiwa_msgs/action/MoveToPose
+    summary: "[Action] Переместить в декартову позу"
+    description: "Перемещает TCP робота в заданную декартову позицию и ориентацию."
+    tags: [motion]
+    timeout: 30.0
+    request_fields:
+      - name: x
+        type: float
+        required: true
+        description: "Позиция X в метрах"
+      - name: y
+        type: float
+        required: true
+        description: "Позиция Y в метрах"
+      - name: z
+        type: float
+        required: true
+        description: "Позиция Z в метрах"
+      - name: a
+        type: float
+        default: 0.0
+        description: "Угол A (ZYX Эйлер, KUKA ABC) в радианах"
+      - name: b
+        type: float
+        default: 0.0
+        description: "Угол B в радианах"
+      - name: c
+        type: float
+        default: 0.0
+        description: "Угол C в радианах"
+      - name: speed
+        type: float
+        default: 0.1
+        min: 0.01
+        max: 1.0
+        description: "Скорость [0.01–1.0]"
+      - name: planner
+        type: string
+        default: "ptp"
+        choices: [ompl, ptp, lin, circ, chomp]
+        normalize: lower
+        description: "Планировщик движения: ompl, ptp, lin, circ, chomp"
+      - name: frame_id
+        type: string
+        default: ""
+        description: "Целевой фрейм (пусто = default_frame)"
+    response_fields: [success, message]
+    enabled: true
+
+  - path: /robot/move/joints
+    method: POST
+    type: action
+    ros_name: cobot/move_to_joints
+    msg_type: iiwa_msgs/action/MoveToJoints
+    summary: "[Action] Переместить в позиции суставов"
+    description: "Перемещает все суставы робота в заданные угловые позиции (радианы). Лимиты читаются из joint_limits.yaml."
+    tags: [motion]
+    timeout: 30.0
+    request_fields:
+      - name: joints
+        type: float_array
+        required: true
+        length: 7
+        joint_limits: true
+        description: "Позиции суставов в радианах [j1..j7]"
+      - name: speed
+        type: float
+        default: 0.1
+        min: 0.01
+        max: 1.0
+        description: "Скорость [0.01–1.0]"
+    response_fields: [success, message]
+    enabled: true

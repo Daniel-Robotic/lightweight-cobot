@@ -2,7 +2,7 @@ import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from .ros_node import init_ros_node
-from . import robot
+from .dynamic_router import build_dynamic_router
 
 
 @asynccontextmanager
@@ -12,7 +12,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-app.include_router(robot.router)
+app.include_router(build_dynamic_router())
 
 
 def main():
