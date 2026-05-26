@@ -43,5 +43,16 @@ install(PROGRAMS
   RENAME move_to_pose_server
 )
 
+install(PROGRAMS
+  scripts/motion_sequence_runner.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME motion_sequence_runner
+)
+
+install(FILES
+  scripts/motion_sequence_config.json
+  DESTINATION share/${PROJECT_NAME}
+)
+
 
 ament_package()

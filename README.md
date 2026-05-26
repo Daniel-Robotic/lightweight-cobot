@@ -201,30 +201,14 @@ ros2 service call /iiwa/stop std_srvs/srv/Trigger "{}"
 
 Примеры использования `test_motion_sequence`:
 ```bash
-# Просто выполнить последовательность без записи
-ros2 run iiwa_utils test_motion_sequence \
-  --ros-args -p n_iterations:=3 \
-             -p delay_between_iterations:=5.0
-
-# Записать все доступные топики в bag
-ros2 run iiwa_utils test_motion_sequence \
-  --ros-args -p n_iterations:=5 \
-             -p delay_between_iterations:=5.0 \
-             -p bag_path:=/tmp/iiwa_session
-
-# Записать конкретные топики
-ros2 run iiwa_utils test_motion_sequence \
-  --ros-args -p n_iterations:=5 \
-             -p delay_between_iterations:=5.0 \
-             -p bag_path:=/tmp/iiwa_session \
-             -p topics:="['/joint_states', '/d455_top/color/image_raw', '/tf']"
-
-# Использовать свой конфиг поз
-ros2 run iiwa_utils test_motion_sequence \
-  --ros-args -p config_path:=/path/to/my_config.json \
-             -p n_iterations:=1 \
-             -p delay_between_iterations:=3.0 \
-             -p bag_path:=/tmp/iiwa_session
+ros2 run iiwa_planning motion_sequence_runner \
+  --ros-args \
+  -p config_path:=/path/to/config.json \
+  -p n_iterations:=3 \
+  -p delay_between_iterations:=5.0 \
+  -p bag_path:=/tmp/my_bag \
+  -p joints_action:=my_ns/move_to_joints \
+  -p pose_action:=my_ns/move_to_pose
 
 ```
 

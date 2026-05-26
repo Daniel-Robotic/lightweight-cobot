@@ -10,7 +10,6 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name, ['iiwa_utils/motion_config.json']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -22,7 +21,6 @@ setup(
         'console_scripts': [
             "object_spawner = iiwa_utils.object_spawner:main",
             "camera_spawner = iiwa_utils.camera_spawner:main",
-            "test_motion_sequence = iiwa_utils.test_motion_sequence:main",
         ],
     },
 )
