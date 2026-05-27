@@ -12,3 +12,9 @@ python3-multipart:
   ubuntu:
     pip:
       packages: [python-multipart]
+
+python3-fastmcp:
+  ubuntu:
+    pip:
+      packages: [fastmcp]
+

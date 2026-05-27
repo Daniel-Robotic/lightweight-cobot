@@ -291,3 +291,9 @@ docker run -it --rm --network host evilfisru/lwa:jazzy-lwa7-noble
 # dev - src остаётся для отладки
 `docker build --build-arg BUILD_TYPE=dev -t my-image .`
 ```
+
+```
+# URL для доступа к MCP LLM
+http://localhost:8007/mcp/mcp
+
+```

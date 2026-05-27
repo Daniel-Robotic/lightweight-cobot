@@ -16,6 +16,7 @@ setup(
         'fastapi',
         'uvicorn[standard]',
         'python-multipart',
+        'fastmcp',
     ],
     zip_safe=True,
     maintainer='daniel',

@@ -30,7 +30,7 @@ endpoints:
     msg_type: std_srvs/srv/Trigger
     summary: "Немедленно остановить движение"
     description: "Вызывает сервис экстренной остановки — движение прерывается немедленно."
-    tags: [robot]
+    tags: [motion]
     response_fields: [success, message]
     timeout: 5.0
     enabled: true
