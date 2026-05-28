@@ -176,6 +176,61 @@ def _quat_to_euler_zyx(x: float, y: float, z: float, w: float) -> tuple[float, f
     return roll, pitch, yaw  # C, B, A
 
 
+def _make_fk_handler(ep: EndpointDef):
+    ros_name = ep.ros_name
+    fk_link = ep.child_frame
+    base_frame = ep.parent_frame
+    timeout = ep.timeout
+
+    def handler():
+        from moveit_msgs.srv import GetPositionFK
+
+        bridge = get_bridge()
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            js = bridge.get_latest("/joint_states")
+            if js is not None:
+                break
+            time.sleep(_POLL_INTERVAL)
+        else:
+            raise HTTPException(503, "Timeout waiting for /joint_states")
+
+        req = GetPositionFK.Request()
+        req.header.frame_id = base_frame
+        req.fk_link_names = [fk_link]
+        req.robot_state.joint_state = js
+
+        try:
+            resp = bridge.call_service(GetPositionFK, ros_name, req, timeout)
+        except (RuntimeError, TimeoutError) as e:
+            raise HTTPException(503, str(e))
+
+        if not resp.pose_stamped:
+            raise HTTPException(503, f"FK вернул пустой результат для '{fk_link}'")
+
+        pose = resp.pose_stamped[0].pose
+        t = pose.position
+        r = pose.orientation
+        roll, pitch, yaw = _quat_to_euler_zyx(r.x, r.y, r.z, r.w)
+
+        return {
+            "position": {"x": t.x, "y": t.y, "z": t.z},
+            "orientation": {
+                "quaternion": {"x": r.x, "y": r.y, "z": r.z, "w": r.w},
+                "euler_rad": {"a": yaw, "b": pitch, "c": roll},
+                "euler_deg": {
+                    "a": math.degrees(yaw),
+                    "b": math.degrees(pitch),
+                    "c": math.degrees(roll),
+                },
+            },
+            "frame": {"parent": base_frame, "child": fk_link},
+        }
+
+    return handler
+
+
 def _make_tf_handler(ep: EndpointDef):
     parent = ep.parent_frame
     child = ep.child_frame
@@ -238,13 +293,20 @@ def build_dynamic_router(
             if not ep.parent_frame or not ep.child_frame:
                 raise ValueError(f"TF-эндпоинт '{ep.path}' требует parent_frame и child_frame")
             handler = _make_tf_handler(ep)
+        elif ep.type == "fk":
+            if not ep.ros_name or not ep.parent_frame or not ep.child_frame:
+                raise ValueError(f"FK-эндпоинт '{ep.path}' требует ros_name, parent_frame и child_frame")
+            handler = _make_fk_handler(ep)
         else:
             raise ValueError(f"Неизвестный тип эндпоинта: '{ep.type}'")
+
+        operation_id = ep.path.strip("/").replace("/", "_") + "_" + ep.method.lower()
 
         router.add_api_route(
             ep.path,
             handler,
             methods=[ep.method],
+            operation_id=operation_id,
             summary=ep.summary or ep.description,
             description=ep.description,
             tags=ep.tags,

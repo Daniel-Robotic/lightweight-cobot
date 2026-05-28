@@ -14,13 +14,14 @@ endpoints:
 
   - path: /robot/pose
     method: GET
-    type: tf
+    type: fk
+    ros_name: /compute_fk
     parent_frame: base_link
     child_frame: tcp
     summary: "Текущая декартова поза TCP"
-    description: "Позиция (м) и ориентация TCP относительно base_link через TF2. Углы Эйлера в конвенции KUKA ABC (ZYX): A=рыскание, B=тангаж, C=крен."
+    description: "Позиция (м) и ориентация TCP относительно base_link через /compute_fk. Углы Эйлера в конвенции KUKA ABC (ZYX): A=рыскание, B=тангаж, C=крен."
     tags: [robot]
-    timeout: 1.0
+    timeout: 5.0
     enabled: true
 
   - path: /robot/stop
