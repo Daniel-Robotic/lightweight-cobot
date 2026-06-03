@@ -36,6 +36,9 @@ controller:
     moveit_cpp: pkg://iiwa_config/config/moveit/moveit_cpp.yaml
 
 
+tool:
+  active: "patron"            # Активный инструмент: none | patron | ... (из tools.yaml)
+
 planning:
   pose_link: "tcp"            # TCP-линк для декартовых целей
   planning_group: "iiwa_arm"  # Группа планирования из SRDF

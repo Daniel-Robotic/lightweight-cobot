@@ -1,0 +1,64 @@
+# Реестр инструментов / захватов для KUKA iiwa7.
+#
+# Поля каждого инструмента:
+#   label    — название, отображаемое в меню robot-setup
+#   xacro    — путь до xacro-файла инструмента (xacro $(find ...) синтаксис);
+#              null = без захвата (голый фланец)
+#   tip_link — конец кинематической цепочки в SRDF (<chain tip_link="..."/>)
+#   tcp_link — фрейм TCP для Декартовых целей (pose_link в planning)
+#   collisions — пары disable_collisions специфичные для этого инструмента;
+#                базовые пары робота (link1..link7) добавляются автоматически
+
+tools:
+
+  none:
+    label: "Без захвата"
+    xacro: null
+    tip_link: "link_ee"
+    tcp_link: "link_ee"
+    collisions: []
+
+  patron:
+    label: "patron"
+    xacro: "$(find iiwa_description)/urdf/tools/patron.xacro"
+    tip_link: "patron"
+    tcp_link: "tcp"
+    collisions:
+      - [link1, patron, Never]
+      - [link2, patron, Never]
+      - [link3, patron, Never]
+      - [link4, patron, Never]
+      - [link5, patron, Never]
+      - [link6, patron, Never]
+      - [link7, patron, Adjacent]
+      - [link7, camera_holder, Adjacent]
+      - [link6, camera_holder, Never]
+      - [link5, camera_holder, Never]
+      - [link4, camera_holder, Never]
+      - [link3, camera_holder, Never]
+      - [link2, camera_holder, Never]
+      - [link1, camera_holder, Never]
+      - [base_link, camera_holder, Never]
+      - [camera_holder, patron, Adjacent]
+      - [camera_holder, camera_corner, Adjacent]
+      - [camera_corner, patron, Never]
+      - [camera_corner, link7, Never]
+      - [camera_corner, link6, Never]
+      - [camera_corner, link5, Never]
+      - [camera_corner, link4, Never]
+      - [camera_corner, link3, Never]
+      - [camera_corner, link2, Never]
+      - [camera_corner, link1, Never]
+      - [camera_corner, base_link, Never]
+      - [camera_corner, camera_hand, Adjacent]
+      - [camera_hand, camera_holder, Never]
+      - [camera_hand, patron, Never]
+      - [camera_hand, link7, Never]
+      - [camera_hand, link6, Never]
+      - [camera_hand, link5, Never]
+      - [camera_hand, link4, Never]
+      - [camera_hand, link3, Never]
+      - [camera_hand, link2, Never]
+      - [camera_hand, link1, Never]
+      - [camera_hand, base_link, Never]
+

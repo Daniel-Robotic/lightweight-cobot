@@ -18,7 +18,7 @@ digital_twin:
     controller_timer: "50"
 
     cameras:
-      - pkg://iiwa_config/config/cameras/d455_top.yaml
+    - pkg://iiwa_config/config/cameras/d455_top.yaml
 
   rviz:
     config: pkg://iiwa_config/config/rviz/rviz_moveit.rviz
@@ -35,6 +35,9 @@ controller:
     moveit_controllers: pkg://iiwa_config/config/moveit/moveit_controllers.yaml
     moveit_cpp: pkg://iiwa_config/config/moveit/moveit_cpp.yaml
 
+
+tool:
+  active: "patron"            # Активный инструмент: none | patron | ... (из tools.yaml)
 
 planning:
   pose_link: "tcp"            # TCP-линк для декартовых целей
@@ -68,12 +71,12 @@ foxglove:
   send_buffer_limit: 10000000 # Максимальный размер буфера отправки в байтах (защита от OOM при медленном клиенте)
   use_sim_time: false # Использовать симуляционное время /clock вместо системного
   capabilities:  # Список возможностей, открытых клиенту
-    - clientPublish
-    - parameters
-    - parametersSubscribe
-    - services
-    - connectionGraph
-    - assets
+  - clientPublish
+  - parameters
+  - parametersSubscribe
+  - services
+  - connectionGraph
+  - assets
   include_hidden: false # Показывать клиенту скрытые топики и сервисы (начинаются с _)
   asset_uri_allowlist: ['^package://(?:[-\w%]+/)*[-\w%.]+\.(?:dae|fbx|glb|gltf|jpeg|jpg|mtl|obj|png|stl|tif|tiff|urdf|webp|xacro)$'] # Regex-список URI вида package://..., из которых bridge разрешает отдавать файлы-ассеты (URDF, mesh и т.п.)
   ignore_unresponsive_param_nodes: true # Не падать, если нода не отвечает на запросы параметров (защита от зависания при старте)

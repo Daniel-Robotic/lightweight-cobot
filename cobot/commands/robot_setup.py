@@ -17,6 +17,12 @@ from cobot.tui import SCREEN_CSS, InputScreen, PickScreen
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 _CONFIG_PATH = _PROJECT_DIR / "cobot-setting.yaml"
 
+_TOOLS_YAML = _PROJECT_DIR / "src" / "iiwa_config" / "config" / "tools.yaml"
+_TOOL_ACTIVE_XACRO = (
+    _PROJECT_DIR / "src" / "iiwa_description" / "urdf" / "tools" / "tool_active.xacro"
+)
+_SRDF_PATH = _PROJECT_DIR / "src" / "iiwa_config" / "config" / "moveit" / "iiwa7.srdf"
+
 # Use ruamel.yaml instead of PyYAML so comments and formatting in the config file are preserved.
 # Используем ruamel.yaml вместо PyYAML, чтобы комментарии и форматирование в конфиге сохранялись.
 _yaml = YAML()
@@ -48,6 +54,41 @@ class _Block:
     fields: List[_Field]
 
 
+def _load_tools_registry() -> dict:
+    """Читает tools.yaml и возвращает словарь инструментов."""
+    if not _TOOLS_YAML.exists():
+        return {}
+    _y = YAML()
+    with open(_TOOLS_YAML, encoding="utf-8") as f:
+        data = _y.load(f)
+    return dict(data.get("tools", {}))
+
+
+def _build_tool_block() -> Optional[_Block]:
+    """Строит блок выбора инструмента из реестра tools.yaml.
+    Возвращает None если реестр недоступен."""
+    registry = _load_tools_registry()
+    if not registry:
+        return None
+    options = list(registry.keys())
+    labels = "  |  ".join(
+        f"{name}: {registry[name].get('label', '')}" for name in options
+    )
+    return _Block(
+        yaml_key="tool",
+        title="Tool / End-effector",
+        fields=[
+            _Field(
+                "active",
+                "Выберите активный инструмент:",
+                options[0],
+                note=labels,
+                options=options,
+            ),
+        ],
+    )
+
+
 # All configuration blocks. Each block maps to a top-level key in cobot-setting.yaml.
 # Все блоки конфигурации. Каждый блок соответствует ключу верхнего уровня в cobot-setting.yaml.
 _BLOCKS: List[_Block] = [
@@ -75,8 +116,6 @@ _BLOCKS: List[_Block] = [
         yaml_key="planning",
         title="MoveIt planning",
         fields=[
-            _Field("pose_link", "TCP link name:", "tcp",
-                   note="Link used as the end-effector for Cartesian goals (defined in URDF/SRDF)"),
             _Field("planning_group", "Planning group:", "iiwa_arm",
                    note="MoveIt planning group as defined in the SRDF"),
             _Field("default_frame", "Default reference frame:", "base_link"),
@@ -204,14 +243,15 @@ class _Wizard(App[None]):
     """
     CSS = SCREEN_CSS
 
-    def __init__(self, data: Any):
+    def __init__(self, data: Any, extra_blocks: Optional[List[_Block]] = None):
         super().__init__()
         self._data = data
-        self._blocks = list(_BLOCKS)
+        self._blocks = list(extra_blocks or []) + list(_BLOCKS)
         self._block_idx = 0
         self._field_idx = 0
         self._current_block: Optional[_Block] = None
         self._pending_fields: List[_Field] = []
+        self.did_save = False
 
     def on_mount(self) -> None:
         self._next_block()
@@ -221,6 +261,7 @@ class _Wizard(App[None]):
             # All blocks done - save and show the confirmation screen.
             # Все блоки пройдены - сохраняем и показываем экран подтверждения.
             _save_config(self._data)
+            self.did_save = True
             self.push_screen(_SavedScreen(), lambda _: self.exit())
             return
         block = self._blocks[self._block_idx]
@@ -317,10 +358,60 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def run(args: argparse.Namespace) -> None:
+    from rich.console import Console
+    console = Console()
+
     if not _CONFIG_PATH.exists():
-        from rich.console import Console
-        Console().print(f"[red]Config not found:[/red] {_CONFIG_PATH}")
+        console.print(f"[red]Config not found:[/red] {_CONFIG_PATH}")
         sys.exit(1)
 
     data = _load_config()
-    _Wizard(data).run()
+
+    # Убеждаемся что секция tool существует в данных (для старых конфигов)
+    if "tool" not in data:
+        data["tool"] = {"active": "patron"}
+
+    tool_block = _build_tool_block()
+    extra = [tool_block] if tool_block else []
+
+    wizard = _Wizard(data, extra_blocks=extra)
+    wizard.run()
+
+    if not wizard.did_save:
+        return
+
+    # Применяем выбранный инструмент: перезаписываем tool_active.xacro и iiwa7.srdf
+    active_tool = str(data["tool"].get("active", "patron"))
+    if _TOOLS_YAML.exists():
+        try:
+            registry = _load_tools_registry()
+            if active_tool not in registry:
+                raise ValueError(
+                    f"Unknown tool '{active_tool}'. Available: {', '.join(registry)}"
+                )
+            tool_cfg = dict(registry[active_tool])
+
+            import sys as _sys
+            _sys.path.insert(0, str(_PROJECT_DIR / "src" / "iiwa_utils"))
+            from iiwa_utils.tool_manager import apply_tool
+            apply_tool(
+                tool_cfg=tool_cfg,
+                xacro_out_path=_TOOL_ACTIVE_XACRO,
+                srdf_path=_SRDF_PATH,
+            )
+
+            # Синхронизируем planning.pose_link с tcp_link выбранного инструмента
+            tcp_link = tool_cfg.get("tcp_link", "link_ee")
+            if "planning" in data:
+                data["planning"]["pose_link"] = tcp_link
+                _save_config(data)
+
+            console.print(
+                f"[green]✓[/green] Tool [bold]{active_tool}[/bold] applied: "
+                f"tool_active.xacro, iiwa7.srdf updated, "
+                f"planning.pose_link → [bold]{tcp_link}[/bold]."
+            )
+        except Exception as exc:
+            console.print(f"[red]Tool apply failed:[/red] {exc}")
+    else:
+        console.print(f"[yellow]tools.yaml not found at {_TOOLS_YAML} — skipping tool apply[/yellow]")

@@ -66,6 +66,11 @@ class PlanningCfg:
 
 
 @dataclass(frozen=True)
+class ToolCfg:
+    active: str   # ключ из tools.yaml: "none" | "patron" | ...
+
+
+@dataclass(frozen=True)
 class WebCfg:
     enabled: bool
     host: str
@@ -108,6 +113,7 @@ class Settings:
     digital_twin: DigitalTwinCfg
     controller: ControllerCfg
     planning: PlanningCfg
+    tool: ToolCfg
     foxglove: FoxgloveCfg
     web: WebCfg
 
@@ -336,6 +342,12 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         planning_attempts=int(planning_raw.get("planning_attempts", 3)),
     )
 
+    # tool
+    tool_raw = raw.get("tool", {})
+    tool = ToolCfg(
+        active=str(tool_raw.get("active", "patron")),
+    )
+
     # foxglove
     foxglove = _parse_foxglove(raw.get("foxglove"))
 
@@ -347,6 +359,7 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         digital_twin=digital_twin,
         controller=controller,
         planning=planning,
+        tool=tool,
         foxglove=foxglove,
         web=web,
     )
