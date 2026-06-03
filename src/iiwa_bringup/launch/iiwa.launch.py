@@ -1,40 +1,26 @@
-import json
-from dataclasses import asdict
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from launch import LaunchDescription
-from launch.actions import (
-    DeclareLaunchArgument,
-    EmitEvent,
-    IncludeLaunchDescription,
-    OpaqueFunction,
-    RegisterEventHandler,
-)
-from launch.conditions import IfCondition
-from launch.event_handlers import OnProcessExit
-from launch.events import Shutdown
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-from moveit_configs_utils import MoveItConfigsBuilder
-from webots_ros2_driver.webots_controller import WebotsController
 
 from iiwa_utils import converter, setting_loader
-from iiwa_utils.camera_spawner import load_camera_config, build_ros_urdf  # type: ignore
 
-
-def _foxglove_params(fg, use_sim_time: bool) -> dict:
-    params = asdict(fg)
-    params.pop("enabled")
-    params["use_sim_time"] = use_sim_time
-
-    return params
+from supported.moveit_nodes import make_moveit_nodes
+from supported.rviz_nodes import make_rviz_nodes
+from supported.simulation_nodes import make_simulation_nodes
+from supported.optional_nodes import make_foxglove_node, make_web_server_node
 
 
 def _runtime_setup(context, *args, **kwargs):
     setup = []
 
-    # Настройка параметров
     simulate = LaunchConfiguration("simulate").perform(context) in ("true", "1", "yes")
 
     settings = setting_loader.build_settings(
@@ -52,13 +38,13 @@ def _runtime_setup(context, *args, **kwargs):
     )
 
     description_path = settings.robot.description
+    use_sim_time = simulate
 
     if simulate:
         xacro_args = {
             "initial_positions_file": settings.controller.moveit.initial_positions,
             "simulate": "true",
         }
-        use_sim_time = True
     else:
         xacro_args = {
             "initial_positions_file": settings.controller.moveit.initial_positions,
@@ -67,7 +53,6 @@ def _runtime_setup(context, *args, **kwargs):
             "simulate": "false",
             "joint_position_tau": str(settings.robot.joint_position_tau),
         }
-        use_sim_time = False
 
     robot_description = converter.load_robot_description(
         model_path=description_path,
@@ -75,8 +60,8 @@ def _runtime_setup(context, *args, **kwargs):
         xacro_args=xacro_args,
     )
 
-    # Вызов нод
-    rsp_node = Node(
+    # Robot State Publisher
+    setup.append(Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
         name="robot_state_publisher",
@@ -85,22 +70,15 @@ def _runtime_setup(context, *args, **kwargs):
             {"robot_description": robot_description},
             {"use_sim_time": use_sim_time},
         ],
-    )
+    ))
 
-    setup += [rsp_node]
-
-    # webots spawn
+    # Webots симуляция
     if simulate:
-        webots_launch = IncludeLaunchDescription(
+        setup.append(IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
-                PathJoinSubstitution(
-                    [
-                        FindPackageShare("iiwa_bringup"),
-                        "launch",
-                        "supported",
-                        "webots_spawn.launch.py",
-                    ]
-                )
+                PathJoinSubstitution([
+                    FindPackageShare("iiwa_bringup"), "launch", "supported", "webots_spawn.launch.py",
+                ])
             ),
             launch_arguments={
                 "robot_name": str(settings.robot.name),
@@ -112,11 +90,11 @@ def _runtime_setup(context, *args, **kwargs):
                 "controller": str(settings.controller.controller_path),
                 "initial_positions_file": str(settings.controller.moveit.initial_positions),
             }.items(),
-        )
+        ))
 
-        setup += [webots_launch]
+        setup += make_simulation_nodes(settings)
 
-    # Controller launch
+    # Controllers
     if simulate:
         controller_args = {
             "robot_name": settings.robot.name,
@@ -128,180 +106,52 @@ def _runtime_setup(context, *args, **kwargs):
             "rotation": str(settings.digital_twin.webots.rotation),
             "controller_timer": str(settings.digital_twin.webots.controller_timer),
         }
-
-        if settings.digital_twin.webots.cameras:
-            # Спавн камеры
-            camera_spawner_node = Node(
-                package="iiwa_utils",
-                executable="camera_spawner",
-                name="camera_spawner",
-                output="screen",
-                parameters=[{
-                    "camera_configs": json.dumps(settings.digital_twin.webots.cameras)
-                }],
-            )
-            setup.append(camera_spawner_node)
-
-            # WebotsController для каждой камеры
-            for cam_path in settings.digital_twin.webots.cameras:
-                cam_cfg = load_camera_config(cam_path)
-                urdf = build_ros_urdf(cam_cfg)
-
-                camera_controller = WebotsController(
-                    robot_name=f"{cam_cfg.name}_robot",
-                    parameters=[{
-                        "robot_description": urdf,
-                        "use_sim_time": True,
-                        "set_robot_state_publisher": False,
-                    }],
-                    respawn=True,
-                )
-                setup.append(camera_controller)
-
     else:
         controller_args = {
             "robot_name": settings.robot.name,
             "description": description_path,
             "initial_positions_file": settings.controller.moveit.initial_positions,
             "controller_path": settings.controller.controller_path,
+            "simulate": "false",
             "transform": str(settings.digital_twin.webots.transform),
             "rotation": str(settings.digital_twin.webots.rotation),
-            "simulate": "false",
             "controller_timer": str(settings.digital_twin.webots.controller_timer),
             "fri_cycle_ms": str(settings.robot.fri_cycle_ms),
             "joint_position_tau": str(settings.robot.joint_position_tau),
             "controller": settings.robot.active_controller,
         }
 
-    controllers_launch = IncludeLaunchDescription(
+    setup.append(IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution(
-                [
-                    FindPackageShare("iiwa_bringup"),
-                    "launch",
-                    "supported",
-                    "controllers.launch.py",
-                ]
-            )
+            PathJoinSubstitution([
+                FindPackageShare("iiwa_bringup"), "launch", "supported", "controllers.launch.py",
+            ])
         ),
         launch_arguments={k: str(v) for k, v in controller_args.items()}.items(),
-    )
+    ))
 
-    # Moveit launch
-    moveit_configs = (
-        MoveItConfigsBuilder("iiwa7", package_name="iiwa_config")
-        .robot_description(
-            file_path=description_path,
-            mappings={
-                "initial_positions_file": settings.controller.moveit.initial_positions
-            },
-        )
-        .robot_description_semantic(file_path=settings.controller.moveit.srdf)
-        .robot_description_kinematics(file_path=settings.controller.moveit.kinematics)
-        .joint_limits(file_path=settings.controller.moveit.joint_limits)
-        .pilz_cartesian_limits(file_path=settings.controller.moveit.pilz_limits)
-        .trajectory_execution(file_path=settings.controller.moveit.moveit_controllers)
-        .moveit_cpp(file_path=settings.controller.moveit.moveit_cpp)
-        .to_moveit_configs()
-    )
+    # MoveIt
+    moveit_configs, moveit_nodes = make_moveit_nodes(settings, robot_description, use_sim_time)
+    setup += moveit_nodes
 
-    move_group = Node(
-        package="moveit_ros_move_group",
-        executable="move_group",
-        output="screen",
-        parameters=[
-            moveit_configs.to_dict(),
-            {"robot_description": robot_description},
-            {"use_sim_time": use_sim_time},
-        ],
-    )
+    # RViz
+    setup += make_rviz_nodes(settings, moveit_configs, joint_limits_ros2, kinematics_ros2, use_sim_time)
 
-    move_to_pose_server = Node(
-        package="iiwa_planning",
-        executable="move_to_pose_server",
-        output="screen",
-        parameters=[
-            moveit_configs.to_dict(),
-            {"robot_description": robot_description},
-            {"use_sim_time": use_sim_time},
-            {
-                "pose_link": settings.planning.pose_link,
-                "planning_group": settings.planning.planning_group,
-                "default_frame": settings.planning.default_frame,
-                "default_planner": settings.planning.default_planner,
-                "planning_attempts": settings.planning.planning_attempts,
-            },
-        ],
-    )
-
-    # Rviz launch
-    rviz_launch = Node(
-        condition=IfCondition(LaunchConfiguration("rviz")),
-        package="rviz2",
-        executable="rviz2",
-        name="rviz2",
-        arguments=["-d", settings.digital_twin.rviz.config],
-        output="log",
-        parameters=[
-            moveit_configs.robot_description,
-            moveit_configs.robot_description_semantic,
-            moveit_configs.planning_pipelines,
-            joint_limits_ros2,
-            kinematics_ros2,
-            {"use_sim_time": use_sim_time},
-        ],
-    )
-
-    shutdown_on_rviz_exit = RegisterEventHandler(
-        OnProcessExit(
-            target_action=rviz_launch,
-            on_exit=[EmitEvent(event=Shutdown())],
-        )
-    )
-
-    setup += [
-        controllers_launch,
-        move_group,
-        move_to_pose_server,
-        rviz_launch,
-        shutdown_on_rviz_exit,
-    ]
-
+    # Опциональные сервисы
     if settings.foxglove.enabled:
-        foxglove_bridge = Node(
-            package="foxglove_bridge",
-            executable="foxglove_bridge",
-            output="screen",
-            name="foxglove_bridge",
-            parameters=[_foxglove_params(settings.foxglove, use_sim_time)]
-        )
-
-        setup += [foxglove_bridge]
+        setup.append(make_foxglove_node(settings, use_sim_time))
 
     if settings.web.enabled:
-        web_server = Node(
-            package="iiwa_web",
-            executable="iiwa_web_server",
-            output="screen",
-            name="iiwa_web_server",
-            parameters=[{
-                "host": settings.web.host,
-                "port": settings.web.port,
-                "endpoints_path": settings.web.endpoints,
-                "joint_limits_path": settings.web.joint_limits,
-                "use_sim_time": use_sim_time,
-            }],
-        )
-
-        setup += [web_server]
+        setup.append(make_web_server_node(settings, use_sim_time))
 
     return setup
+
 
 def generate_launch_description():
     declare_simulate = DeclareLaunchArgument(
         name="simulate",
         default_value="false",
-        description="true = Gazebo симуляция, false = реальный робот через FRI",
+        description="true = Webots симуляция, false = реальный робот через FRI",
     )
 
     declare_rviz = DeclareLaunchArgument(
@@ -318,12 +168,9 @@ def generate_launch_description():
         description="Путь к файлу настроек",
     )
 
-    runtime_setup = OpaqueFunction(function=_runtime_setup)
-
     return LaunchDescription([
         declare_simulate,
         declare_rviz,
         declare_setting,
-        runtime_setup,
+        OpaqueFunction(function=_runtime_setup),
     ])
-
