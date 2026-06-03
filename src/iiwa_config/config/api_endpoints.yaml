@@ -42,7 +42,7 @@ endpoints:
     ros_name: cobot/move_to_named
     msg_type: iiwa_msgs/srv/MoveToNamedPose
     summary: "Переместить в именованную позу из SRDF"
-    description: "Перемещает робота в позу, определённую по имени в SRDF-файле (например, home, work)."
+    description: "Перемещает робота в позу, определённую по имени в SRDF-файле. Список доступных имён и значения суставов для каждой позиции возвращает GET /robot/positions."
     tags: [motion]
     timeout: 30.0
     request_fields:

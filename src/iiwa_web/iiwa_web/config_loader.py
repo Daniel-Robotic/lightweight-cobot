@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -141,3 +142,50 @@ def load_api_config(
         ))
 
     return endpoints
+
+
+@dataclass
+class NamedPosition:
+    name: str
+    group: str
+    joints: dict[str, float]
+    description: str = ""
+
+
+def load_named_positions(
+    srdf_path: str | None = None,
+    meta_path: str | None = None,
+    package: str = "iiwa_config",
+    srdf_relative: str = "config/moveit/iiwa7.srdf",
+    meta_relative: str = "config/moveit/named_positions_meta.yaml",
+) -> list[NamedPosition]:
+    """Загружает именованные позиции из SRDF и объединяет с описаниями из YAML."""
+    resolved_srdf = Path(srdf_path) if srdf_path else _resolve_path(package, srdf_relative)
+    resolved_meta = Path(meta_path) if meta_path else _resolve_path(package, meta_relative)
+
+    tree = ET.parse(resolved_srdf)
+    root = tree.getroot()
+
+    descriptions: dict[str, str] = {}
+    if resolved_meta.exists():
+        with open(resolved_meta) as f:
+            meta = yaml.safe_load(f) or {}
+        for name, attrs in meta.get("named_positions", {}).items():
+            descriptions[name] = attrs.get("description", "")
+
+    positions: list[NamedPosition] = []
+    for gs in root.findall("group_state"):
+        name = gs.get("name", "")
+        group = gs.get("group", "")
+        joints = {
+            j.get("name"): float(j.get("value", 0))
+            for j in gs.findall("joint")
+        }
+        positions.append(NamedPosition(
+            name=name,
+            group=group,
+            joints=joints,
+            description=descriptions.get(name, ""),
+        ))
+
+    return positions

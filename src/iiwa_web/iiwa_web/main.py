@@ -9,7 +9,7 @@ from sensor_msgs.msg import JointState
 
 from .dynamic_router import build_dynamic_router
 from .ros_node import CobotWebNode, get_bridge, set_bridge
-from . import runner, trajectory
+from . import runner, trajectory, positions
 
 
 def main():
@@ -23,10 +23,13 @@ def main():
     endpoints_path = node.get_parameter('endpoints_path').value or None
     joint_limits_path = node.get_parameter('joint_limits_path').value or None
 
+    positions.init()
+
     _schema_app = FastAPI()
     _schema_app.include_router(build_dynamic_router(endpoints_path, joint_limits_path))
     _schema_app.include_router(runner.router)
     _schema_app.include_router(trajectory.router)
+    _schema_app.include_router(positions.router)
 
     mcp = FastMCP.from_fastapi(app=_schema_app)
     mcp_http = mcp.http_app(path='/mcp')
@@ -41,6 +44,7 @@ def main():
     app.include_router(build_dynamic_router(endpoints_path, joint_limits_path))
     app.include_router(runner.router)
     app.include_router(trajectory.router)
+    app.include_router(positions.router)
     app.mount("/mcp", mcp_http)
 
     uvicorn.run(app, host=host, port=port)
