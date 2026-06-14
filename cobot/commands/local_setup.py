@@ -196,6 +196,14 @@ def _ensure_root_pip_break(p: process.StepProgress) -> None:
         ">> /root/.config/pip/pip.conf )"
     )
     process.stream(privilege.sudo(["bash", "-c", snippet]), on_line=p.log)
+    # rosdep calls `pip install -U <pkg>` which tries to upgrade all transitive deps,
+    # including packages installed by apt that have no pip RECORD file. Pre-installing
+    # them via pip creates the RECORD so the later upgrade can proceed cleanly.
+    process.stream(
+        privilege.sudo(["pip3", "install", "--break-system-packages",
+                        "--ignore-installed", "typing-extensions"]),
+        on_line=p.log,
+    )
 
 
 def _register_rosdep_source(p: process.StepProgress, env: dict) -> None:
