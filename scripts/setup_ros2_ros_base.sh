@@ -62,10 +62,11 @@ sudo mkdir -p /root/.config/pip
 if ! sudo grep -qs 'break-system-packages' /root/.config/pip/pip.conf 2>/dev/null; then
     printf '[global]\nbreak-system-packages = true\n' | sudo tee -a /root/.config/pip/pip.conf > /dev/null
 fi
-# rosdep uses `pip install -U` which tries to upgrade apt-installed packages that
-# have no pip RECORD file (e.g. typing-extensions). Pre-installing via pip creates
-# the RECORD so subsequent upgrades succeed.
-sudo pip3 install --break-system-packages --ignore-installed typing-extensions
+# rosdep calls `pip install -U <pkg>` which upgrades every transitive dependency,
+# including packages installed by apt that have no pip RECORD file, causing an
+# uninstall failure. Pre-installing fastmcp with --ignore-installed creates pip
+# RECORD files for all its transitive deps so the later rosdep upgrade succeeds.
+sudo pip3 install --break-system-packages --ignore-installed fastmcp
 
 PROGRESS 100 "Done"
 echo "ROS2 Jazzy (ros-base) installed successfully."
