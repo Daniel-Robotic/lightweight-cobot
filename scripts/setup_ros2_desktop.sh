@@ -56,5 +56,12 @@ echo "Initializing rosdep..."
 sudo rosdep init 2>/dev/null || true
 rosdep update
 
+PROGRESS 95 "Configuring pip for system installs..."
+echo "Configuring pip for system-wide installs (PEP 668 override)..."
+sudo mkdir -p /root/.config/pip
+if ! sudo grep -qs 'break-system-packages' /root/.config/pip/pip.conf 2>/dev/null; then
+    printf '[global]\nbreak-system-packages = true\n' | sudo tee -a /root/.config/pip/pip.conf > /dev/null
+fi
+
 PROGRESS 100 "Done"
 echo "ROS2 Jazzy Desktop installed successfully."
