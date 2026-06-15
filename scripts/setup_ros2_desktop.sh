@@ -51,6 +51,10 @@ PROGRESS 78 "Installing ROS2 dev tools..."
 echo "Installing ROS2 dev tools..."
 sudo apt-get install -y ros-dev-tools
 
+PROGRESS 85 "Installing Python build tools..."
+echo "Installing Python build tools..."
+sudo apt-get install -y python3-pip python3-venv python3-dev
+
 PROGRESS 90 "Initializing rosdep..."
 echo "Initializing rosdep..."
 sudo rosdep init 2>/dev/null || true
