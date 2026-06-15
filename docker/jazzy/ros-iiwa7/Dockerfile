@@ -4,15 +4,17 @@ FROM ${IMAGE}
 ARG BUILD_TYPE=release
 
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ros-${ROS_DISTRO}-ros2-control \ 
+    ros-${ROS_DISTRO}-ros2-control \
     ros-${ROS_DISTRO}-ros2-controllers \
     ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
     ros-${ROS_DISTRO}-moveit \
     ros-${ROS_DISTRO}-moveit-py \
     ros-${ROS_DISTRO}-ament-cmake-clang-format \
     ros-${ROS_DISTRO}-rosbag2-storage-mcap \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros2_ws
@@ -31,6 +33,7 @@ RUN echo "yaml file:///ros2_ws/rosdep.yaml" \
         > /etc/ros/rosdep/sources.list.d/50-kuka-local.list && \
     rosdep update && \
     apt-get update && \
+    pip3 install --ignore-installed "fastapi>=0.100.0" "starlette>=0.27.0" fastmcp && \
     rosdep install --from-paths src -i -r -y && \
     rm -rf /var/lib/apt/lists/*
 
