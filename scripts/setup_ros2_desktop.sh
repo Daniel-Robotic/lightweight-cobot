@@ -68,9 +68,13 @@ if ! sudo grep -qs 'break-system-packages' /root/.config/pip/pip.conf 2>/dev/nul
 fi
 # rosdep calls `pip install -U <pkg>` which upgrades every transitive dependency,
 # including packages installed by apt that have no pip RECORD file, causing an
-# uninstall failure. Pre-installing fastmcp with --ignore-installed creates pip
-# RECORD files for all its transitive deps so the later rosdep upgrade succeeds.
-sudo pip3 install --break-system-packages --ignore-installed fastmcp
+# uninstall failure. Pre-installing these packages with --ignore-installed creates
+# pip RECORD files for all their transitive deps so the later rosdep upgrade succeeds.
+# fastapi>=0.100.0 + starlette>=0.27.0 are pinned together to avoid the
+# "Router.__init__() got an unexpected keyword argument 'on_startup'" error that
+# occurs when the apt-installed fastapi (old) is mixed with a newer pip starlette.
+sudo pip3 install --break-system-packages --ignore-installed \
+    "fastapi>=0.100.0" "starlette>=0.27.0" fastmcp
 
 PROGRESS 100 "Done"
 echo "ROS2 Jazzy Desktop installed successfully."

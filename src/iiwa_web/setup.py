@@ -13,7 +13,8 @@ setup(
     ],
     install_requires=[
         'setuptools',
-        'fastapi',
+        'fastapi>=0.100.0',
+        'starlette>=0.27.0',
         'uvicorn[standard]',
         'python-multipart',
         'fastmcp',
