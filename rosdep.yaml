@@ -1,0 +1,20 @@
+python3-fastapi:
+  ubuntu:
+    pip:
+      packages: ["fastapi>=0.100.0"]
+
+python3-uvicorn:
+  ubuntu:
+    pip:
+      packages: ["uvicorn[standard]"]
+
+python3-multipart:
+  ubuntu:
+    pip:
+      packages: [python-multipart]
+
+python3-fastmcp:
+  ubuntu:
+    pip:
+      packages: [fastmcp]
+

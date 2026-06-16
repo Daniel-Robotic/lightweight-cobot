@@ -19,7 +19,6 @@ def _setup_controllers(context, *args, **kwargs):
     controller_timer = LaunchConfiguration("controller_timer").perform(context)
     controller_path = LaunchConfiguration("controller_path").perform(context)
     simulate = LaunchConfiguration("simulate").perform(context).lower() in ("true", "1", "yes")
-    command_mode = LaunchConfiguration("command_mode").perform(context)
     controller = LaunchConfiguration("controller").perform(context)  # "jtc" | "forward"
     fri_cycle_ms = int(LaunchConfiguration("fri_cycle_ms").perform(context))
     joint_position_tau = LaunchConfiguration("joint_position_tau").perform(context)
@@ -65,18 +64,10 @@ def _setup_controllers(context, *args, **kwargs):
             parameters=[{"use_sim_time": True}],
         )
 
-        torque_controller_spawner = Node(
-            package="controller_manager",
-            executable="spawner",
-            output="screen",
-            arguments=["iiwa_arm_torque_controller", "--inactive"] + tmo,
-            parameters=[{"use_sim_time": True}]
-        )
-
         jtc_after_jsb = RegisterEventHandler(
             OnProcessExit(
                 target_action=jsb,
-                on_exit=[jtc, torque_controller_spawner],
+                on_exit=[jtc],
             )
         )
 
@@ -107,20 +98,14 @@ def _setup_controllers(context, *args, **kwargs):
 
         cm = ["--controller-manager", "/controller_manager"]
 
-        # JTC: активен если controller=jtc (и command_mode=position), иначе --inactive
         jtc_args = ["iiwa_arm_controller"] + cm
-        if command_mode == "torque" or controller == "forward":
+        if controller == "forward":
             jtc_args += ["--inactive"]
 
         # ForwardCommandController: активен если controller=forward, иначе --inactive
         forward_args = ["forward_position_controller"] + cm
         if controller != "forward":
             forward_args += ["--inactive"]
-
-        # TorqueController: активен если command_mode=torque и controller=jtc
-        torque_args = ["iiwa_arm_torque_controller"] + cm
-        if not (command_mode == "torque" and controller == "jtc"):
-            torque_args += ["--inactive"]
 
         jtc = Node(
             package="controller_manager",
@@ -136,17 +121,10 @@ def _setup_controllers(context, *args, **kwargs):
             arguments=forward_args,
         )
 
-        torque_controller = Node(
-            package="controller_manager",
-            executable="spawner",
-            output="screen",
-            arguments=torque_args,
-        )
-
         jtc_after_jsb = RegisterEventHandler(
             OnProcessExit(
                 target_action=jsb,
-                on_exit=[jtc, forward_controller, torque_controller],
+                on_exit=[jtc, forward_controller],
             )
         )
 
@@ -159,7 +137,6 @@ def _setup_controllers(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument("command_mode", default_value="position"),
         DeclareLaunchArgument("fri_cycle_ms", default_value="5"),
         DeclareLaunchArgument("joint_position_tau", default_value="0.04"),
         DeclareLaunchArgument("controller", default_value="jtc"),

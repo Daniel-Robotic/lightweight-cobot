@@ -4,14 +4,21 @@ package_name = 'iiwa_web'
 
 setup(
     name=package_name,
-    version='2026.05.31',
+    version='2026.5.31',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'fastapi>=0.100.0',
+        'starlette>=0.27.0',
+        'uvicorn[standard]',
+        'python-multipart',
+        'fastmcp',
+    ],
     zip_safe=True,
     maintainer='daniel',
     maintainer_email='grabardm@ml-dev.ru',
@@ -21,6 +28,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'iiwa_web_server = iiwa_web.main:main',
         ],
     },
 )

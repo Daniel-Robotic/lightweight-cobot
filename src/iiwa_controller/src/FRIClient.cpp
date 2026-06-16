@@ -20,11 +20,10 @@ static const char * friStateName(KUKA::FRI::ESessionState s)
   }
 }
 
-FRIClient::FRIClient(CommandMode mode, double joint_position_tau)
-: cmd_mode_(mode), joint_position_tau_(joint_position_tau)
+FRIClient::FRIClient(double joint_position_tau)
+: joint_position_tau_(joint_position_tau)
 {
   target_pos_.fill(0.0);
-  target_tau_.fill(0.0);
   filtered_pos_.fill(0.0);
 }
 
@@ -86,12 +85,6 @@ void FRIClient::waitForCommand()
   std::memcpy(filtered_pos_.data(), snapshot_.ipo_pos.data(), N_JOINTS * sizeof(double));
 
   robotCommand().setJointPosition(filtered_pos_.data());
-
-  if (cmd_mode_ == CommandMode::TORQUE) {
-    // Пока контроллер не синхронизирован, момент держим на нуле
-    target_tau_.fill(0.0);
-    robotCommand().setTorque(target_tau_.data());
-  }
 }
 
 // Вызывается в COMMANDING_ACTIVE, основной цикл управления
@@ -110,10 +103,6 @@ void FRIClient::command()
 
   robotCommand().setJointPosition(filtered_pos_.data());
 
-  if (cmd_mode_ == CommandMode::TORQUE) {
-    robotCommand().setTorque(target_tau_.data());
-  }
-
   // Захватываем снимок ПОСЛЕ EMA: measured_pos = filtered_pos_ = что робот только что получил.
   captureCommandingData();
 }
@@ -131,11 +120,6 @@ void FRIClient::onStateChange(
     newState == KUKA::FRI::MONITORING_WAIT ||
     newState == KUKA::FRI::MONITORING_READY)
   {
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    target_tau_.fill(0.0);
-    RCLCPP_WARN(
-      rclcpp::get_logger("FRIClient"),
-      "FRI сессия неактивна, моменты обнулены");
   }
 }
 
@@ -150,17 +134,6 @@ void FRIClient::setTargetJointPositions(const std::array<double, N_JOINTS> & q)
   }
   std::lock_guard<std::mutex> lock(data_mutex_);
   target_pos_ = q;
-}
-
-void FRIClient::setTargetJointTorques(const std::array<double, N_JOINTS> & tau)
-{
-  for (const auto & v : tau) {
-    if (!std::isfinite(v)) {
-      return;
-    }
-  }
-  std::lock_guard<std::mutex> lock(data_mutex_);
-  target_tau_ = tau;
 }
 
 IIWAStateSnapshot FRIClient::getStateSnapshot() const

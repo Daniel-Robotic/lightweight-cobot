@@ -38,10 +38,10 @@ class IiwaMotionServer(Node):
     """Сервер управления движением манипулятора iiwa.
 
     Предоставляет:
-      - action iiwa/move_to_pose    — перемещение в декартову позу
-      - action iiwa/move_to_joints  — перемещение по суставным координатам
-      - service iiwa/move_to_named  — перемещение в именованную позу из SRDF
-      - service iiwa/stop           — немедленная остановка движения
+      - action cobot/move_to_pose    — перемещение в декартову позу
+      - action cobot/move_to_joints  — перемещение по суставным координатам
+      - service cobot/move_to_named  — перемещение в именованную позу из SRDF
+      - service cobot/stop           — немедленная остановка движения
     """
 
     def __init__(self):
@@ -75,19 +75,19 @@ class IiwaMotionServer(Node):
         cb = ReentrantCallbackGroup()
 
         ActionServer(
-            self, MoveToPose, "iiwa/move_to_pose", self._execute_pose,
+            self, MoveToPose, "cobot/move_to_pose", self._execute_pose,
             callback_group=cb,
             goal_callback=lambda _: GoalResponse.ACCEPT,
             cancel_callback=lambda _: CancelResponse.ACCEPT,
         )
         ActionServer(
-            self, MoveToJoints, "iiwa/move_to_joints", self._execute_joints,
+            self, MoveToJoints, "cobot/move_to_joints", self._execute_joints,
             callback_group=cb,
             goal_callback=lambda _: GoalResponse.ACCEPT,
             cancel_callback=lambda _: CancelResponse.ACCEPT,
         )
-        self.create_service(MoveToNamedPose, "iiwa/move_to_named", self._handle_named, callback_group=cb)
-        self.create_service(Trigger, "iiwa/stop", self._handle_stop, callback_group=cb)
+        self.create_service(MoveToNamedPose, "cobot/move_to_named", self._handle_named, callback_group=cb)
+        self.create_service(Trigger, "cobot/stop", self._handle_stop, callback_group=cb)
 
     def _make_plan_params(self, pipeline: str, planner_id: str, plan_time: float, velocity_scale: float, accel_scale: float | None = None) -> PlanRequestParameters:
         params = PlanRequestParameters(self._moveit, self._planning_group)

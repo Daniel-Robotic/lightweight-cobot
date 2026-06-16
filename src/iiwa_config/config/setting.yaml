@@ -2,7 +2,6 @@ robot:
   name: "iiwa7"
   ip: "192.170.10.2"
   port: 30200
-  command_mode: "position" # torque, position
   fri_cycle_ms: 10          # период FRI-цикла: 5 мс (200 Гц) или 10 мс (100 Гц)
   joint_position_tau: 0.04   # EMA фильтр позиций [с]: сглаживает команды перед отправкой в FRI
   joint_velocity_tau: 0.01   # EMA фильтр скорости [с]: убирает выбросы конечных разностей
@@ -37,12 +36,22 @@ controller:
     moveit_cpp: pkg://iiwa_config/config/moveit/moveit_cpp.yaml
 
 
+tool:
+  active: "patron"            # Активный инструмент: none | patron | ... (из tools.yaml)
+
 planning:
   pose_link: "tcp"            # TCP-линк для декартовых целей
   planning_group: "iiwa_arm"  # Группа планирования из SRDF
   default_frame: "base_link"  # Система отсчёта по умолчанию
   default_planner: "ompl"     # Планировщик по умолчанию
   planning_attempts: 3        # Число попыток планирования
+
+web:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8007
+  endpoints: pkg://iiwa_config/config/api_endpoints.yaml
+  joint_limits: pkg://iiwa_config/config/moveit/joint_limits.yaml
 
 foxglove:
   enabled: true  # Запускать ли foxglove_bridge вместе с роботом

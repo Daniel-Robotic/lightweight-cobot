@@ -7,47 +7,38 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, Optional
 
-from textual.app import App
-
-from cobot.tui import SCREEN_CSS, InputScreen, LogScreen
+from cobot import process, ui
+from cobot.ui import done
+from cobot.process import StepProgress
 
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 
-# The documentation source lives inside the project. We mount it into the container so
-# MkDocs can pick up live edits without rebuilding the image.
-# Исходники документации находятся внутри проекта. Монтируем директорию в контейнер, чтобы
-# MkDocs мог подхватывать изменения вживую без пересборки образа.
+# The documentation source lives inside the project; it is mounted into the container
+# so MkDocs picks up live edits without rebuilding the image.
+# Исходники документации находятся внутри проекта; директория монтируется в контейнер,
+# чтобы MkDocs подхватывал изменения вживую без пересборки образа.
 _DOC_DIR = _PROJECT_DIR / "doc" / "lwc-doc"
 _IMAGE_NAME = "lwc-docs"
 _CONTAINER_NAME = "lwc-docs"
 _DEFAULT_PORT = "8000"
 
-Write = Callable[[str], None]
 
-
-# Thin wrapper around docker so we do not repeat ["docker", ...] everywhere.
-# Тонкая обёртка вокруг docker, чтобы не повторять ["docker", ...] везде.
 def _docker(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
-    """Run a docker subcommand. Pass capture=True to capture stdout/stderr instead of printing.
-    Запускает подкоманду docker. capture=True перехватывает stdout/stderr вместо вывода на экран.
+    """Run a docker subcommand.
+    Запускает подкоманду docker.
     """
     return subprocess.run(["docker", *args], capture_output=capture, text=True)
 
 
-# Check whether the docs container is currently running.
-# Проверяем, запущен ли сейчас контейнер с документацией.
 def _is_running() -> bool:
     """Return True if the lwc-docs container is currently running.
-    Возвращает True если контейнер lwc-docs в данный момент запущен.
+    Возвращает True если контейнер lwc-docs запущен.
     """
     r = _docker("ps", "--filter", f"name={_CONTAINER_NAME}", "--format", "{{.Names}}", capture=True)
     return _CONTAINER_NAME in r.stdout
 
 
-# Check whether the docs Docker image has already been built.
-# Проверяем, был ли уже собран Docker-образ для документации.
 def _image_exists() -> bool:
     """Return True if the lwc-docs Docker image exists locally.
     Возвращает True если Docker-образ lwc-docs существует локально.
@@ -55,259 +46,132 @@ def _image_exists() -> bool:
     return bool(_docker("images", "-q", _IMAGE_NAME, capture=True).stdout.strip())
 
 
-# Build the MkDocs Docker image. Only needs to run once.
-# Progress comes from parsing "Step X/Y" lines in the docker build output.
-# Собираем Docker-образ MkDocs. Нужно сделать только один раз.
-# Прогресс получаем, парся строки "Step X/Y" из вывода docker build.
-def _build_docs_image(
-    write: Write,
-    on_progress: Optional[Callable[[float], None]] = None,
-    register_proc: Optional[Callable] = None,
-) -> bool:
-    """Build the lwc-docs Docker image from the doc/lwc-doc directory. Returns True on success.
-    Собирает Docker-образ lwc-docs из директории doc/lwc-doc. Возвращает True при успехе.
+def _build_docs_image(p: StepProgress, lo: float, hi: float) -> bool:
+    """Build the lwc-docs image, mapping "Step X/Y" to the lo..hi progress slice.
+    Собирает образ lwc-docs, отображая "Step X/Y" на участок lo..hi прогресса.
     """
-    write("[cyan][*][/cyan] Building documentation image (runs once)...")
-    # DOCKER_BUILDKIT=0 gives us "Step X/Y" lines that we can parse for progress.
-    # DOCKER_BUILDKIT=0 даёт нам строки "Step X/Y", которые можно парсить для прогресса.
+    p.raw("[cyan]▸[/cyan] Сборка образа документации (один раз)...")
     env = {**os.environ, "DOCKER_BUILDKIT": "0"}
-    proc = subprocess.Popen(
-        ["docker", "build", "-t", _IMAGE_NAME, str(_DOC_DIR)],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
-    )
-    if register_proc:
-        register_proc(proc)
-    for line in proc.stdout:
-        s = line.rstrip()
+
+    def on_line(s: str) -> None:
         if s:
-            write(s)
-        if on_progress:
-            m = re.match(r"Step (\d+)/(\d+) :", line)
-            if m:
-                step, total = int(m.group(1)), int(m.group(2))
-                on_progress(step / total * 100)
-    proc.wait()
-    if proc.returncode in (-9, -15):
+            p.log(s)
+        m = re.match(r"Step (\d+)/(\d+) :", s)
+        if m:
+            step, total = int(m.group(1)), int(m.group(2))
+            p.set(lo + step / total * (hi - lo), f"шаг {step}/{total}")
+
+    rc = process.stream(["docker", "build", "-t", _IMAGE_NAME, str(_DOC_DIR)],
+                        env=env, on_line=on_line)
+    if rc != 0:
+        p.raw("[red]Сборка образа не удалась.[/red]")
         return False
-    if proc.returncode == 0:
-        write("[green][ok][/green] Documentation image ready")
-        return True
-    write("[red]Image build failed.[/red]")
-    return False
+    p.raw("[green]✓[/green] Образ документации готов")
+    return True
 
 
-# Start the docs server. Builds the image first if it does not exist yet.
-# Запускаем сервер документации. Сначала собирает образ, если он ещё не существует.
-def _task_up(screen: LogScreen, port: str) -> None:
-    """Worker function for the "up" action. Builds the image if missing, then starts the container.
-    Рабочая функция для действия "up". Собирает образ если отсутствует, затем запускает контейнер.
+def _start_container(p: StepProgress, port: str) -> bool:
+    """Start the MkDocs container on the given port. Returns True on success.
+    Запускает контейнер MkDocs на заданном порту. Возвращает True при успехе.
     """
-    try:
-        if _is_running():
-            screen.write(f"[green]Docs already running at:[/green] http://localhost:{port}")
-            screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
-            if not screen.is_stopped():
-                screen.finish(True)
-            return
+    p.set(90, "Запуск сервера MkDocs...")
+    p.raw("[cyan]▸[/cyan] Запуск сервера MkDocs...")
+    result = _docker(
+        "run", "-d", "--name", _CONTAINER_NAME, "--rm",
+        "-p", f"{port}:8000",
+        "-v", f"{_DOC_DIR}:/docs",
+        _IMAGE_NAME, "serve", "--dev-addr=0.0.0.0:8000",
+        capture=True,
+    )
+    if result.returncode != 0:
+        p.raw(f"[red]Не удалось запустить контейнер.[/red]\n{result.stderr}")
+        return False
+    return True
 
-        if not _DOC_DIR.exists():
-            screen.write(f"[red]Doc directory not found:[/red] {_DOC_DIR}")
-            if not screen.is_stopped():
-                screen.finish(False)
-            return
 
+def _task_up(port: str) -> None:
+    """Build the image if missing, then start the docs container.
+    Собирает образ если отсутствует, затем запускает контейнер документации.
+    """
+    if _is_running():
+        ui.info(f"[green]Документация уже запущена:[/green] http://localhost:{port}")
+        ui.note("Остановить:  cobot doc-setup down")
+        return
+    if not _DOC_DIR.exists():
+        ui.error(f"Директория документации не найдена: {_DOC_DIR}")
+        return
+
+    ok, fail_msg = True, ""
+    with StepProgress("Сервер документации") as p:
         if not _image_exists():
-            screen.set_progress(0, "Building documentation image...")
-            ok = _build_docs_image(
-                screen.write,
-                on_progress=lambda p: screen.set_progress(p * 0.85, "Building documentation image..."),
-                register_proc=screen.set_proc,
-            )
-            if screen.is_stopped():
-                return
-            if not ok:
-                screen.finish(False)
-                return
+            p.set(0, "Сборка образа документации...")
+            if not _build_docs_image(p, 0, 85):
+                ok, fail_msg = False, "Сборка образа не удалась"
         else:
-            screen.write("[dim]Documentation image already built, skipping.[/dim]")
+            p.log("Образ документации уже собран, пропускаем.")
+        if ok and not _start_container(p, port):
+            ok, fail_msg = False, "Не удалось запустить контейнер"
+        if ok:
+            p.set(100, "Сервер запущен")
 
-        if screen.is_stopped():
-            return
-
-        screen.set_progress(88, "Starting MkDocs server...")
-        screen.write("\n[cyan][*][/cyan] Starting MkDocs server...")
-        result = _docker(
-            "run", "-d", "--name", _CONTAINER_NAME, "--rm",
-            "-p", f"{port}:8000",
-            # Mount the docs directory so edits appear live without restarting the container.
-            # Монтируем директорию с документацией, чтобы изменения появлялись сразу без перезапуска.
-            "-v", f"{_DOC_DIR}:/docs",
-            _IMAGE_NAME, "serve", "--dev-addr=0.0.0.0:8000",
-            capture=True,
-        )
-        if screen.is_stopped():
-            return
-        if result.returncode != 0:
-            screen.write(f"[red]Failed to start container.[/red]\n{result.stderr}")
-            screen.finish(False)
-            return
-
-        screen.set_progress(100, "Server running")
-        screen.write(f"\n[green]Docs running at:[/green] http://localhost:{port}")
-        screen.write("  Edit files in [bold]doc/lwc-doc/docs/[/bold] — reloads automatically.")
-        screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
-        if not screen.is_stopped():
-            screen.finish(True)
-
-    except Exception as exc:
-        if not screen.is_stopped():
-            screen.write(f"[red]Error:[/red] {exc}")
-            screen.finish(False)
+    if ok:
+        done(True, f"Документация доступна: http://localhost:{port}")
+        ui.note("Правьте файлы в doc/lwc-doc/docs/ — перезагрузка автоматическая.")
+        ui.note("Остановить:  cobot doc-setup down")
+    else:
+        done(False, fail_msg)
 
 
-# Stop the running docs container.
-# Останавливаем работающий контейнер с документацией.
-def _task_down(screen: LogScreen) -> None:
-    """Worker function for the "down" action. Stops the lwc-docs container if it is running.
-    Рабочая функция для действия "down". Останавливает контейнер lwc-docs если он запущен.
+def _task_down() -> None:
+    """Stop the lwc-docs container if it is running.
+    Останавливает контейнер lwc-docs если он запущен.
     """
-    try:
-        if not _is_running():
-            screen.write("[yellow]Docs container is not running.[/yellow]")
-            if not screen.is_stopped():
-                screen.finish(True)
-            return
-        screen.set_progress(30, "Stopping container...")
-        screen.write("[cyan][*][/cyan] Stopping documentation server...")
+    if not _is_running():
+        ui.info("[yellow]Контейнер документации не запущен.[/yellow]")
+        return
+    with StepProgress("Сервер документации") as p:
+        p.set(30, "Остановка контейнера...")
+        p.raw("[cyan]▸[/cyan] Остановка сервера документации...")
         _docker("stop", _CONTAINER_NAME)
-        if screen.is_stopped():
-            return
-        screen.set_progress(100, "Done")
-        screen.write("[green][ok][/green] Container stopped.")
-        screen.finish(True)
-    except Exception as exc:
-        if not screen.is_stopped():
-            screen.write(f"[red]Error:[/red] {exc}")
-            screen.finish(False)
+        p.set(100, "Готово")
+    done(True, "Контейнер остановлен")
 
 
-# Stop the container, remove the old image, rebuild it, and start a new container.
-# Останавливаем контейнер, удаляем старый образ, пересобираем и запускаем новый контейнер.
-def _task_rebuild(screen: LogScreen, port: str) -> None:
-    """Worker function for the "rebuild" action. Stops the container, removes the old image,
-    rebuilds it, and starts a fresh container on the given port.
-    Рабочая функция для действия "rebuild". Останавливает контейнер, удаляет старый образ,
-    пересобирает его и запускает новый контейнер на указанном порту.
+def _task_rebuild(port: str) -> None:
+    """Stop the container, remove the old image, rebuild it, and start a fresh container.
+    Останавливает контейнер, удаляет старый образ, пересобирает и запускает новый контейнер.
     """
-    try:
+    ok, fail_msg = True, ""
+    with StepProgress("Сервер документации — пересборка") as p:
         if _is_running():
-            screen.set_progress(5, "Stopping container...")
-            screen.write("[cyan][*][/cyan] Stopping existing container...")
+            p.set(5, "Остановка контейнера...")
             _docker("stop", _CONTAINER_NAME)
-            if screen.is_stopped():
-                return
-            screen.write("[green][ok][/green] Stopped.")
-
+            p.raw("[green]✓[/green] Остановлен.")
         if _image_exists():
-            screen.set_progress(15, "Removing old image...")
-            screen.write("[cyan][*][/cyan] Removing old image...")
+            p.set(15, "Удаление старого образа...")
             _docker("rmi", "-f", _IMAGE_NAME)
-            if screen.is_stopped():
-                return
-            screen.write("[green][ok][/green] Image removed.")
+            p.raw("[green]✓[/green] Образ удалён.")
+        p.set(20, "Сборка образа документации...")
+        if not _build_docs_image(p, 20, 88):
+            ok, fail_msg = False, "Сборка образа не удалась"
+        if ok and not _start_container(p, port):
+            ok, fail_msg = False, "Не удалось запустить контейнер"
+        if ok:
+            p.set(100, "Сервер запущен")
 
-        screen.set_progress(20, "Building documentation image...")
-        ok = _build_docs_image(
-            screen.write,
-            on_progress=lambda p: screen.set_progress(20 + p * 0.68, "Building documentation image..."),
-            register_proc=screen.set_proc,
-        )
-        if screen.is_stopped():
-            return
-        if not ok:
-            screen.finish(False)
-            return
-
-        screen.set_progress(90, "Starting MkDocs server...")
-        screen.write("\n[cyan][*][/cyan] Starting MkDocs server...")
-        result = _docker(
-            "run", "-d", "--name", _CONTAINER_NAME, "--rm",
-            "-p", f"{port}:8000",
-            "-v", f"{_DOC_DIR}:/docs",
-            _IMAGE_NAME, "serve", "--dev-addr=0.0.0.0:8000",
-            capture=True,
-        )
-        if screen.is_stopped():
-            return
-        if result.returncode != 0:
-            screen.write(f"[red]Failed to start container.[/red]\n{result.stderr}")
-            screen.finish(False)
-            return
-
-        screen.set_progress(100, "Server running")
-        screen.write(f"\n[green]Docs running at:[/green] http://localhost:{port}")
-        screen.write("  Stop with: [bold]cobot doc-setup down[/bold]")
-        if not screen.is_stopped():
-            screen.finish(True)
-
-    except Exception as exc:
-        if not screen.is_stopped():
-            screen.write(f"[red]Error:[/red] {exc}")
-            screen.finish(False)
+    if ok:
+        done(True, f"Документация доступна: http://localhost:{port}")
+        ui.note("Остановить:  cobot doc-setup down")
+    else:
+        done(False, fail_msg)
 
 
-# One app handles all three actions (up/down/rebuild) by branching in on_mount.
-# Одно приложение обрабатывает все три действия (up/down/rebuild), разветвляясь в on_mount.
-class _DocApp(App[None]):
-    """Documentation server app. Handles "up", "down", and "rebuild" actions by branching
-    in on_mount to the appropriate LogScreen task.
-    Приложение сервера документации. Обрабатывает действия "up", "down" и "rebuild",
-    разветвляясь в on_mount к соответствующей задаче LogScreen.
+def _normalize_port(value: str) -> str:
+    """Return a numeric port string, falling back to the default when invalid.
+    Возвращает числовой порт, откатываясь на значение по умолчанию при ошибке.
     """
-    CSS = SCREEN_CSS
-
-    def __init__(self, action: str):
-        super().__init__()
-        self._action = action
-
-    def on_mount(self) -> None:
-        if self._action == "down":
-            self.push_screen(
-                LogScreen("Documentation server", _task_down, show_progress=True),
-                lambda _: self.exit(),
-            )
-        elif self._action == "rebuild":
-            self.push_screen(
-                InputScreen("Step 1 of 1", "Port to serve documentation on:", _DEFAULT_PORT),
-                self._got_port_rebuild,
-            )
-        else:
-            self.push_screen(
-                InputScreen("Step 1 of 1", "Port to serve documentation on:", _DEFAULT_PORT),
-                self._got_port_up,
-            )
-
-    def _got_port_up(self, port: Optional[str]) -> None:
-        if port is None:
-            self.exit()
-            return
-        # Use the default port if the user cleared the input or typed something that is not a number.
-        # Используем порт по умолчанию если пользователь очистил ввод или написал не число.
-        p = (port.strip() or _DEFAULT_PORT) if port.isdigit() or not port.strip() else _DEFAULT_PORT
-        self.push_screen(
-            LogScreen("Documentation server", lambda s: _task_up(s, p), show_progress=True),
-            lambda _: self.exit(),
-        )
-
-    def _got_port_rebuild(self, port: Optional[str]) -> None:
-        if port is None:
-            self.exit()
-            return
-        p = (port.strip() or _DEFAULT_PORT) if port.isdigit() or not port.strip() else _DEFAULT_PORT
-        self.push_screen(
-            LogScreen("Documentation server — rebuild", lambda s: _task_rebuild(s, p), show_progress=True),
-            lambda _: self.exit(),
-        )
+    value = (value or "").strip()
+    return value if value.isdigit() else _DEFAULT_PORT
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -324,9 +188,21 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def run(args: argparse.Namespace) -> None:
     if not shutil.which("docker"):
-        from rich.console import Console
-        Console().print("[red]Error:[/red] Docker is not installed or not on PATH.")
+        ui.error("Docker не установлен или отсутствует в PATH.")
         sys.exit(1)
 
     action = getattr(args, "action", "up")
-    _DocApp(action).run()
+
+    if action == "down":
+        _task_down()
+        return
+
+    port_v = ui.text("Порт для сервера документации:", _DEFAULT_PORT)
+    if port_v is None:
+        return
+    port = _normalize_port(port_v)
+
+    if action == "rebuild":
+        _task_rebuild(port)
+    else:
+        _task_up(port)

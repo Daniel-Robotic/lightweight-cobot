@@ -11,11 +11,6 @@
 namespace iiwa_controller
 {
 
-enum class CommandMode
-{
-  POSITION,
-  TORQUE
-};
 
 // Снимок состояния робота захватывается атомарно за один lock в FRI-потоке
 // и так же за один lock читается из read() в потоке управления.
@@ -40,7 +35,7 @@ public:
   // joint_position_tau — постоянная времени экспоненциального фильтра позиций [с].
   // Аналог joint_position_tau из lbr_fri_ros2_stack (по умолчанию 0.04 с = 40 мс).
   // Сглаживает скачки команд перед отправкой роботу → убирает писк и стук суставов.
-  explicit FRIClient(CommandMode mode = CommandMode::POSITION, double joint_position_tau = 0.04);
+  explicit FRIClient(double joint_position_tau = 0.04);
   ~FRIClient() override = default;
 
   // Коллбэки FRI SDK, вызываются из friThreadFunc через ClientApplication::step()
@@ -52,19 +47,16 @@ public:
 
   // Потокобезопасное API для ros2_control, вызывается из read() и write()
   void setTargetJointPositions(const std::array<double, N_JOINTS> & q);
-  void setTargetJointTorques(const std::array<double, N_JOINTS> & tau);
   IIWAStateSnapshot getStateSnapshot() const;
   bool isCommandingActive() const;
   KUKA::FRI::ESessionState getSessionState() const;
 
 private:
-  CommandMode cmd_mode_;
   double joint_position_tau_;
   std::atomic<KUKA::FRI::ESessionState> session_state_{KUKA::FRI::IDLE};
 
   mutable std::mutex data_mutex_;
   std::array<double, N_JOINTS> target_pos_{};
-  std::array<double, N_JOINTS> target_tau_{};
   // Сглаженная позиция, которую реально отправляем роботу.
   // Инициализируется IPO-позицией в waitForCommand(), чтобы не было скачка при старте.
   std::array<double, N_JOINTS> filtered_pos_{};

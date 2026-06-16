@@ -1,5 +1,4 @@
 import argparse
-import sys
 
 # Import each command module so we can register its subparser.
 # Импортируем каждый модуль команды, чтобы зарегистрировать его подпарсер.
@@ -96,7 +95,17 @@ def main():
     _register_commands(subparsers)
 
     args = parser.parse_args()
-    args.func(args)
+
+    # Install one SIGINT handler + atexit cleanup so a single Ctrl-C tears down
+    # any running subprocesses (builds, ros2 launch, docker) cleanly.
+    # Устанавливаем один обработчик SIGINT + очистку atexit, чтобы один Ctrl-C
+    # аккуратно завершал все запущенные подпроцессы (сборку, ros2 launch, docker).
+    from cobot import process, privilege
+    process.install_signal_handlers()
+    try:
+        args.func(args)
+    finally:
+        privilege.stop_keepalive()
 
 
 def _register_commands(subparsers):

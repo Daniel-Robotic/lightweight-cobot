@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>iiwa_config</name>
-  <version>2026.05.31</version>
+  <version>2026.5.31</version>
   <description>Configuration files for cobot: MoveIt, ros2_control controllers, kinematics and general system settings</description>
   <maintainer email="grabardm@ml-dev.ru">daniel</maintainer>
   <license>Apache-2.0</license>

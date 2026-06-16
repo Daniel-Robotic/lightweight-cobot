@@ -20,8 +20,8 @@ joint_limits:
     max_jerk: 85.0
   joint2:
     has_position_limits: true
-    min_position: -2.09
-    max_position: 2.09
+    min_position: -2.10
+    max_position: 2.10
     has_velocity_limits: true
     max_velocity: 1.71
     has_acceleration_limits: true
@@ -40,8 +40,8 @@ joint_limits:
     max_jerk: 87.0
   joint4:
     has_position_limits: true
-    min_position: -2.09
-    max_position: 2.09
+    min_position: -2.10
+    max_position: 2.10
     has_velocity_limits: true
     max_velocity: 2.27
     has_acceleration_limits: true
@@ -60,8 +60,8 @@ joint_limits:
     max_jerk: 122.0
   joint6:
     has_position_limits: true
-    min_position: -2.09
-    max_position: 2.09
+    min_position: -2.10
+    max_position: 2.10
     has_velocity_limits: true
     max_velocity: 3.14
     has_acceleration_limits: true

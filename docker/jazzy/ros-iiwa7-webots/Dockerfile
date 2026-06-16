@@ -5,6 +5,7 @@ ARG BUILD_TYPE=release
 
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ENV WEBOTS_HOME=/usr/local/webots
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # X11 utilities and Mesa software renderer
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -27,7 +28,7 @@ RUN wget -q https://github.com/cyberbotics/webots/releases/download/R2025a/webot
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-webots-ros2 \
-    ros-${ROS_DISTRO}-ros2-control \ 
+    ros-${ROS_DISTRO}-ros2-control \
     ros-${ROS_DISTRO}-ros2-controllers \
     ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
     ros-${ROS_DISTRO}-moveit \
@@ -35,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-ament-cmake-clang-format \
     ros-${ROS_DISTRO}-rosbag2-storage-mcap \
     python3-pil \
-    && rm -rf /var/lib/apt/lists/* \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros2_ws
@@ -47,8 +48,14 @@ COPY src/iiwa_description src/iiwa_description
 COPY src/iiwa_msgs src/iiwa_msgs
 COPY src/iiwa_planning src/iiwa_planning
 COPY src/iiwa_utils src/iiwa_utils
+COPY src/iiwa_web src/iiwa_web
+COPY rosdep.yaml rosdep.yaml
 
-RUN apt-get update && \
+RUN echo "yaml file:///ros2_ws/rosdep.yaml" \
+        > /etc/ros/rosdep/sources.list.d/50-kuka-local.list && \
+    rosdep update && \
+    apt-get update && \
+    pip3 install --ignore-installed "fastapi>=0.100.0" "starlette>=0.27.0" fastmcp && \
     rosdep install --from-paths src -i -r -y && \
     rm -rf /var/lib/apt/lists/*
 
