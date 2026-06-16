@@ -245,7 +245,7 @@ resolve_install_dir() {
     local attempt=1
     while [ $attempt -le 5 ]; do
         # TODO: Изменить на --depth 1 --branch main после слияния dev в main.
-        if git clone --depth 1 --branch dev "$REPO_URL" "$INSTALL_DIR" </dev/null; then
+        if git clone --depth 1 --branch master "$REPO_URL" "$INSTALL_DIR" </dev/null; then
             log_success "Repo cloned to $INSTALL_DIR"
             return
         fi
