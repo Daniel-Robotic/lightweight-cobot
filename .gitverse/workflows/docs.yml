@@ -5,24 +5,15 @@ on:
     branches:
       - master
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -42,15 +33,13 @@ jobs:
         working-directory: doc/lwc-doc
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: gitverse/upload-pages-artifact@v1.0.0
         with:
           path: doc/lwc-doc/site/
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
     steps:
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
+      - name: Deploy to GitVerse Pages
+        uses: gitverse/deploy-pages@v1.0.0
