@@ -6,37 +6,37 @@
 
 **Шаг 1.** Запустите установщик SunriseWorkbench. В появившемся окне выберите язык установки (по умолчанию — английский) и нажмите **OK**.
 
-![Выбор языка](../assets/install/windows/step-01.png)
+![Выбор языка](../assets/sun_install/windows/step-01.png)
 
 **Шаг 2.** В приветственном окне мастера установки нажмите **Next**.
 
-![Приветственное окно](../assets/install/windows/step-02.png)
+![Приветственное окно](../assets/sun_install/windows/step-02.png)
 
 **Шаг 3.** Ознакомьтесь с условиями лицензионного соглашения и подтвердите принятие.
 
-![Лицензионное соглашение](../assets/install/windows/step-03.png)
+![Лицензионное соглашение](../assets/sun_install/windows/step-03.png)
 
 **Шаг 4.** Путь установки рекомендуется оставить по умолчанию.
 
-![Путь установки](../assets/install/windows/step-04.png)
+![Путь установки](../assets/sun_install/windows/step-04.png)
 
 **Шаг 5.** Для удобства дальнейшей работы установите флажок **Create Desktop Shortcut**.
 
-![Ярлык на рабочем столе](../assets/install/windows/step-05.png)
+![Ярлык на рабочем столе](../assets/sun_install/windows/step-05.png)
 
-**Шаг 6.** Нажмите **Install** и дождитесь завершения установки всех необходимых компонентов.
+**Шаг 6.** Нажмите **sun_install** и дождитесь завершения установки всех необходимых компонентов.
 
-![Процесс установки](../assets/install/windows/step-06.png)
+![Процесс установки](../assets/sun_install/windows/step-06.png)
 
 ## Первый запуск
 
 **Шаг 7.** При первом запуске приложение предложит указать путь к рабочему пространству (workspace). Рекомендуется оставить путь по умолчанию и установить флажок **Use this as the default and do not ask again**.
 
-![Выбор рабочего пространства](../assets/install/windows/step-07.png)
+![Выбор рабочего пространства](../assets/sun_install/windows/step-07.png)
 
 **Шаг 8.** После загрузки главного окна нажмите **New Sunrise Project** для создания нового проекта.
 
-![Главное окно SunriseWorkbench](../assets/install/windows/step-08.png)
+![Главное окно SunriseWorkbench](../assets/sun_install/windows/step-08.png)
 
 !!! tip "Дальнейшая настройка"
     Подробные инструкции по конфигурации проекта представлены в разделе [Создание нового проекта](../config/new-project.md).

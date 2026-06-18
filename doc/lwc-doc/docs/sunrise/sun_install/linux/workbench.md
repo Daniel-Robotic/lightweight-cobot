@@ -9,47 +9,47 @@
 
 **Шаг 1.** Перейдите в папку, содержащую установщик SunriseWorkbench. Нажмите правой кнопкой мыши на файл `.exe` и выберите **Открыть с помощью → PortProton**. В диалоговом окне оставьте настройки по умолчанию и нажмите **Run**.
 
-![Запуск установщика через PortProton](../../assets/install/linux/workbench/step-01.png)
+![Запуск установщика через PortProton](../../assets/sun_install/linux/workbench/step-01.png)
 
 ## Процесс установки
 
 **Шаг 2.** В появившемся окне выберите язык установки (по умолчанию — английский) и нажмите **OK**.
 
-![Выбор языка](../../assets/install/linux/workbench/step-02.png)
+![Выбор языка](../../assets/sun_install/linux/workbench/step-02.png)
 
 **Шаг 3.** В приветственном окне мастера установки нажмите **Next**.
 
-![Приветственное окно](../../assets/install/linux/workbench/step-03.png)
+![Приветственное окно](../../assets/sun_install/linux/workbench/step-03.png)
 
 **Шаг 4.** Ознакомьтесь с условиями лицензионного соглашения и подтвердите принятие.
 
-![Лицензионное соглашение](../../assets/install/linux/workbench/step-04.png)
+![Лицензионное соглашение](../../assets/sun_install/linux/workbench/step-04.png)
 
 **Шаг 5.** Путь установки рекомендуется оставить по умолчанию.
 
-![Путь установки](../../assets/install/linux/workbench/step-05.png)
+![Путь установки](../../assets/sun_install/linux/workbench/step-05.png)
 
 **Шаг 6.** Установите флажок **Create Desktop Shortcut** — ярлык SunriseWorkbench появится на рабочем столе.
 
-![Ярлык на рабочем столе](../../assets/install/linux/workbench/step-06.png)
+![Ярлык на рабочем столе](../../assets/sun_install/linux/workbench/step-06.png)
 
-**Шаг 7.** Нажмите **Install** и дождитесь завершения установки всех необходимых компонентов.
+**Шаг 7.** Нажмите **sun_install** и дождитесь завершения установки всех необходимых компонентов.
 
-![Процесс установки](../../assets/install/linux/workbench/step-07.png)
+![Процесс установки](../../assets/sun_install/linux/workbench/step-07.png)
 
 ## Первый запуск
 
 **Шаг 8.** После завершения установки запустите SunriseWorkbench через созданный ярлык на рабочем столе. Приложение предложит указать путь к рабочему пространству. Рекомендуется оставить значение по умолчанию и установить флажок **Use this as the default and do not ask again**.
 
-![Выбор рабочего пространства](../../assets/install/linux/workbench/step-08.png)
+![Выбор рабочего пространства](../../assets/sun_install/linux/workbench/step-08.png)
 
 **Шаг 9.** После загрузки главного окна нажмите **New Sunrise Project**.
 
-![Главное окно SunriseWorkbench](../../assets/install/linux/workbench/step-09.png)
+![Главное окно SunriseWorkbench](../../assets/sun_install/linux/workbench/step-09.png)
 
 **Шаг 10.** В появившемся диалоге создайте новый проект или выберите шаблон.
 
-![Создание нового проекта](../../assets/install/linux/workbench/step-10.png)
+![Создание нового проекта](../../assets/sun_install/linux/workbench/step-10.png)
 
 !!! tip "Дальнейшая настройка"
     Подробные инструкции по конфигурации проекта представлены в разделе [Создание нового проекта](../../config/new-project.md).

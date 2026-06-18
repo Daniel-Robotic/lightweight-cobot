@@ -40,17 +40,17 @@ nav:
   - Быстрый старт:
     - Обзор: getting-started/overview.md
     - Быстрый старт: getting-started/quick-start.md
-    - Ручная установка: getting-started/manual-install.md
+    - Ручная установка: getting-started/manual-sun_install.md
     - Настройка: getting-started/configuration.md
 
   - Sunrise Workbench:
     - Обзор: sunrise/overview.md
     - Установка:
-      - Windows: sunrise/install/windows.md
+      - Windows: sunrise/sun_install/windows.md
       - Linux:
-        - Обзор: sunrise/install/linux/linux.md
-        - Установка эмулятора Windows: sunrise/install/linux/emulator.md
-        - Установка SunriseWorkbench: sunrise/install/linux/workbench.md
+        - Обзор: sunrise/sun_install/linux/linux.md
+        - Установка эмулятора Windows: sunrise/sun_install/linux/emulator.md
+        - Установка SunriseWorkbench: sunrise/sun_install/linux/workbench.md
     - Конфигурация проекта:
       - Создание нового проекта: sunrise/config/new-project.md
       - Загрузка готового проекта: sunrise/config/load-project.md

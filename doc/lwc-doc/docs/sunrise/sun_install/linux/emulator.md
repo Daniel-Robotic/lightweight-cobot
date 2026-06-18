@@ -10,8 +10,6 @@
 sudo apt install flatpak
 ```
 
-![Установка Flatpak](../../assets/install/linux/emulator/step-01.png)
-
 ## Установка плагина для GNOME Software
 
 Для поддержки Flatpak-пакетов в Центре приложений GNOME:
@@ -26,8 +24,6 @@ sudo apt install gnome-software-plugin-flatpak
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 ```
 
-![Добавление репозитория Flathub](../../assets/install/linux/emulator/step-02.png)
-
 !!! warning "Перезагрузка"
     После добавления репозитория необходимо перезагрузить систему для применения изменений.
 
@@ -39,27 +35,31 @@ flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.f
 flatpak install flathub ru.linux_gaming.PortProton
 ```
 
-![Установка PortProton](../../assets/install/linux/emulator/step-03.png)
-
-**Запуск:**
+Запуск производиться командой:
 
 ```bash
 flatpak run ru.linux_gaming.PortProton
 ```
 
+**Через центр приложений:**
+
 Также PortProton доступен в Центре приложений GNOME после подключения Flathub.
+
+![Установка Flatpak](../../assets/sun_install/linux/emulator/step-01.png)
 
 ## Первоначальная настройка
 
 При первом запуске PortProton автоматически устанавливает необходимые зависимости Wine и вспомогательные компоненты. Процесс занимает несколько минут.
 
-![Интерфейс PortProton](../../assets/install/linux/emulator/step-04.png)
+![Добавление репозитория Flathub](../../assets/sun_install/linux/emulator/step-02.png)
 
 После завершения инициализации станут доступны основные функции приложения, в том числе:
 
 - **Настройки Wine** — управление конфигурацией Wine-окружения;
 - **Командная строка Windows** — запуск cmd.exe внутри Wine;
 - **Файловый менеджер** — доступ к виртуальной файловой системе Windows.
+
+![Интерфейс PortProton](../../assets/sun_install/linux/emulator/step-03.png)
 
 !!! tip "Следующий шаг"
     После установки PortProton перейдите к разделу [Установка SunriseWorkbench](workbench.md).
