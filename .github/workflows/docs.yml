@@ -6,16 +6,20 @@ on:
       - master
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  deploy-docs:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Python 3.12
         uses: actions/setup-python@v5
@@ -33,11 +37,29 @@ jobs:
       - name: Install MkDocs
         run: pip install mkdocs-material mkdocs-with-pdf
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Deploy to GitHub Pages
-        run: mkdocs gh-deploy --force
+      - name: Build Documentation
+        run: mkdocs build
         working-directory: doc/lwc-doc
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v1.0.0
+        with:
+          path: doc/lwc-doc/site/
+
+  deploy-github:
+    if: github.server_url == 'https://github.com'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+
+  deploy-gitverse:
+    if: github.server_url != 'https://github.com'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitVerse Pages
+        uses: actions/deploy-pages@v1.0.0
