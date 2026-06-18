@@ -1,4 +1,5 @@
 site_name: Документация LWC
+site_url: https://daniel-robotic.github.io/lightweight-cobot/
 site_description: Документация по использованию коллаборативного робота KUKA LBR iiwa 7 и его программированию в среде ROS 2.
 site_author: Даниил Грабарь
 
