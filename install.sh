@@ -215,6 +215,8 @@ check_python() {
 resolve_install_dir() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+    local repo_branch
+    repo_branch="${REPO_BRANCH:-$(git -C "$script_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")}"
 
     # Running directly from inside the cloned repo (not via curl|bash)
     if [ -f "$script_dir/setup.py" ] && [ -d "$script_dir/.git" ]; then
@@ -226,7 +228,7 @@ resolve_install_dir() {
     # Repo already cloned — pull instead of re-clone
     if [ -d "$INSTALL_DIR/.git" ]; then
         log_info "Repo already exists at $INSTALL_DIR — pulling latest..."
-        git -C "$INSTALL_DIR" pull --ff-only origin dev </dev/null \
+        git -C "$INSTALL_DIR" pull --ff-only origin "$repo_branch" </dev/null \
             && log_success "Repo updated" \
             || log_warn "Could not pull latest — using existing version"
         return
@@ -244,8 +246,7 @@ resolve_install_dir() {
     # Повторяем до 5 раз, потому что git-сервер может быть нестабильным на медленных соединениях.
     local attempt=1
     while [ $attempt -le 5 ]; do
-        # TODO: Изменить на --depth 1 --branch main после слияния dev в main.
-        if git clone --depth 1 --branch master "$REPO_URL" "$INSTALL_DIR" </dev/null; then
+        if git clone --depth 1 --branch "$repo_branch" "$REPO_URL" "$INSTALL_DIR" </dev/null; then
             log_success "Repo cloned to $INSTALL_DIR"
             return
         fi
