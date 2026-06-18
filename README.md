@@ -30,7 +30,7 @@ ROS 2 пакеты для управления роботом **KUKA LBR IIWA 7 
 Для установки запустите скрипт одной командой:
 
 ```bash
-curl -fsSL https://gitverse.ru/api/repos/daniel-robotics/lightweight-cobot/raw/branch/master/install.sh | bash
+curl -fsSL https://gitverse.ru/api/repos/daniel-robotics/lightweight-cobot/raw/branch/dev/install.sh | bash -s dev
 ```
 
 Скрипт установит ROS 2 Jazzy, Webots, соберёт рабочее пространство и установит CLI `cobot`.

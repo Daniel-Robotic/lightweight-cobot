@@ -30,7 +30,7 @@ ROS 2 packages for controlling the **KUKA LBR IIWA 7 R800**: communication with 
 Install everything with a single command:
 
 ```bash
-curl -fsSL https://gitverse.ru/api/repos/daniel-robotics/lightweight-cobot/raw/branch/master/install.sh | bash
+curl -fsSL https://gitverse.ru/api/repos/daniel-robotics/lightweight-cobot/raw/branch/dev/install.sh | bash -s dev
 ```
 
 The script installs ROS 2 Jazzy, Webots, builds the workspace, and installs the `cobot` CLI.
