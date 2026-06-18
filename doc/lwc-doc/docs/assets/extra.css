@@ -1,0 +1,16 @@
+/* Центрирование изображений */
+.md-content img {
+    display: block;
+    margin: 1em auto;
+}
+
+/* Центрирование таблиц */
+.md-typeset table {
+    display: table;
+    margin: 1em auto;
+}
+
+/* Скрываем встроенную кнопку PDF от плагина to-pdf */
+a.md-header-nav__button.md-icon[href$=".pdf"] {
+    display: none !important;
+}

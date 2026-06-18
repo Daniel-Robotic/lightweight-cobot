@@ -17,11 +17,14 @@ theme:
 
 plugins:
   - search
-  - with-pdf:
+  - to-pdf:
       author: Даниил Грабарь
       cover_title: Документация LWC
       cover_subtitle: Lightweight Cobot
-      output_path: pdf/document.pdf
+      output_path: pdf/documentation.pdf
+
+extra_css:
+  - assets/extra.css
 
 extra_javascript:
   - assets/pdf_button.js
@@ -42,38 +45,28 @@ nav:
 
   - Sunrise Workbench:
     - Обзор: sunrise/overview.md
-    - Настройка проекта: sunrise/project-setup.md
-    - Настройка сети: sunrise/network.md
-    - Загрузка на контроллер: sunrise/deployment.md
+    - Установка:
+      - Windows: sunrise/install/windows.md
+      - Linux:
+        - Обзор: sunrise/install/linux/linux.md
+        - Установка эмулятора Windows: sunrise/install/linux/emulator.md
+        - Установка SunriseWorkbench: sunrise/install/linux/workbench.md
+    - Конфигурация проекта:
+      - Создание нового проекта: sunrise/config/new-project.md
+      - Загрузка готового проекта: sunrise/config/load-project.md
+      - Установка библиотек: sunrise/config/libraries.md
+    - KUKA LBR IIWA 7:
+      - Описание программ:
+        - TeachKuka: sunrise/kuka/programs/teach-kuka.md
+        - LBRserver: sunrise/kuka/programs/lbr-server.md
+        - RobotPowerControl: sunrise/kuka/programs/robot-power-control.md
+      - Функциональные возможности:
+        - Станция: sunrise/kuka/features/station.md
+        - Дополнительное меню: sunrise/kuka/features/extra-menu.md
+        - Приложения: sunrise/kuka/features/applications.md
+        - Меню робота: sunrise/kuka/features/robot-menu.md
+        - Меню IO Group: sunrise/kuka/features/io-group.md
+    - Решение проблем:
+      - Ошибка конфигурации: sunrise/troubleshooting/config-error.md
 
-  - Архитектура:
-    - Обзор системы: architecture/system-overview.md
-    - Пакеты:
-      - iiwa_controller: architecture/packages/iiwa-controller.md
-      - iiwa_bringup: architecture/packages/iiwa-bringup.md
-      - iiwa_planning: architecture/packages/iiwa-planning.md
-      - iiwa_msgs: architecture/packages/iiwa-msgs.md
-      - iiwa_config: architecture/packages/iiwa-config.md
-      - iiwa_description: architecture/packages/iiwa-description.md
-      - iiwa_sunrise: architecture/packages/iiwa-sunrise.md
-      - iiwa_utils: architecture/packages/iiwa-utils.md
-      - RealSense: architecture/packages/realsense.md
-    - Потоки данных: architecture/data-flow.md
 
-  - Управление:
-    - Foxglove Studio: control/foxglove.md
-    - Терминал: control/terminal.md
-    - Web-интерфейс: control/web-interface.md
-    - Симуляция: control/simulation.md
-
-  - Примеры:
-    - Joint Position: examples/joint-position.md
-    - Cartesian Goal: examples/cartesian-goal.md
-    - Траектория: examples/trajectory.md
-    - MoveIt Python API: examples/moveit-python.md
-    - RealSense данные: examples/realsense-data.md
-
-  - Разработка:
-    - Сборка и пересборка: development/build-rebuild.md
-    - CLI Reference: development/cli-reference.md
-    - Решение проблем: development/troubleshooting.md

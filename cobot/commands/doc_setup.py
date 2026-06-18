@@ -123,6 +123,41 @@ def _task_up(port: str) -> None:
         done(False, fail_msg)
 
 
+def _task_build() -> None:
+    """Run a one-shot mkdocs build with PDF generation enabled.
+    Запускает однократную сборку mkdocs с генерацией PDF.
+    """
+    if not _DOC_DIR.exists():
+        ui.error(f"Директория документации не найдена: {_DOC_DIR}")
+        return
+
+    ok = True
+    with StepProgress("Сборка документации") as p:
+        if not _image_exists():
+            p.set(0, "Сборка образа документации...")
+            if not _build_docs_image(p, 0, 60):
+                ok = False
+        if ok:
+            p.set(65, "Запуск mkdocs build...")
+            p.raw("[cyan]▸[/cyan] Генерация сайта и PDF...")
+            rc = process.stream([
+                "docker", "run", "--rm",
+                "-v", f"{_DOC_DIR}:/docs",
+                "-e", "ENABLE_PDF_EXPORT=1",
+                _IMAGE_NAME, "build",
+            ], on_line=lambda s: p.log(s) if s else None)
+            if rc != 0:
+                p.raw("[red]Сборка не удалась.[/red]")
+                ok = False
+            else:
+                p.set(100, "Готово")
+
+    if ok:
+        done(True, f"Сайт собран: {_DOC_DIR / 'site'}  PDF: {_DOC_DIR / 'site' / 'pdf' / 'document.pdf'}")
+    else:
+        done(False, "Сборка завершилась с ошибкой")
+
+
 def _task_down() -> None:
     """Stop the lwc-docs container if it is running.
     Останавливает контейнер lwc-docs если он запущен.
@@ -180,9 +215,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "action",
         nargs="?",
-        choices=["up", "down", "rebuild"],
+        choices=["up", "down", "rebuild", "build"],
         default="up",
-        help="up — start (default), down — stop, rebuild — rebuild image and restart",
+        help="up — start (default), down — stop, rebuild — rebuild image and restart, build — generate static site + PDF",
     )
     p.set_defaults(func=run)
 
@@ -196,6 +231,10 @@ def run(args: argparse.Namespace) -> None:
 
     if action == "down":
         _task_down()
+        return
+
+    if action == "build":
+        _task_build()
         return
 
     port_v = ui.text("Порт для сервера документации:", _DEFAULT_PORT)

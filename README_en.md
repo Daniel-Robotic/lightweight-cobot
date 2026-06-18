@@ -21,7 +21,7 @@ ROS 2 packages for controlling the **KUKA LBR IIWA 7 R800**: communication with 
 
 | OS | ROS Distribution | FRI Version |
 | :--- | :--- | :--- |
-| `Ubuntu 24.04` | `jazzy` | `1.15` |
+| `Ubuntu 24.04` | `jazzy` | `1.16` |
 
 ---
 

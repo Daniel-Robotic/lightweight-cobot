@@ -10,5 +10,5 @@ RUN apk add --no-cache \
     g++ \
     musl-dev \
     python3-dev \
-    && pip install mkdocs-with-pdf \
+    && pip install mkdocs-to-pdf \
     && apk del --no-cache gcc g++ musl-dev python3-dev

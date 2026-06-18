@@ -1,11 +1,12 @@
 document.addEventListener("DOMContentLoaded", function () {
+  const siteRoot = document.querySelector('meta[name="site-root"]')?.content ?? "";
   const btn = document.createElement("a");
-  btn.href = "/pdf/document.pdf";
+  btn.href = siteRoot + "/pdf/documentation.pdf";
   btn.download = "lwc-documentation.pdf";
   btn.title = "Скачать всю документацию в PDF";
   btn.style.cssText = [
     "position: fixed",
-    "bottom: 24px",
+    "bottom: 80px",
     "right: 24px",
     "z-index: 9999",
     "background: var(--md-primary-fg-color, #1976d2)",
