@@ -35,9 +35,11 @@ jobs:
             fontconfig fonts-dejavu
 
       - name: Install MkDocs
-        run: pip install mkdocs-material mkdocs-with-pdf
+        run: pip install mkdocs-material mkdocs-to-pdf
 
       - name: Build Documentation
+        env:
+          ENABLE_PDF_EXPORT: "1"
         run: mkdocs build
         working-directory: doc/lwc-doc
 
