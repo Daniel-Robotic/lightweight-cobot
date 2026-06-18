@@ -22,6 +22,10 @@ BOLD='\033[1m'
 PYTHON_VERSION="3.11"
 REPO_URL="https://gitverse.ru/daniel-robotics/lightweight-cobot.git"
 
+# Branch to clone. Override via: curl ... | bash -s dev
+# Defaults to master when not specified.
+REPO_BRANCH="${REPO_BRANCH:-${1:-master}}"
+
 # Where to clone the project. Can be overridden by the user with COBOT_INSTALL_DIR.
 # Куда клонировать проект. Пользователь может переопределить через COBOT_INSTALL_DIR.
 INSTALL_DIR="${COBOT_INSTALL_DIR:-$HOME/.lwc}"
@@ -215,8 +219,7 @@ check_python() {
 resolve_install_dir() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
-    local repo_branch
-    repo_branch="${REPO_BRANCH:-$(git -C "$script_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")}"
+    local repo_branch="$REPO_BRANCH"
 
     # Running directly from inside the cloned repo (not via curl|bash)
     if [ -f "$script_dir/setup.py" ] && [ -d "$script_dir/.git" ]; then
