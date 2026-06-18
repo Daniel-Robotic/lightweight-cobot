@@ -81,6 +81,7 @@ def _start_container(p: StepProgress, port: str) -> bool:
         "-p", f"{port}:8000",
         "-v", f"{_DOC_DIR}:/docs",
         _IMAGE_NAME, "serve", "--dev-addr=0.0.0.0:8000",
+        "--watch", "/docs", "--livereload",
         capture=True,
     )
     if result.returncode != 0:
