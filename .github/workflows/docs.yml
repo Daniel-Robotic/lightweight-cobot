@@ -41,8 +41,15 @@ jobs:
         run: mkdocs build
         working-directory: doc/lwc-doc
 
-      - name: Upload Pages artifact
+      - name: Upload Pages artifact (GitHub)
+        if: github.server_url == 'https://github.com'
         uses: actions/upload-pages-artifact@v3
+        with:
+          path: doc/lwc-doc/site/
+
+      - name: Upload Pages artifact (GitVerse)
+        if: github.server_url != 'https://github.com'
+        uses: gitverse/upload-pages-artifact@v1.0.0
         with:
           path: doc/lwc-doc/site/
 
@@ -51,8 +58,11 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to Pages
-        id: deployment
+      - name: Deploy to GitHub Pages
+        if: github.server_url == 'https://github.com'
         uses: actions/deploy-pages@v4
+
+      - name: Deploy to GitVerse Pages
+        if: github.server_url != 'https://github.com'
+        uses: gitverse/deploy-pages@v1.0.0
