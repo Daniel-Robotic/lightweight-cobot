@@ -1,6 +1,6 @@
 log/
-install/
-build/
+/install/
+/build/
 .vscode
 .idea
 venv
