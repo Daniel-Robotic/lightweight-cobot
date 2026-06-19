@@ -9,11 +9,11 @@
 - Жёлтые предупреждающие индикаторы в разделе **Данные процесса**;
 - Жёлтые предупреждающие индикаторы в разделе **Фреймы**.
 
-![Ошибка отображения](../assets/troubleshooting/DisplayError.jpg)
+![Ошибка отображения](assets/troubleshooting/config_error/DisplayError.jpg)
 
-![Предупреждение в Данных процесса](../assets/troubleshooting/data_process_warning.jpg)
+![Предупреждение в Данных процесса](assets/troubleshooting/config_error/data_process_warning.jpg)
 
-![Предупреждение во Фреймах](../assets/troubleshooting/frames_warning.jpg)
+![Предупреждение во Фреймах](assets/troubleshooting/config_error/frames_warning.jpg)
 
 ## Порядок устранения
 
@@ -39,6 +39,6 @@
 7. Замените все файлы в данной директории версиями с USB-накопителя.
 8. Запустите программу перезагрузки системы с рабочего стола контроллера.
 
-![Рабочий стол контроллера](../assets/troubleshooting/desktop.jpg)
+![Рабочий стол контроллера](assets/troubleshooting/config_error/desktop.jpg)
 
 После перезагрузки конфигурация будет восстановлена, и управляющие программы запустятся корректно.

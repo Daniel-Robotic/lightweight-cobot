@@ -8,5 +8,5 @@
 
 В данном руководстве представлены инструкции по установке SunriseWorkbench на следующие операционные системы:
 
-- [Windows](install/windows.md)
-- [Linux](install/linux/linux.md)
+- [Windows](sun_install/windows.md)
+- [Linux](sun_install/linux/linux.md)

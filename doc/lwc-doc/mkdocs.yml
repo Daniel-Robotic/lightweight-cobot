@@ -14,6 +14,8 @@ theme:
     - navigation.expand
     - navigation.top
     - search.highlight
+    - content.tabs.link      # синхронизирует все табы с одинаковым названием по всему сайту
+    - content.code.copy      # кнопка "копировать" у код-блоков
 
 plugins:
   - search
@@ -33,15 +35,14 @@ markdown_extensions:
   - admonition
   - pymdownx.highlight
   - pymdownx.superfences
-
+  - pymdownx.keys
+  - pymdownx.tabbed:
+      alternate_style: true
 nav:
   - Главная: index.md
 
   - Быстрый старт:
     - Обзор: getting-started/overview.md
-    - Быстрый старт: getting-started/quick-start.md
-    - Ручная установка: getting-started/manual-sun_install.md
-    - Настройка: getting-started/configuration.md
 
   - Sunrise Workbench:
     - Обзор: sunrise/overview.md
@@ -66,7 +67,7 @@ nav:
         - Приложения: sunrise/kuka/features/applications.md
         - Меню робота: sunrise/kuka/features/robot-menu.md
         - Меню IO Group: sunrise/kuka/features/io-group.md
-    - Решение проблем:
-      - Ошибка конфигурации: sunrise/troubleshooting/config-error.md
+  - Решение проблем:
+    - Ошибка конфигурации: troubleshooting/config-error.md
 
 

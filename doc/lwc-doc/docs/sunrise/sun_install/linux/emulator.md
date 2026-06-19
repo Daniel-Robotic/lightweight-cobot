@@ -6,40 +6,48 @@
 
 Для Ubuntu 18.10 и более поздних версий выполните:
 
-```bash
-sudo apt install flatpak
-```
+=== "Bash"
+    ```bash
+    sudo apt update && sudo apt upgrade -y
+    sudo apt install flatpak
+    ```
 
 ## Установка плагина для GNOME Software
 
 Для поддержки Flatpak-пакетов в Центре приложений GNOME:
 
-```bash
-sudo apt install gnome-software-plugin-flatpak
-```
+=== "Bash"
+    ```bash
+    sudo apt install gnome-software-plugin-flatpak
+    ```
 
 ## Подключение репозитория Flathub
 
-```bash
-flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-```
+=== "Bash"
+    ```bash
+    flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+    ```
 
 !!! warning "Перезагрузка"
     После добавления репозитория необходимо перезагрузить систему для применения изменений.
 
 ## Установка PortProton
 
+Установить PortProton можно двумя способами: через терминал или через Центр приложений GNOME.
+
 **Через терминал:**
 
-```bash
-flatpak install flathub ru.linux_gaming.PortProton
-```
+=== "Bash"
+    ```bash
+    flatpak install flathub ru.linux_gaming.PortProton
+    ```
 
 Запуск производиться командой:
 
-```bash
-flatpak run ru.linux_gaming.PortProton
-```
+=== "Bash"
+    ```bash
+    flatpak run ru.linux_gaming.PortProton
+    ```
 
 **Через центр приложений:**
 
