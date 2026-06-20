@@ -84,7 +84,15 @@ def _write_xacro(tool_cfg: dict, output_path: Path) -> None:
     if xacro_include:
         body = f'    <xacro:include filename="{xacro_include}"/>\n'
     else:
-        body = "    <!-- no tool attached -->\n"
+        body = (
+            "    <!-- no tool attached: tcp coincides with link_ee -->\n"
+            "    <link name=\"tcp\" />\n"
+            "    <joint name=\"link_ee_to_tcp\" type=\"fixed\">\n"
+            "        <parent link=\"link_ee\"/>\n"
+            "        <child link=\"tcp\"/>\n"
+            "        <origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n"
+            "    </joint>\n"
+        )
 
     content = (
         '<?xml version="1.0"?>\n'

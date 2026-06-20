@@ -1,3 +1,6 @@
+import tempfile
+
+import yaml
 from launch import LaunchDescription
 from launch.actions import (
     EmitEvent,
@@ -29,17 +32,34 @@ def _spawn_setup(context, *args, **kwargs):
         },
     )
 
+    # robot_description cannot be passed via -p key:=value: rcl's YAML parser
+    # chokes on XML content (quotes, angle brackets). Merge all params into one
+    # temp file and pass via --params-file. A minimal dict triggers --ros-args
+    # so WebotsController includes the required prefix in the command.
+    with open(controller, "r") as f:
+        controller_cfg = yaml.safe_load(f) or {}
+
+    combined = {
+        "/**": {"ros__parameters": {
+            "robot_description": robot_description,
+            "set_robot_state_publisher": False,
+        }}
+    }
+    combined.update(controller_cfg)
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", delete=False, prefix="iiwa7_webots_"
+    ) as f:
+        yaml.dump(combined, f, default_flow_style=False, allow_unicode=True)
+        params_file = f.name
+
     webots = WebotsLauncher(world=world, ros2_supervisor=True)
 
     driver = WebotsController(
         robot_name=robot_name,
         parameters=[
-            {
-                "robot_description": robot_description,
-                "use_sim_time": True,
-                "set_robot_state_publisher": False,
-            },
-            controller,
+            {"use_sim_time": True},  # dict → triggers --ros-args prefix
+            params_file,             # file → --params-file (robot_description + controllers)
         ],
         respawn=True,
     )
