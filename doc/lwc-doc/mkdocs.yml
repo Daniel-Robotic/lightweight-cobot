@@ -43,6 +43,15 @@ nav:
 
   - Быстрый старт:
     - Обзор: getting-started/overview.md
+    - Настройка SunriseWorkbench: getting-started/sunrise-setup.md
+    - Подключение к серверу: getting-started/remote-access.md
+    - Установка проекта: getting-started/installation.md
+    - CLI-команды cobot: getting-started/cli-reference.md
+    - Конфигурация системы: getting-started/configuration.md
+    - Управление:
+      - ROS2 (Bash): getting-started/control/ros2-control.md
+      - Foxglove Studio: getting-started/control/foxglove.md
+      - REST API: getting-started/control/rest-api.md
 
   - Sunrise Workbench:
     - Обзор: sunrise/overview.md
