@@ -111,4 +111,4 @@ cobot -h
 
 ---
 
-**Следующий шаг:** [CLI-команды cobot](cli-reference.md)
+**Следующий шаг:** [Конфигурация системы](configuration.md)

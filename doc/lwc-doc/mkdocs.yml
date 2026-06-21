@@ -39,19 +39,24 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
 nav:
-  - Главная: index.md
-
-  - Быстрый старт:
-    - Обзор: getting-started/overview.md
+  - Начало работы:
+    - Обзор: getting-started/index.md
     - Настройка SunriseWorkbench: getting-started/sunrise-setup.md
-    - Подключение к серверу: getting-started/remote-access.md
-    - Установка проекта: getting-started/installation.md
-    - CLI-команды cobot: getting-started/cli-reference.md
-    - Конфигурация системы: getting-started/configuration.md
-    - Управление:
-      - ROS2 (Bash): getting-started/control/ros2-control.md
-      - Foxglove Studio: getting-started/control/foxglove.md
-      - REST API: getting-started/control/rest-api.md
+    - Подключение к серверу:      getting-started/remote-access.md
+    - Установка проекта:          getting-started/installation.md
+    - Конфигурация системы:       getting-started/configuration.md
+
+    - Основные концепции:
+      - Архитектура системы:   getting-started/concepts/architecture.md
+      - CLI-инструмент cobot:  getting-started/cli-reference.md
+      - FRI-протокол:          getting-started/concepts/fri-protocol.md
+      - Симуляция (Webots):    getting-started/concepts/simulation.md
+      - Планирование движений: getting-started/concepts/motion-planning.md
+
+    - Использование LWC:
+      - Управление через ROS2:     getting-started/control/ros2-control.md
+      - Управление через Foxglove: getting-started/control/foxglove.md
+      - Управление через REST API: getting-started/control/rest-api.md
 
   - Sunrise Workbench:
     - Обзор: sunrise/overview.md
@@ -60,22 +65,23 @@ nav:
       - Linux:
         - Обзор: sunrise/sun_install/linux/linux.md
         - Установка эмулятора Windows: sunrise/sun_install/linux/emulator.md
-        - Установка SunriseWorkbench: sunrise/sun_install/linux/workbench.md
+        - Установка SunriseWorkbench:  sunrise/sun_install/linux/workbench.md
     - Конфигурация проекта:
-      - Создание нового проекта: sunrise/config/new-project.md
+      - Создание нового проекта:   sunrise/config/new-project.md
       - Загрузка готового проекта: sunrise/config/load-project.md
-      - Установка библиотек: sunrise/config/libraries.md
+      - Установка библиотек:       sunrise/config/libraries.md
     - KUKA LBR IIWA 7:
       - Описание программ:
-        - TeachKuka: sunrise/kuka/programs/teach-kuka.md
-        - LBRserver: sunrise/kuka/programs/lbr-server.md
+        - TeachKuka:         sunrise/kuka/programs/teach-kuka.md
+        - LBRserver:         sunrise/kuka/programs/lbr-server.md
         - RobotPowerControl: sunrise/kuka/programs/robot-power-control.md
       - Функциональные возможности:
-        - Станция: sunrise/kuka/features/station.md
+        - Станция:             sunrise/kuka/features/station.md
         - Дополнительное меню: sunrise/kuka/features/extra-menu.md
-        - Приложения: sunrise/kuka/features/applications.md
-        - Меню робота: sunrise/kuka/features/robot-menu.md
-        - Меню IO Group: sunrise/kuka/features/io-group.md
+        - Приложения:          sunrise/kuka/features/applications.md
+        - Меню робота:         sunrise/kuka/features/robot-menu.md
+        - Меню IO Group:       sunrise/kuka/features/io-group.md
+
   - Решение проблем:
     - Ошибка конфигурации: troubleshooting/config-error.md
 
