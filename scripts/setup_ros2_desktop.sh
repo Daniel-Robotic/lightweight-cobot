@@ -58,7 +58,6 @@ sudo apt-get install -y python3-pip python3-venv python3-dev
 PROGRESS 90 "Initializing rosdep..."
 echo "Initializing rosdep..."
 sudo rosdep init 2>/dev/null || true
-sudo sed -i '/ruby\.yaml/d; /fuerte\.yaml/d' /etc/ros/rosdep/sources.list.d/20-default.list
 rosdep update
 
 PROGRESS 95 "Configuring pip for system installs..."
