@@ -84,5 +84,6 @@ nav:
 
   - Решение проблем:
     - Ошибка конфигурации: troubleshooting/config-error.md
+    - Ошибка SSL (rosdep/setup): troubleshooting/ssl-error.md
 
 
