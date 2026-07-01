@@ -6,6 +6,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
 from sensor_msgs.msg import JointState
+from std_srvs.srv import Trigger
 
 from .dynamic_router import build_dynamic_router
 from .ros_node import CobotWebNode, get_bridge, set_bridge
@@ -46,6 +47,16 @@ def main():
     app.include_router(trajectory.router)
     app.include_router(positions.router)
     app.mount("/mcp", mcp_http)
+
+    @app.post("/stop", tags=["stop"], summary="Остановить всё: runner, траекторию и планировщик")
+    def stop_all():
+        runner.stop_if_running()
+        trajectory.send_stop_trajectory()
+        try:
+            result = get_bridge().call_service(Trigger, "cobot/stop", Trigger.Request())
+            return {"status": "stopped", "success": result.success, "message": result.message}
+        except RuntimeError:
+            return {"status": "stopped", "success": True, "message": "Планировщик не запущен"}
 
     uvicorn.run(app, host=host, port=port)
 

@@ -24,16 +24,6 @@ endpoints:
     timeout: 5.0
     enabled: true
 
-  - path: /robot/stop
-    method: POST
-    type: service
-    ros_name: cobot/stop
-    msg_type: std_srvs/srv/Trigger
-    summary: "Немедленно остановить движение"
-    description: "Вызывает сервис экстренной остановки — движение прерывается немедленно."
-    tags: [motion]
-    response_fields: [success, message]
-    timeout: 5.0
     enabled: true
 
   - path: /robot/move/named
