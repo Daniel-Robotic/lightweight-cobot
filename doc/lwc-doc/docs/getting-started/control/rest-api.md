@@ -1,573 +1,651 @@
 # Управление через REST API
 
-REST API предоставляет HTTP-интерфейс для управления роботом из любой среды: Bash, Python, MATLAB, Postman и других инструментов.
+REST API позволяет читать состояние робота и отправлять ему команды по HTTP. Он рассчитан на прикладные скрипты, интеграции с другими системами и быстрые проверки через Swagger UI.
 
-## Веб-панель (Swagger UI)
+Запросы к перемещению выполняются синхронно: ответ приходит после завершения планирования и выполнения команды либо после внутреннего тайм-аута. Очереди команд в API нет — дождитесь ответа на текущий запрос, прежде чем отправлять следующий.
 
-Интерактивная документация со встроенным тест-клиентом доступна по адресу:
+!!! warning "Безопасность"
+    REST API не заменяет штатную систему безопасности KUKA и кнопку аварийного останова. Перед первым запуском на реальном роботе проверьте программу Sunrise, зоны безопасности, инструмент и рабочую область. Начинать знакомство с API лучше в симуляции.
 
-- **Локально:** [http://localhost:8007/docs](http://localhost:8007/docs)
-- **Удалённо:** `http://ip-сервера:8007/docs`
+## Запуск и доступ
 
----
+Веб-сервер запускается вместе со стеком робота, если в корневом файле **cobot-setting.yaml** включён блок **web**:
 
-## Подготовка к работе
+~~~ yaml
+web:
+  enabled: true
+  host: 0.0.0.0
+  port: 8007
+  endpoints: pkg://iiwa_config/config/api_endpoints.yaml
+  joint_limits: pkg://iiwa_config/config/moveit/joint_limits.yaml
+~~~
 
-!!! tip "Не знакомы с инструментами?"
-    - **Bash / curl** — [введение в Bash-скрипты](https://easy-quest.github.io/my-docs/en/docs/Bash-x/bash_scripts_001/)
-    - **Python** — [руководство для начинающих](https://metanit.com/python/tutorial/) или [официальная документация](https://docs.python.org/3/)
-    - **MATLAB** — [официальная документация MATLAB](https://www.mathworks.com/help/matlab/index.html)
+После запуска через **cobot run** сервер будет доступен по адресу **http://адрес-сервера:8007**. Swagger UI помогает посмотреть фактическую схему запросов и выполнить одиночный тест:
 
-### Константы
+- локально: [http://localhost:8007/docs](http://localhost:8007/docs);
+- с другой машины: http://адрес-сервера:8007/docs;
+- JSON-схема OpenAPI: http://адрес-сервера:8007/openapi.json.
 
-Для Python и MATLAB определите константы в начале скрипта. Для Bash они указываются непосредственно в командах.
+Отдельного health-check в сервере нет. Если открывается Swagger UI, HTTP-сервер запущен. Готовность ROS-компонентов проверяется при обращении к конкретному маршруту.
+
+По умолчанию сервер слушает все сетевые интерфейсы и не использует аутентификацию. Не публикуйте порт 8007 в недоверенную сеть. Для локальной работы укажите **host: 127.0.0.1**, а для удалённого доступа ограничьте сеть правилами firewall или VPN.
+
+## Подготовка к примерам
+
+Вкладки на этой странице синхронизированы: выберите удобный язык один раз, и тот же вариант будет открыт у следующих примеров.
+
+=== "curl"
+
+    ~~~ bash
+    HOST=http://localhost:8007
+    ~~~
 
 === "Python"
 
-    ```python
-    import httpx, math
+    ~~~ python
+    import httpx
 
-    HOST   = "http://localhost:8007"
-    T_FAST = 10   # тайм-аут для чтения состояния [с]
-    T_MOVE = 60   # тайм-аут для команд движения [с]
-    ```
+    HOST = "http://localhost:8007"
+    T_READ = 10
+    T_MOVE = 60
+    ~~~
 
 === "MATLAB"
 
-    ```matlab
-    HOST   = 'http://localhost:8007';
-    T_FAST = 10;
+    ~~~ matlab
+    HOST = 'http://localhost:8007';
+    T_READ = 10;
     T_MOVE = 60;
-    ```
 
----
+    readOpts = weboptions('Timeout', T_READ);
+    moveOpts = weboptions('MediaType', 'application/json', 'Timeout', T_MOVE);
+    ~~~
 
-## Эндпоинты
+Для JSON-запросов MATLAB использует встроенный webwrite. Загрузка CSV и JSON-файлов требует интерфейса matlab.net.http, который есть в современных desktop-версиях MATLAB.
 
-### 1. GET `/robot/joint_states` — углы суставов
+## Состав API
 
-Возвращает текущие значения углов (в радианах) всех 7 суставов.
-Используйте для мониторинга положения робота перед отправкой команд.
-
-=== "Bash"
-
-    ```bash
-    curl -s --max-time 10 http://localhost:8007/robot/joint_states | python3 -m json.tool
-    ```
-
-=== "Python"
-
-    ```python
-    r = httpx.get(f"{HOST}/robot/joint_states", timeout=T_FAST)
-    print(r.json()["position"])
-    ```
-
-=== "MATLAB"
-
-    ```matlab
-    r = webread([HOST '/robot/joint_states'], weboptions('Timeout', T_FAST));
-    disp(r.position)
-    ```
-
----
-
-### 2. GET `/robot/pose` — текущая поза TCP
-
-Возвращает декартову позу инструментального центра (TCP): координаты `x, y, z` [м] и ориентацию в углах Эйлера [градусы].
-Используйте для контроля положения инструмента в пространстве.
-
-=== "Bash"
-
-    ```bash
-    curl -s --max-time 10 http://localhost:8007/robot/pose | python3 -m json.tool
-    ```
-
-=== "Python"
-
-    ```python
-    r = httpx.get(f"{HOST}/robot/pose", timeout=T_FAST)
-    pose = r.json()
-    print(pose)
-    ```
-
-=== "MATLAB"
-
-    ```matlab
-    r = webread([HOST '/robot/pose'], weboptions('Timeout', T_FAST));
-    fprintf('x=%.4f  y=%.4f  z=%.4f\n', r.position.x, r.position.y, r.position.z);
-    fprintf('A=%.4f  B=%.4f  C=%.4f\n', r.orientation.euler_deg.a, r.orientation.euler_deg.b, r.orientation.euler_deg.c);
-    ```
-
----
-
-### 3. GET `/robot/positions` — именованные позиции
-
-Возвращает список всех сохранённых именованных позиций (name + description).
-Используйте для получения допустимых значений для `/robot/move/named`.
-
-=== "Bash"
-
-    ```bash
-    curl -s --max-time 10 http://localhost:8007/robot/positions
-    ```
-
-=== "Python"
-
-    ```python
-    r = httpx.get(f"{HOST}/robot/positions", timeout=T_FAST)
-    for pos in r.json():
-        print(pos["name"], "—", pos["description"])
-    ```
-
-=== "MATLAB"
-
-    ```matlab
-    r = webread([HOST '/robot/positions'], weboptions('Timeout', T_FAST));
-    for i = 1:numel(r)
-        fprintf('%s — %s\n', r(i).name, r(i).description);
-    end
-    ```
-
----
-
-### 4. POST `/robot/stop` — экстренная остановка
-
-Немедленно останавливает текущее движение робота.
-Используйте при необходимости прервать выполняемую команду.
-
-=== "Bash"
-
-    ```bash
-    curl -s --max-time 10 -X POST http://localhost:8007/robot/stop
-    ```
-
-=== "Python"
-
-    ```python
-    r = httpx.post(f"{HOST}/robot/stop", timeout=T_FAST)
-    print(r.json())
-    ```
-
-=== "MATLAB"
-
-    ```matlab
-    opts = weboptions('RequestMethod', 'post', 'MediaType', 'application/json', 'Timeout', T_FAST);
-    r = webwrite([HOST '/robot/stop'], struct(), opts);
-    disp(r.success)
-    ```
-
----
-
-### 5. POST `/robot/move/named` — движение в именованную позицию
-
-Перемещает робота в одну из заранее сохранённых позиций (см. `/robot/positions`).
-Используйте для воспроизводимых переходов между рабочими позициями.
-
-| Параметр | Тип | Описание |
+| Метод | Маршрут | Назначение |
 |---|---|---|
-| `name` | string | Имя позиции |
-| `speed` | float | Масштаб скорости (0.0–1.0) |
-| `accel_scale` | float | Масштаб ускорения (0.0 = по умолчанию) |
+| GET | /robot/joint_states | Текущее состояние суставов |
+| GET | /robot/pose | Поза TCP относительно base_link |
+| GET | /robot/positions | Именованные положения из SRDF |
+| POST | /robot/move/named | Переход в именованное положение |
+| POST | /robot/move/pose | Декартово перемещение TCP |
+| POST | /robot/move/joints | Перемещение по углам семи суставов |
+| POST | /trajectory/send | Публикация траектории из JSON |
+| POST | /trajectory/send_csv | Загрузка и публикация траектории из CSV |
+| GET | /trajectory/logs | Последние записи траекторного модуля |
+| POST | /sequences/start | Запуск последовательности из JSON-файла |
+| GET | /sequences/status | Статус запущенной последовательности |
+| GET | /sequences/logs | Вывод процесса последовательности |
+| POST | /stop | Остановка команд API и планировщика |
 
-=== "Bash"
+## Получение состояния
 
-    ```bash
-    curl -s --max-time 60 -X POST http://localhost:8007/robot/move/named \
+### Состояние суставов
+
+GET **/robot/joint_states** возвращает последнее сообщение ROS-топика **/joint_states**. Поля **position**, **velocity** и **effort** расположены в том же порядке, что и соответствующий массив **name**. Углы в **position** заданы в радианах.
+
+=== "curl"
+
+    ~~~ bash
+    curl -sS --max-time 10 $HOST/robot/joint_states | python3 -m json.tool
+    ~~~
+
+=== "Python"
+
+    ~~~ python
+    response = httpx.get(f"{HOST}/robot/joint_states", timeout=T_READ)
+    response.raise_for_status()
+    state = response.json()
+    print(dict(zip(state["name"], state["position"])))
+    ~~~
+
+=== "MATLAB"
+
+    ~~~ matlab
+    jointState = webread([HOST '/robot/joint_states'], readOpts);
+    disp(jointState.position)
+    ~~~
+
+Типичный ответ:
+
+~~~ json
+{
+  "name": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"],
+  "position": [0.0, 0.0, 0.0, -1.57, 0.0, 1.57, 0.0],
+  "velocity": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+  "effort": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+}
+~~~
+
+Если сообщения от контроллера не поступают в течение двух секунд, API вернёт 503. Обычно это означает, что контроллер или робот ещё не запущен.
+
+### Поза TCP
+
+GET **/robot/pose** вычисляет прямую кинематику через сервис MoveIt **/compute_fk**. Положение задаётся в метрах, а ориентация возвращается одновременно кватернионом и углами Эйлера:
+
+- **euler_rad** — радианы;
+- **euler_deg** — градусы;
+- углы **A, B, C** соответствуют конвенции KUKA ABC: поворот вокруг Z, затем Y и затем X.
+
+=== "curl"
+
+    ~~~ bash
+    curl -sS --max-time 10 $HOST/robot/pose | python3 -m json.tool
+    ~~~
+
+=== "Python"
+
+    ~~~ python
+    response = httpx.get(f"{HOST}/robot/pose", timeout=T_READ)
+    response.raise_for_status()
+    pose = response.json()
+    print(pose["position"])
+    ~~~
+
+=== "MATLAB"
+
+    ~~~ matlab
+    pose = webread([HOST '/robot/pose'], readOpts);
+    fprintf('TCP: x=%.3f, y=%.3f, z=%.3f м\n', ...
+        pose.position.x, pose.position.y, pose.position.z);
+    fprintf('ABC: A=%.1f, B=%.1f, C=%.1f град\n', ...
+        pose.orientation.euler_deg.a, ...
+        pose.orientation.euler_deg.b, ...
+        pose.orientation.euler_deg.c);
+    ~~~
+
+Маршрут зависит и от **/joint_states**, и от работающего MoveIt. При недоступности любого из них будет возвращён 503.
+
+### Именованные положения
+
+GET **/robot/positions** читает положения group_state из SRDF. Список не зашит в API: он отражает текущую конфигурацию робота. В стандартной конфигурации есть положения **home**, **work** и **transport**.
+
+=== "curl"
+
+    ~~~ bash
+    curl -sS $HOST/robot/positions | python3 -m json.tool
+    ~~~
+
+=== "Python"
+
+    ~~~ python
+    response = httpx.get(f"{HOST}/robot/positions", timeout=T_READ)
+    response.raise_for_status()
+    for position in response.json():
+        print(position["name"], "—", position["description"])
+    ~~~
+
+=== "MATLAB"
+
+    ~~~ matlab
+    namedPositions = webread([HOST '/robot/positions'], readOpts);
+    for i = 1:numel(namedPositions)
+        fprintf('%s — %s\n', namedPositions(i).name, ...
+            namedPositions(i).description);
+    end
+    ~~~
+
+Перед вызовом **/robot/move/named** всегда полезно получить этот список: он показывает точное имя, группу планирования и целевые углы суставов.
+
+## Команды перемещения
+
+Все три команды ниже используют MoveIt. Ответ имеет вид:
+
+~~~ json
+{"success": true, "message": "Движение выполнено успешно"}
+~~~
+
+Поле **success: false** означает, что планировщик не смог построить или выполнить траекторию. HTTP-статус при этом может остаться 200, поэтому в прикладном коде проверяйте и статус HTTP, и поле **success**.
+
+### Переход в именованное положение
+
+POST **/robot/move/named** перемещает манипулятор в положение из SRDF.
+
+| Поле | Обязательное | Значение |
+|---|---:|---|
+| name | да | Имя положения из /robot/positions |
+| speed | нет | Масштаб скорости от 0.01 до 1.0; по умолчанию 0.1 |
+| accel_scale | нет | Масштаб ускорения от 0 до 1.0; 0 означает использовать speed |
+
+=== "curl"
+
+    ~~~ bash
+    curl -sS --max-time 60 -X POST $HOST/robot/move/named \
       -H "Content-Type: application/json" \
       -d '{"name": "home", "speed": 0.1, "accel_scale": 0.0}'
-    ```
+    ~~~
 
 === "Python"
 
-    ```python
-    r = httpx.post(f"{HOST}/robot/move/named",
-                   json={"name": "home", "speed": 0.1, "accel_scale": 0.0},
-                   timeout=T_MOVE)
-    print(r.json())
-    ```
+    ~~~ python
+    response = httpx.post(
+        f"{HOST}/robot/move/named",
+        json={"name": "home", "speed": 0.1, "accel_scale": 0.0},
+        timeout=T_MOVE,
+    )
+    response.raise_for_status()
+    result = response.json()
+    if not result["success"]:
+        raise RuntimeError(result["message"])
+    ~~~
 
 === "MATLAB"
 
-    ```matlab
-    opts = weboptions('RequestMethod', 'post', 'MediaType', 'application/json', 'Timeout', T_MOVE);
+    ~~~ matlab
     body = struct('name', 'home', 'speed', 0.1, 'accel_scale', 0.0);
-    r = webwrite([HOST '/robot/move/named'], body, opts);
-    disp(r.success)
-    ```
+    reply = webwrite([HOST '/robot/move/named'], body, moveOpts);
+    assert(reply.success, reply.message)
+    ~~~
 
----
+### Декартово перемещение TCP
 
-### 6. POST `/robot/move/pose` — движение по декартовой позе
+POST **/robot/move/pose** принимает положение TCP в метрах и ориентацию ABC в радианах. Если **frame_id** пуст, используется фрейм, заданный в настройках планирования; в стандартной конфигурации это **base_link**.
 
-Перемещает TCP в заданную точку пространства. Ориентация задаётся углами Эйлера (A, B, C) в радианах.
-Используйте когда нужно задать точное положение и ориентацию инструмента.
+| Поле | Обязательное | Значение |
+|---|---:|---|
+| x, y, z | да | Координаты TCP, м |
+| a, b, c | нет | Углы KUKA ABC, рад; по умолчанию 0 |
+| speed | нет | Масштаб скорости от 0.01 до 1.0; по умолчанию 0.1 |
+| planner | нет | ompl, ptp, lin, circ или chomp; по умолчанию ptp |
+| frame_id | нет | Фрейм целевой позы; пустая строка использует фрейм по умолчанию |
 
-| Параметр | Тип | Описание |
-|---|---|---|
-| `x, y, z` | float | Координаты [м] |
-| `a, b, c` | float | Углы Эйлера [рад] |
-| `speed` | float | Масштаб скорости (0.0–1.0) |
-| `planner` | string | Планировщик: `ptp`, `lin`, `circ` |
-| `frame_id` | string | Система отсчёта (пусто = `base_link`) |
+Значение **planner** приводится к нижнему регистру. PTP подходит для переходов между точками, LIN — для прямолинейного движения инструмента. Выбор CIRC имеет смысл только для задач, где он поддерживается вашим планировщиком и целевой позой.
 
-=== "Bash"
+=== "curl"
 
-    ```bash
-    curl -s --max-time 60 -X POST http://localhost:8007/robot/move/pose \
+    ~~~ bash
+    curl -sS --max-time 60 -X POST $HOST/robot/move/pose \
       -H "Content-Type: application/json" \
-      -d '{"x": 0.4, "y": 0.0, "z": 0.5, "a": 0.0, "b": 3.14159, "c": 0.0, "speed": 0.1, "planner": "ptp"}'
-    ```
+      -d '{
+        "x": 0.40, "y": 0.00, "z": 0.50,
+        "a": 0.0, "b": 3.14159, "c": 0.0,
+        "speed": 0.1, "planner": "ptp", "frame_id": ""
+      }'
+    ~~~
 
 === "Python"
 
-    ```python
-    r = httpx.post(f"{HOST}/robot/move/pose",
-                   json={"x": 0.4, "y": 0.0, "z": 0.5,
-                         "a": 0.0, "b": math.pi, "c": 0.0,
-                         "speed": 0.1, "planner": "ptp", "frame_id": ""},
-                   timeout=T_MOVE)
-    print(r.json())
-    ```
+    ~~~ python
+    target = {
+        "x": 0.40, "y": 0.00, "z": 0.50,
+        "a": 0.0, "b": 3.14159, "c": 0.0,
+        "speed": 0.1, "planner": "ptp", "frame_id": "",
+    }
+    response = httpx.post(f"{HOST}/robot/move/pose", json=target, timeout=T_MOVE)
+    response.raise_for_status()
+    print(response.json())
+    ~~~
 
 === "MATLAB"
 
-    ```matlab
-    opts = weboptions('RequestMethod', 'post', 'MediaType', 'application/json', 'Timeout', T_MOVE);
-    body = struct('x', 0.4, 'y', 0.0, 'z', 0.5, ...
-                  'a', 0.0, 'b', pi,   'c', 0.0, ...
-                  'speed', 0.1, 'planner', 'ptp', 'frame_id', '');
-    r = webwrite([HOST '/robot/move/pose'], body, opts);
-    disp(r.success)
-    ```
+    ~~~ matlab
+    body = struct( ...
+        'x', 0.40, 'y', 0.00, 'z', 0.50, ...
+        'a', 0.0, 'b', pi, 'c', 0.0, ...
+        'speed', 0.1, 'planner', 'ptp', 'frame_id', '');
+    reply = webwrite([HOST '/robot/move/pose'], body, moveOpts);
+    assert(reply.success, reply.message)
+    ~~~
 
----
+### Перемещение по углам суставов
 
-### 7. POST `/robot/move/joints` — движение по углам суставов
+POST **/robot/move/joints** принимает ровно семь углов в порядке J1–J7. API проверяет количество значений и текущие границы из файла **joint_limits.yaml**.
 
-Перемещает робота в позицию, заданную углами всех 7 суставов (в радианах).
-Используйте когда нужен прямой контроль над конфигурацией робота без планирования в декартовом пространстве.
+| Сустав | Допустимый угол, рад |
+|---|---:|
+| J1 | от -2.97 до 2.97 |
+| J2 | от -2.10 до 2.10 |
+| J3 | от -2.97 до 2.97 |
+| J4 | от -2.10 до 2.10 |
+| J5 | от -2.97 до 2.97 |
+| J6 | от -2.10 до 2.10 |
+| J7 | от -3.05 до 3.05 |
 
-| Параметр | Тип | Описание |
-|---|---|---|
-| `joints` | float[7] | Углы суставов J1–J7 [рад] |
-| `speed` | float | Масштаб скорости (0.0–1.0) |
+При изменении файла ограничений ориентируйтесь на Swagger UI: значения в этой таблице относятся к поставляемой конфигурации.
 
-=== "Bash"
+=== "curl"
 
-    ```bash
-    curl -s --max-time 60 -X POST http://localhost:8007/robot/move/joints \
+    ~~~ bash
+    curl -sS --max-time 60 -X POST $HOST/robot/move/joints \
       -H "Content-Type: application/json" \
-      -d '{"joints": [0.0, 0.5, 0.0, -1.5708, 0.0, 1.5708, 0.0], "speed": 0.1}'
-    ```
+      -d '{"joints": [0.0, 0.5, 0.0, -1.57, 0.0, 1.57, 0.0], "speed": 0.1}'
+    ~~~
 
 === "Python"
 
-    ```python
-    r = httpx.post(f"{HOST}/robot/move/joints",
-                   json={"joints": [0.0, 0.5, 0.0, -math.pi/2, 0.0, math.pi/2, 0.0],
-                         "speed": 0.1},
-                   timeout=T_MOVE)
-    print(r.json())
-    ```
+    ~~~ python
+    response = httpx.post(
+        f"{HOST}/robot/move/joints",
+        json={
+            "joints": [0.0, 0.5, 0.0, -1.57, 0.0, 1.57, 0.0],
+            "speed": 0.1,
+        },
+        timeout=T_MOVE,
+    )
+    response.raise_for_status()
+    print(response.json())
+    ~~~
 
 === "MATLAB"
 
-    ```matlab
-    opts = weboptions('RequestMethod', 'post', 'MediaType', 'application/json', 'Timeout', T_MOVE);
-    body = struct('joints', {{0.0, 0.5, 0.0, -pi/2, 0.0, pi/2, 0.0}}, 'speed', 0.1);
-    r = webwrite([HOST '/robot/move/joints'], body, opts);
-    disp(r.success)
-    ```
+    ~~~ matlab
+    body = struct( ...
+        'joints', [0.0, 0.5, 0.0, -1.57, 0.0, 1.57, 0.0], ...
+        'speed', 0.1);
+    reply = webwrite([HOST '/robot/move/joints'], body, moveOpts);
+    assert(reply.success, reply.message)
+    ~~~
 
----
+## Траектории по суставам
 
-### 8. POST `/trajectory/send` — отправка траектории
+Маршруты раздела **/trajectory** публикуют сообщение JointTrajectory напрямую в контроллер **/iiwa_arm_controller/joint_trajectory**. Ответ **status: sent** подтверждает публикацию сообщения, но не завершение движения и не отсутствие ошибок контроллера. Отслеживайте состояние робота через **/robot/joint_states** и при необходимости смотрите **/trajectory/logs**.
 
-Выполняет многоточечную траекторию, заданную набором waypoints с метками времени.
-Используйте для плавного воспроизведения записанных или синтезированных движений.
+### Траектория в JSON
 
-| Параметр | Тип | Описание |
-|---|---|---|
-| `points[].positions` | float[7] | Углы суставов в точке [рад] |
-| `points[].time_from_start` | float | Время от старта [с] |
-| `validate_limits` | bool | Проверять ли ограничения суставов |
+POST **/trajectory/send** принимает одну или несколько точек.
 
-=== "Bash"
+| Поле | Значение |
+|---|---|
+| points | Непустой список точек |
+| points[].positions | Ровно 7 углов J1–J7 в радианах |
+| points[].time_from_start | Время от начала траектории в секундах, не меньше 0 |
+| validate_limits | Проверять границы суставов; по умолчанию true |
 
-    ```bash
-    curl -s --max-time 60 -X POST http://localhost:8007/trajectory/send \
+Сервер не проверяет возрастание времени между точками, поэтому задавайте его самостоятельно. Для контроллера траектория с возрастающими значениями времени предсказуемее.
+
+=== "curl"
+
+    ~~~ bash
+    curl -sS --max-time 20 -X POST $HOST/trajectory/send \
       -H "Content-Type: application/json" \
       -d '{
         "points": [
-          {"positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "time_from_start": 0.0},
-          {"positions": [0.0, 0.5, 0.0, -1.0, 0.0, 1.0, 0.0], "time_from_start": 3.0},
-          {"positions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "time_from_start": 6.0}
+          {"positions": [0, 0, 0, 0, 0, 0, 0], "time_from_start": 0.0},
+          {"positions": [0, 0.5, 0, -1.0, 0, 1.0, 0], "time_from_start": 3.0},
+          {"positions": [0, 0, 0, 0, 0, 0, 0], "time_from_start": 6.0}
         ],
         "validate_limits": true
       }'
-    ```
+    ~~~
 
 === "Python"
 
-    ```python
-    r = httpx.post(f"{HOST}/trajectory/send",
-                   json={
-                       "points": [
-                           {"positions": [0.0]*7,                                "time_from_start": 0.0},
-                           {"positions": [0.0, 0.5, 0.0, -1.0, 0.0, 1.0, 0.0], "time_from_start": 3.0},
-                           {"positions": [0.0]*7,                                "time_from_start": 6.0},
-                       ],
-                       "validate_limits": True,
-                   },
-                   timeout=T_MOVE)
-    print(r.json())
-    ```
+    ~~~ python
+    trajectory = {
+        "points": [
+            {"positions": [0.0] * 7, "time_from_start": 0.0},
+            {"positions": [0.0, 0.5, 0.0, -1.0, 0.0, 1.0, 0.0], "time_from_start": 3.0},
+            {"positions": [0.0] * 7, "time_from_start": 6.0},
+        ],
+        "validate_limits": True,
+    }
+    response = httpx.post(f"{HOST}/trajectory/send", json=trajectory, timeout=T_READ)
+    response.raise_for_status()
+    print(response.json())
+    ~~~
 
 === "MATLAB"
 
-    ```matlab
-    opts = weboptions('RequestMethod', 'post', 'MediaType', 'application/json', 'Timeout', T_MOVE);
-    p1 = struct('positions', {{0,0,0,0,0,0,0}},        'time_from_start', 0.0);
-    p2 = struct('positions', {{0,0.5,0,-1.0,0,1.0,0}}, 'time_from_start', 3.0);
-    p3 = struct('positions', {{0,0,0,0,0,0,0}},        'time_from_start', 6.0);
-    body = struct('points', {{p1, p2, p3}}, 'validate_limits', true);
-    r = webwrite([HOST '/trajectory/send'], body, opts);
-    disp(r)
-    ```
+    ~~~ matlab
+    p1 = struct('positions', [0, 0, 0, 0, 0, 0, 0], ...
+                'time_from_start', 0.0);
+    p2 = struct('positions', [0, 0.5, 0, -1.0, 0, 1.0, 0], ...
+                'time_from_start', 3.0);
+    trajectory.points = [p1, p2];
+    trajectory.validate_limits = true;
 
----
+    opts = weboptions('MediaType', 'application/json', 'Timeout', T_READ);
+    reply = webwrite([HOST '/trajectory/send'], trajectory, opts);
+    disp(reply)
+    ~~~
 
-### 9. POST `/trajectory/send_csv` — загрузка траектории из CSV
+### Загрузка CSV
 
-Загружает траекторию из CSV-файла и выполняет её. Формат файла: строки — точки, столбцы — углы суставов + время.
-Используйте для воспроизведения траекторий, подготовленных во внешних инструментах.
+POST **/trajectory/send_csv** принимает CSV-файл в multipart-поле **file**. Первая строка должна быть заголовком. Имена колонок суставов могут быть записаны как **joint1** или **joint_1**, регистр не важен; колонка времени называется **t**, **time** или **time_from_start**. Порядок колонок произвольный.
 
-=== "Bash"
+Пример файла:
 
-    ```bash
-    curl -s --max-time 60 -X POST http://localhost:8007/trajectory/send_csv \
-      -F "file=@trajectory.csv" \
-      -F "separator=," \
-      -F "validate_limits=true"
-    ```
+~~~ csv
+joint1,joint2,joint3,joint4,joint5,joint6,joint7,t
+0,0,0,0,0,0,0,0.0
+0,0.5,0,-1.0,0,1.0,0,3.0
+~~~
+
+Параметры **separator** и **validate_limits** передаются в строке запроса, а не как поля формы. По умолчанию разделитель — запятая, проверка ограничений включена.
+
+=== "curl"
+
+    ~~~ bash
+    curl -sS --max-time 20 -X POST \
+      "$HOST/trajectory/send_csv?separator=%2C&validate_limits=true" \
+      -F "file=@trajectory.csv;type=text/csv"
+    ~~~
 
 === "Python"
 
-    ```python
-    with open("trajectory.csv", "rb") as f:
-        r = httpx.post(f"{HOST}/trajectory/send_csv",
-                       files={"file": ("trajectory.csv", f, "text/csv")},
-                       data={"separator": ",", "validate_limits": "true"},
-                       timeout=T_MOVE)
-    print(r.json())
-    ```
+    ~~~ python
+    with open("trajectory.csv", "rb") as csv_file:
+        response = httpx.post(
+            f"{HOST}/trajectory/send_csv",
+            params={"separator": ",", "validate_limits": True},
+            files={"file": ("trajectory.csv", csv_file, "text/csv")},
+            timeout=T_READ,
+        )
+    response.raise_for_status()
+    print(response.json())
+    ~~~
 
 === "MATLAB"
 
-    !!! warning "Требует уточнения"
-        Код ниже использует `matlab.net.http` и может потребовать доработки в зависимости от вашей версии MATLAB.
-
-    ```matlab
+    ~~~ matlab
     import matlab.net.http.*
     import matlab.net.http.io.*
 
-    csvData = fileread('trajectory.csv');
-    part = FormProvider(FormField('file', csvData, 'filename', 'trajectory.csv', ...
-                                  'content-type', 'text/csv'), ...
-                       FormField('separator', ','), ...
-                       FormField('validate_limits', 'true'));
-    req = RequestMessage('POST', [], part);
-    opts = matlab.net.http.HTTPOptions('ConnectTimeout', T_MOVE, 'ResponseTimeout', T_MOVE);
-    [resp, ~] = req.send([HOST '/trajectory/send_csv'], opts);
-    disp(resp.Body.Data)
-    ```
+    uri = URI([HOST '/trajectory/send_csv?separator=%2C&validate_limits=true']);
+    form = MultipartFormProvider('file', FileProvider('trajectory.csv'));
+    request = RequestMessage('post', [], form);
+    httpOpts = HTTPOptions('ConnectTimeout', T_READ, 'ResponseTimeout', T_READ);
+    response = request.send(uri, httpOpts);
 
----
+    disp(response.Body.Data)
+    ~~~
 
-### 10. POST `/trajectory/stop` — остановка траектории
+Для файла с точкой с запятой замените %2C на %3B.
 
-Прерывает выполнение текущей траектории.
-Используйте для аварийной остановки во время воспроизведения.
+### Лог траекторного модуля
 
-=== "Bash"
+GET **/trajectory/logs?n=50** возвращает до 300 последних записей. Параметр **n** должен быть в диапазоне от 1 до 300.
 
-    ```bash
-    curl -s --max-time 10 -X POST http://localhost:8007/trajectory/stop
-    ```
+=== "curl"
+
+    ~~~ bash
+    curl -sS "$HOST/trajectory/logs?n=20" | python3 -m json.tool
+    ~~~
 
 === "Python"
 
-    ```python
-    r = httpx.post(f"{HOST}/trajectory/stop", timeout=T_FAST)
-    print(r.json())
-    ```
-
-=== "MATLAB"
-
-    ```matlab
-    opts = weboptions('RequestMethod', 'post', 'Timeout', T_FAST);
-    r = webread([HOST '/trajectory/stop'], opts);
-    disp(r)
-    ```
-
----
-
-### 11. GET `/trajectory/logs` — лог выполнения траектории
-
-Возвращает последние `n` строк лога выполнения траектории.
-Используйте для диагностики после выполнения команды.
-
-=== "Bash"
-
-    ```bash
-    curl -s --max-time 10 "http://localhost:8007/trajectory/logs?n=20"
-    ```
-
-=== "Python"
-
-    ```python
-    r = httpx.get(f"{HOST}/trajectory/logs", params={"n": 20}, timeout=T_FAST)
-    for line in r.json()["lines"]:
+    ~~~ python
+    response = httpx.get(f"{HOST}/trajectory/logs", params={"n": 20}, timeout=T_READ)
+    response.raise_for_status()
+    for line in response.json()["lines"]:
         print(line)
-    ```
+    ~~~
 
 === "MATLAB"
 
-    ```matlab
-    r = webread([HOST '/trajectory/logs'], weboptions('Timeout', T_FAST), 'n', 20);
-    disp(r.lines)
-    ```
+    ~~~ matlab
+    logs = webread([HOST '/trajectory/logs?n=20'], readOpts);
+    disp(logs.lines)
+    ~~~
 
----
+Чтобы прервать траекторию, используйте общий маршрут **POST /stop**. Отдельного маршрута **/trajectory/stop** в API нет.
 
-### 12. POST `/sequences/start` — запуск последовательности движений
+## Последовательности движений
 
-Запускает автоматическую последовательность движений из JSON-конфига (`motion_sequence_config.json`).
-Используйте для воспроизведения повторяющихся циклов работы.
+POST **/sequences/start** запускает отдельный процесс motion_sequence_runner. Он читает загруженный JSON-файл и поочерёдно отправляет цели MoveToJoints или MoveToPose.
 
-| Параметр | Тип | Описание |
-|---|---|---|
-| `config` | file | JSON-файл конфигурации последовательности |
-| `n_iterations` | int | Число повторений (0 = бесконечно) |
-| `delay_between_iterations` | float | Пауза между итерациями [с] |
+| Поле формы | Значение по умолчанию | Назначение |
+|---|---:|---|
+| config | — | JSON-файл последовательности, обязательное поле |
+| n_iterations | 3 | Число повторений, не меньше 1 |
+| delay_between_iterations | 5.0 | Пауза между итерациями, с |
+| bag_path | пусто | Путь для записи rosbag; пустая строка отключает запись |
+| topics | пусто | Топики для rosbag через запятую; пусто означает все обнаруженные топики |
+| joints_action | cobot/move_to_joints | Имя action для суставных целей |
+| pose_action | cobot/move_to_pose | Имя action для декартовых целей |
 
-=== "Bash"
+Минимальная структура конфигурации:
 
-    ```bash
-    curl -s --max-time 10 -X POST http://localhost:8007/sequences/start \
-      -F "config=@motion_sequence_config.json" \
+~~~ json
+{
+  "home": {
+    "joints": [0, 0, 0, -1.57, 0, 1.57, 0],
+    "speed": 0.1
+  },
+  "waypoints": [
+    {
+      "x": 0.6, "y": 0.1, "z": 0.55,
+      "a": 3.14, "b": 0.31, "c": 2.79,
+      "speed": 0.2, "planner": "lin"
+    },
+    {
+      "joints": [0.5, 0.3, 0, -1.2, 0, 1.4, 0],
+      "speed": 0.2
+    }
+  ]
+}
+~~~
+
+Если в точке есть поле **joints**, она считается суставной. Иначе runner ожидает декартовы поля **x**, **y**, **z**, **a**, **b** и **c**.
+
+### Запуск последовательности
+
+=== "curl"
+
+    ~~~ bash
+    curl -sS --max-time 10 -X POST $HOST/sequences/start \
+      -F "config=@motion_sequence_config.json;type=application/json" \
       -F "n_iterations=3" \
       -F "delay_between_iterations=5.0"
-    ```
+    ~~~
 
 === "Python"
 
-    ```python
-    with open("motion_sequence_config.json", "rb") as f:
-        r = httpx.post(f"{HOST}/sequences/start",
-                       files={"config": ("config.json", f, "application/json")},
-                       data={"n_iterations": "3", "delay_between_iterations": "5.0"},
-                       timeout=T_FAST)
-    print(r.json())
-    ```
+    ~~~ python
+    with open("motion_sequence_config.json", "rb") as config:
+        response = httpx.post(
+            f"{HOST}/sequences/start",
+            files={"config": ("motion_sequence_config.json", config, "application/json")},
+            data={"n_iterations": "3", "delay_between_iterations": "5.0"},
+            timeout=T_READ,
+        )
+    response.raise_for_status()
+    print(response.json())
+    ~~~
 
 === "MATLAB"
 
-    !!! warning "Требует уточнения"
-        Код ниже использует `matlab.net.http` и может потребовать доработки в зависимости от вашей версии MATLAB.
-
-    ```matlab
+    ~~~ matlab
     import matlab.net.http.*
     import matlab.net.http.io.*
 
-    jsonData = fileread('motion_sequence_config.json');
-    part = FormProvider(FormField('config', jsonData, 'filename', 'config.json', ...
-                                  'content-type', 'application/json'), ...
-                       FormField('n_iterations', '3'), ...
-                       FormField('delay_between_iterations', '5.0'));
-    req = RequestMessage('POST', [], part);
-    opts = matlab.net.http.HTTPOptions('ConnectTimeout', T_FAST, 'ResponseTimeout', T_FAST);
-    [resp, ~] = req.send([HOST '/sequences/start'], opts);
-    disp(resp.Body.Data)
-    ```
+    form = MultipartFormProvider( ...
+        'config', FileProvider('motion_sequence_config.json'), ...
+        'n_iterations', '3', ...
+        'delay_between_iterations', '5.0');
+    request = RequestMessage('post', [], form);
+    httpOpts = HTTPOptions('ConnectTimeout', T_READ, 'ResponseTimeout', T_READ);
+    response = request.send(URI([HOST '/sequences/start']), httpOpts);
 
----
+    disp(response.Body.Data)
+    ~~~
 
-### 13. GET `/sequences/status` — статус последовательности
+Ответ **status: started** подтверждает запуск процесса, но не корректность содержимого JSON и не успешность каждого движения. Если runner завершится с ошибкой, проверьте его состояние и лог.
 
-Возвращает текущий статус выполнения последовательности.
-Используйте для polling-мониторинга выполнения.
+### Статус и журнал последовательности
 
-=== "Bash"
+=== "curl"
 
-    ```bash
-    curl -s --max-time 10 http://localhost:8007/sequences/status
-    ```
+    ~~~ bash
+    curl -sS $HOST/sequences/status | python3 -m json.tool
+    curl -sS "$HOST/sequences/logs?n=50" | python3 -m json.tool
+    ~~~
 
 === "Python"
 
-    ```python
-    r = httpx.get(f"{HOST}/sequences/status", timeout=T_FAST)
-    print(r.json())
-    ```
+    ~~~ python
+    status = httpx.get(f"{HOST}/sequences/status", timeout=T_READ)
+    status.raise_for_status()
+    print(status.json())
 
-=== "MATLAB"
-
-    ```matlab
-    r = webread([HOST '/sequences/status'], weboptions('Timeout', T_FAST));
-    disp(r.status)
-    ```
-
----
-
-### 14. GET `/sequences/logs` — лог последовательности
-
-Возвращает последние `n` строк лога выполнения последовательности.
-
-=== "Bash"
-
-    ```bash
-    curl -s --max-time 10 "http://localhost:8007/sequences/logs?n=50"
-    ```
-
-=== "Python"
-
-    ```python
-    r = httpx.get(f"{HOST}/sequences/logs", params={"n": 50}, timeout=T_FAST)
-    for line in r.json()["lines"]:
+    logs = httpx.get(f"{HOST}/sequences/logs", params={"n": 50}, timeout=T_READ)
+    logs.raise_for_status()
+    for line in logs.json()["lines"]:
         print(line)
-    ```
+    ~~~
 
 === "MATLAB"
 
-    ```matlab
-    r = webread([HOST '/sequences/logs'], weboptions('Timeout', T_FAST), 'n', 50);
-    disp(r.lines)
-    ```
+    ~~~ matlab
+    status = webread([HOST '/sequences/status'], readOpts);
+    logs = webread([HOST '/sequences/logs?n=50'], readOpts);
+    disp(status)
+    disp(logs.lines)
+    ~~~
 
----
+Статусы:
 
-### 15. POST `/sequences/stop` — остановка последовательности
+- **idle** — последовательность ещё не запускалась;
+- **running** — процесс выполняется;
+- **finished** — процесс завершён; в ответе будет код **returncode**.
 
-Прерывает выполнение текущей последовательности движений.
+Одновременно может работать только одна последовательность. Повторный POST **/sequences/start** во время её выполнения вернёт 409. Для остановки используйте **POST /stop**: отдельного **/sequences/stop** нет.
 
-=== "Bash"
+## Общая остановка
 
-    ```bash
-    curl -s --max-time 10 -X POST http://localhost:8007/sequences/stop
-    ```
+POST **/stop** останавливает запущенный runner, публикует точку удержания текущей позиции для траекторного контроллера и вызывает сервис MoveIt **cobot/stop**. Если текущие состояния суставов недоступны, вместо точки удержания публикуется пустая траектория.
+
+=== "curl"
+
+    ~~~ bash
+    curl -sS --max-time 10 -X POST $HOST/stop | python3 -m json.tool
+    ~~~
 
 === "Python"
 
-    ```python
-    r = httpx.post(f"{HOST}/sequences/stop", timeout=T_FAST)
-    print(r.json())
-    ```
+    ~~~ python
+    response = httpx.post(f"{HOST}/stop", timeout=T_READ)
+    response.raise_for_status()
+    print(response.json())
+    ~~~
 
 === "MATLAB"
 
-    ```matlab
-    opts = weboptions('RequestMethod', 'post', 'Timeout', T_FAST);
-    r = webread([HOST '/sequences/stop'], opts);
-    disp(r)
-    ```
+    ~~~ matlab
+    reply = webwrite([HOST '/stop'], struct(), ...
+        weboptions('MediaType', 'application/json', 'Timeout', T_READ));
+    disp(reply)
+    ~~~
+
+Команда отменяет программные операции, но не снимает питание с робота и не заменяет штатную аварийную остановку. После её вызова проверьте сообщение в ответе и реальное состояние робота.
+
+## Ошибки и диагностика
+
+| Код | Когда возникает |
+|---:|---|
+| 200 | Запрос обработан; для команд движения дополнительно проверьте поле success |
+| 409 | Уже запущена последовательность движений |
+| 422 | Некорректная структура запроса, число суставов, скорость, планировщик или лимиты суставов |
+| 503 | ROS-топик, сервис, action-сервер или MoveIt недоступен; также возможен тайм-аут ожидания |
+
+При проблемах идите от простого к сложному:
+
+1. Откройте **/docs** и убедитесь, что сервер запущен и маршрут присутствует в схеме.
+2. Проверьте **/robot/joint_states**. Без него не будет работать получение позы, а остановка траектории не сможет сформировать точку удержания.
+3. Убедитесь, что стек запущен полностью: controller_manager, MoveIt и iiwa_motion_server.
+4. После запуска последовательности посмотрите **/sequences/logs**; после публикации траектории — **/trajectory/logs**.
+
+MCP-сервер работает в том же процессе, но это отдельный интерфейс: его адрес — **http://адрес-сервера:8007/mcp/mcp**. Для обычных HTTP-интеграций используйте маршруты из этой страницы.

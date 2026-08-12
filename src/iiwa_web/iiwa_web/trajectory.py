@@ -5,7 +5,6 @@ from datetime import datetime
 from builtin_interfaces.msg import Duration
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
-from std_srvs.srv import Trigger
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 from .config_loader import load_joint_limits, load_joint_names
@@ -172,11 +171,9 @@ async def send_csv_trajectory(
     return {"status": "sent", "points": len(rows), "filename": file.filename}
 
 
-@router.post("/stop", summary="Остановить выполнение траектории")
-def stop_trajectory():
+def send_stop_trajectory() -> None:
+    """Publish a hold-position (or empty) trajectory to freeze joint motion."""
     bridge = get_bridge()
-
-    # Replace ongoing trajectory with single point at current position
     joint_states = bridge.get_latest("/joint_states")
     if joint_states is not None and len(joint_states.position) >= N_JOINTS:
         current_positions = list(joint_states.position[:N_JOINTS])
@@ -189,10 +186,6 @@ def stop_trajectory():
         _publish(msg)
         _log("[stop] joint_states недоступны, отправлена пустая траектория")
 
-    # cobot/stop cancels MoveIt action-based motion
-    result = bridge.call_service(Trigger, "cobot/stop", Trigger.Request())
-    _log(f"[stop] cobot/stop -> success={result.success}, message={result.message}")
-    return {"status": "stopped", "success": result.success, "message": result.message}
 
 
 @router.get("/logs", summary="Последние лог-записи траекторного модуля")

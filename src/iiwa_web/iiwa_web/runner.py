@@ -9,8 +9,6 @@ from typing import Optional
 
 import yaml
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile, File
-from std_srvs.srv import Trigger
-
 from .ros_node import get_bridge
 
 router = APIRouter(prefix="/sequences", tags=["sequences"])
@@ -95,12 +93,12 @@ async def start_runner(
     return {"status": "started", "pid": _process.pid, "config": filename}
 
 
-@router.post("/stop", summary="Остановить motion_sequence_runner и послать cobot/stop")
-def stop_runner():
+def stop_if_running() -> Optional[int]:
+    """Kill the runner process if it is running. Returns exit code or None if not running."""
     global _process
     with _lock:
         if not _process or _process.poll() is not None:
-            raise HTTPException(404, "Runner не запущен")
+            return None
         pgid = os.getpgid(_process.pid)
         os.killpg(pgid, signal.SIGTERM)
         try:
@@ -108,10 +106,8 @@ def stop_runner():
         except subprocess.TimeoutExpired:
             os.killpg(pgid, signal.SIGKILL)
             _process.wait()
-        code = _process.returncode
+        return _process.returncode
 
-    result = get_bridge().call_service(Trigger, "cobot/stop", Trigger.Request())
-    return {"status": "stopped", "returncode": code, "success": result.success, "message": result.message}
 
 
 @router.get("/status", summary="Статус motion_sequence_runner")
