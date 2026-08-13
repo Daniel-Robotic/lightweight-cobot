@@ -26,12 +26,12 @@
 ### Проверка наличия ServerFriRos2
 
 Убедитесь, что в вашем Sunrise-проекте присутствует файл `ServerFriRos2.java`.
-Если файл отсутствует — скачайте его из репозитория. Он находится по пути `src/iiwa_sunrise/ServerFriRos2.java`.
+Если файл отсутствует — скачайте его из репозитория. Он находится по пути `src/iiwa_sunrise/src/ServerFriRos2.java`.
 
 === "curl"
 
     ```bash
-    curl -fsSL https://gitverse.ru/api/repos/daniel-robotics/lightweight-cobot/raw/branch/master/src/iiwa_sunrise/ServerFriRos2.java \
+    curl -fsSL https://gitverse.ru/api/repos/daniel-robotics/lightweight-cobot/raw/branch/master/src/iiwa_sunrise/src/ServerFriRos2.java \
          -o ServerFriRos2.java
     ```
 
@@ -39,7 +39,7 @@
 
     ```bash
     wget -O ServerFriRos2.java \
-         https://gitverse.ru/api/repos/daniel-robotics/lightweight-cobot/raw/branch/master/src/iiwa_sunrise/ServerFriRos2.java
+         https://gitverse.ru/api/repos/daniel-robotics/lightweight-cobot/raw/branch/master/src/iiwa_sunrise/src/ServerFriRos2.java
     ```
 
 После скачивания добавьте файл в Sunrise-проект и выполните синхронизацию с контроллером.
@@ -78,8 +78,7 @@ MONITOR_WORKING_POSITION = {0, 0, 0, -1.57, 0, 1.57, 0};
 ```
 
 !!! warning "Важно"
-    IP-адреса должны совпадать с реальными адресами интерфейсов вашего контроллера.
-    Неверный IP приведёт к тому, что FRI-соединение не установится.
+    `KONI_IP` и `KLI_IP` в Java-программе — это адреса компьютера с ROS 2, доступные контроллеру через соответствующие сети. Параметр `robot.ip` в `cobot-setting.yaml`, наоборот, содержит адрес контроллера KUKA со стороны компьютера. Неверные или перепутанные адреса не позволят установить FRI-соединение.
 
 После внесения изменений повторно выполните синхронизацию проекта с контроллером.
 

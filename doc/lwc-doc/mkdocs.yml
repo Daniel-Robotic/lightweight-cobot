@@ -73,7 +73,7 @@ nav:
     - KUKA LBR IIWA 7:
       - Описание программ:
         - TeachKuka:         sunrise/kuka/programs/teach-kuka.md
-        - LBRserver:         sunrise/kuka/programs/lbr-server.md
+        - ServerFriRos2:     sunrise/kuka/programs/server-fri-ros2.md
         - RobotPowerControl: sunrise/kuka/programs/robot-power-control.md
       - Функциональные возможности:
         - Станция:             sunrise/kuka/features/station.md
@@ -85,5 +85,4 @@ nav:
   - Решение проблем:
     - Ошибка конфигурации: troubleshooting/config-error.md
     - Ошибка SSL (rosdep/setup): troubleshooting/ssl-error.md
-
 

@@ -6,9 +6,11 @@ log/
 venv
 .venv
 .claude
+.codex
 __pycache__
 
 *.egg-info
 **.FCBak
 
 CLAUDE.md
+AGENTS.md
