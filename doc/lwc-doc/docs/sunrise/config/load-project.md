@@ -3,7 +3,7 @@
 В данном разделе описана процедура импорта существующего проекта непосредственно с контроллера KUKA в среду SunriseWorkbench.
 
 !!! note "Предварительное требование"
-    Убедитесь, что SunriseWorkbench установлен и запущен. Инструкции по установке приведены в разделах [Windows](../install/windows.md) и [Linux](../install/linux/linux.md).
+    Убедитесь, что SunriseWorkbench установлен и запущен. Инструкции по установке приведены в разделах [Windows](../sun_install/windows.md) и [Linux](../sun_install/linux/linux.md).
 
 ## Запуск мастера импорта проекта
 

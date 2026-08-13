@@ -1,3 +1,6 @@
+# Generated MkDocs site and PDF output
+doc/lwc-doc/site/
+
 log/
 /install/
 /build/
@@ -6,9 +9,11 @@ log/
 venv
 .venv
 .claude
+.codex
 __pycache__
 
 *.egg-info
 **.FCBak
 
 CLAUDE.md
+AGENTS.md
