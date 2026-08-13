@@ -1,9 +1,12 @@
 document.addEventListener("DOMContentLoaded", function () {
   const siteRoot = document.querySelector('meta[name="site-root"]')?.content ?? "";
+  const isEnglish = document.documentElement.lang.toLowerCase().startsWith("en");
   const btn = document.createElement("a");
   btn.href = siteRoot + "/pdf/documentation.pdf";
   btn.download = "lwc-documentation.pdf";
-  btn.title = "Скачать всю документацию в PDF";
+  btn.title = isEnglish
+    ? "Download all documentation as PDF"
+    : "Скачать всю документацию в PDF";
   btn.style.cssText = [
     "position: fixed",
     "bottom: 80px",
@@ -22,7 +25,7 @@ document.addEventListener("DOMContentLoaded", function () {
     "gap: 8px",
     "transition: opacity .2s",
   ].join(";");
-  btn.innerHTML = "&#128196; Скачать PDF";
+  btn.innerHTML = isEnglish ? "&#128196; Download PDF" : "&#128196; Скачать PDF";
   btn.onmouseenter = () => (btn.style.opacity = "0.85");
   btn.onmouseleave = () => (btn.style.opacity = "1");
   document.body.appendChild(btn);

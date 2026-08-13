@@ -1,3 +1,6 @@
+# Generated MkDocs site and PDF output
+doc/lwc-doc/site/
+
 log/
 /install/
 /build/

@@ -59,7 +59,7 @@ Docker is available as an alternative environment on a compatible Linux host. Fu
 | Online documentation | [GitVerse Pages](https://daniel-robotics.gitverse.site/lightweight-cobot/) |
 | Documentation mirror | [GitHub Pages](https://daniel-robotic.github.io/lightweight-cobot/) |
 
-The detailed guide starts on the [Overview](doc/lwc-doc/docs/getting-started/index.md) page. Documentation sources are stored under `doc/lwc-doc/docs`.
+The detailed guide starts on the [Overview](doc/lwc-doc/docs/getting-started/index.en.md) page. Documentation sources are stored under `doc/lwc-doc/docs`.
 
 ## Quick start
 
@@ -100,7 +100,7 @@ Choose the native or Docker environment, then select **Webots simulator**.
 
 ### Physical robot
 
-Before the first run, prepare the controller and `ServerFriRos2` as described in [Sunrise Workbench setup](doc/lwc-doc/docs/getting-started/sunrise-setup.md). Verify the KONI/KLI network, IP addresses, FRI period, selected tool, and its Load Data.
+Before the first run, prepare the controller and `ServerFriRos2` as described in [Sunrise Workbench setup](doc/lwc-doc/docs/getting-started/sunrise-setup.en.md). Verify the KONI/KLI network, IP addresses, FRI period, selected tool, and its Load Data.
 
 Then run:
 
@@ -108,7 +108,7 @@ Then run:
 cobot run
 ```
 
-Choose the native or Docker environment, then select **Physical controller**. See the [ServerFriRos2](doc/lwc-doc/docs/sunrise/kuka/programs/server-fri-ros2.md) page for details about the controller-side application.
+Choose the native or Docker environment, then select **Physical controller**. See the [ServerFriRos2](doc/lwc-doc/docs/sunrise/kuka/programs/server-fri-ros2.en.md) page for details about the controller-side application.
 
 ## Main commands
 

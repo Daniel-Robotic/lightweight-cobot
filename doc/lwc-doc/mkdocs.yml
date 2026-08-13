@@ -19,6 +19,61 @@ theme:
 
 plugins:
   - search
+  - i18n:
+      docs_structure: suffix
+      reconfigure_material: true
+      languages:
+        - locale: ru
+          name: Русский
+          default: true
+          build: true
+        - locale: en
+          name: English
+          build: true
+          site_name: LWC Documentation
+          site_description: Documentation for using and programming the KUKA LBR iiwa 7 collaborative robot with ROS 2.
+          site_author: Daniil Grabar
+          nav_translations:
+            Начало работы: Getting Started
+            Обзор: Overview
+            Настройка SunriseWorkbench: Sunrise Workbench setup
+            Подключение к серверу: Connecting to the server
+            Установка проекта: Project installation
+            Конфигурация системы: System configuration
+            Основные концепции: Core concepts
+            Архитектура системы: System architecture
+            CLI-инструмент cobot: cobot CLI
+            FRI-протокол: FRI protocol
+            Симуляция (Webots): Simulation (Webots)
+            Планирование движений: Motion planning
+            Использование LWC: Using LWC
+            Управление через ROS2: Control via ROS 2
+            Управление через Foxglove: Control via Foxglove
+            Управление через REST API: Control via REST API
+            Sunrise Workbench: Sunrise Workbench
+            Установка: Installation
+            Windows: Windows
+            Linux: Linux
+            Установка эмулятора Windows: Windows emulator installation
+            Установка SunriseWorkbench: Sunrise Workbench installation
+            Конфигурация проекта: Project configuration
+            Создание нового проекта: Creating a new project
+            Загрузка готового проекта: Loading an existing project
+            Установка библиотек: Installing libraries
+            KUKA LBR IIWA 7: KUKA LBR IIWA 7
+            Описание программ: Program descriptions
+            TeachKuka: TeachKuka
+            ServerFriRos2: ServerFriRos2
+            RobotPowerControl: RobotPowerControl
+            Функциональные возможности: Features
+            Станция: Station
+            Дополнительное меню: Extra menu
+            Приложения: Applications
+            Меню робота: Robot menu
+            Меню IO Group: IO Group menu
+            Решение проблем: Troubleshooting
+            Ошибка конфигурации: Configuration error
+            Ошибка SSL (rosdep/setup): SSL error (rosdep/setup)
   - to-pdf:
       author: Даниил Грабарь
       cover_title: Документация LWC
@@ -30,6 +85,9 @@ extra_css:
 
 extra_javascript:
   - assets/pdf_button.js
+
+hooks:
+  - hooks/pdf_default_language.py
 
 markdown_extensions:
   - admonition
@@ -85,4 +143,3 @@ nav:
   - Решение проблем:
     - Ошибка конфигурации: troubleshooting/config-error.md
     - Ошибка SSL (rosdep/setup): troubleshooting/ssl-error.md
-

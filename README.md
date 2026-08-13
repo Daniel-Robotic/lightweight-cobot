@@ -59,7 +59,7 @@ Docker можно использовать как альтернативную �
 | Онлайн-документация | [GitVerse Pages](https://daniel-robotics.gitverse.site/lightweight-cobot/) |
 | Зеркало документации | [GitHub Pages](https://daniel-robotic.github.io/lightweight-cobot/) |
 
-Подробные инструкции начинаются со страницы [«Обзор»](doc/lwc-doc/docs/getting-started/index.md). Исходные тексты документации находятся в `doc/lwc-doc/docs`.
+Подробные инструкции начинаются со страницы [«Обзор»](doc/lwc-doc/docs/getting-started/index.ru.md). Исходные тексты документации находятся в `doc/lwc-doc/docs`.
 
 ## Быстрый старт
 
@@ -100,7 +100,7 @@ cobot run
 
 ### Физический робот
 
-Перед первым запуском подготовьте контроллер и программу `ServerFriRos2` по инструкции [«Настройка SunriseWorkbench»](doc/lwc-doc/docs/getting-started/sunrise-setup.md). Проверьте сеть KONI/KLI, IP-адреса, период FRI, выбранный инструмент и его Load Data.
+Перед первым запуском подготовьте контроллер и программу `ServerFriRos2` по инструкции [«Настройка SunriseWorkbench»](doc/lwc-doc/docs/getting-started/sunrise-setup.ru.md). Проверьте сеть KONI/KLI, IP-адреса, период FRI, выбранный инструмент и его Load Data.
 
 После настройки запустите:
 
@@ -108,7 +108,7 @@ cobot run
 cobot run
 ```
 
-Выберите локальную или Docker-среду, а затем пункт **Физический контроллер**. Подробное описание серверной программы приведено на странице [ServerFriRos2](doc/lwc-doc/docs/sunrise/kuka/programs/server-fri-ros2.md).
+Выберите локальную или Docker-среду, а затем пункт **Физический контроллер**. Подробное описание серверной программы приведено на странице [ServerFriRos2](doc/lwc-doc/docs/sunrise/kuka/programs/server-fri-ros2.ru.md).
 
 ## Основные команды
 
