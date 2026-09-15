@@ -8,10 +8,7 @@
 #include <thread>
 #include <vector>
 
-// В Jazzy 4.44.0+ нельзя переопределять export_state_interfaces() и export_command_interfaces().
-// Устаревший конструктор не регистрирует introspection-callback pal_statistics,
-// из-за чего падает с segfault. Базовый класс сам создаёт интерфейсы из URDF.
-// Данные читаем и пишем через handle-API: set_state() и get_command().
+// Jazzy 4.48: framework-managed interfaces and handle API.
 #include "hardware_interface/hardware_info.hpp"
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_component_interface_params.hpp"
@@ -31,6 +28,7 @@ class IIWAHardwareInterface : public hardware_interface::SystemInterface
 {
 public:
   RCLCPP_SHARED_PTR_DEFINITIONS(IIWAHardwareInterface)
+  ~IIWAHardwareInterface() override;
 
   CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams & params) override;
@@ -39,12 +37,15 @@ public:
   std::vector<hardware_interface::InterfaceDescription>
   export_unlisted_state_interface_descriptions() override;
 
-  // Полный lifecycle: configure открывает сокет, activate запускает поток,
+  // Полный lifecycle: configure создаёт SDK, activate открывает сокет и запускает поток,
   // deactivate останавливает поток, cleanup освобождает FRI-объекты.
   CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
   CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
   CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
   CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_error(const rclcpp_lifecycle::State & previous_state) override;
 
   hardware_interface::return_type read(
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
@@ -59,11 +60,6 @@ private:
   std::string robot_ip_;
   int fri_port_{30200};
   bool simulate_{false};
-  double joint_position_tau_{0.04};
-  // EMA-фильтр скорости: сглаживает одиночные выбросы конечных разностей.
-  // joint_velocity_tau = 0 отключает фильтр (raw finite difference).
-  double joint_velocity_tau_{0.01};
-
   // Объекты FRI SDK
   std::unique_ptr<FRIClient> fri_client_;
   std::unique_ptr<KUKA::FRI::UdpConnection> connection_;
@@ -74,6 +70,12 @@ private:
   std::thread fri_thread_;
   std::atomic<bool> fri_running_{false};
   void friThreadFunc();
+  void stopFRI();
+  void releaseFRI();
+  std::atomic<bool> fri_fault_{false};
+  bool active_{false};
+  IIWAStateSnapshot last_snapshot_{};
+  std::array<double, N_JOINTS> lower_, upper_, max_velocity_;
 
   // Хэндлы интерфейсов состояния, заполняются в on_activate
   std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_pos_;
@@ -83,19 +85,15 @@ private:
 
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_pos_;
 
-  // Вычисление скорости: конечные разности + EMA-фильтр
+  // Вычисление скорости по измеренной позиции и меткам времени FRI.
   std::array<double, N_JOINTS> prev_pos_{};
-  std::array<double, N_JOINTS> velocity_{};        // отфильтрованная скорость, публикуется в JTC
-  std::array<double, N_JOINTS> velocity_raw_{};    // сырая скорость до фильтра
+  std::array<double, N_JOINTS> velocity_{};        // измеренная скорость [рад/с]
   unsigned int last_ts_sec_{0};
   unsigned int last_ts_nsec_{0};
   bool velocity_initialized_{false};
   void compute_velocity_(const IIWAStateSnapshot & snap);
 
-  // Отслеживание сессии FRI для обнаружения потери управления
-  KUKA::FRI::ESessionState previous_session_state_{KUKA::FRI::IDLE};
 
-  rclcpp::Clock throttle_clock_{RCL_STEADY_TIME};
 
 };
 

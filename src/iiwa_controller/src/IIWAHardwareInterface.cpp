@@ -1,5 +1,10 @@
 #include "iiwa_controller/IIWAHardwareInterface.hpp"
 
+#include <algorithm>
+#include <arpa/inet.h>
+#include <limits>
+#include <stdexcept>
+#include "friException.h"
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -20,6 +25,32 @@ namespace iiwa_controller
 
 using CallbackReturn =
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
+// The SDK keeps a 100 ms receive bound after the first packet. During startup
+// only, allow 15 s for the operator to start Sunrise without retrying failed SDK steps.
+class StartupConnection : public KUKA::FRI::UdpConnection
+{
+public:
+  explicit StartupConnection(const std::atomic<bool> & running)
+  : KUKA::FRI::UdpConnection(100), running_(running) {}
+
+  int receive(char * buffer, int size) override
+  {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    do {
+      const int received = KUKA::FRI::UdpConnection::receive(buffer, size);
+      if (received >= 0) {
+        started_ = true;
+        return received;
+      }
+      if (started_) {return received;}
+    } while (running_.load() && std::chrono::steady_clock::now() < deadline);
+    return -1;
+  }
+private:
+  const std::atomic<bool> & running_;
+  bool started_{false};
+};
 
 static const char * LOG = "IIWAHardwareInterface";
 
@@ -43,18 +74,27 @@ CallbackReturn IIWAHardwareInterface::on_init(
 
   const auto & info = params.hardware_info;
 
-  robot_ip_            = getParam(info, "robot_ip", "192.170.10.2");
-  fri_port_            = std::stoi(getParam(info, "fri_port", "30200"));
-  simulate_            = (getParam(info, "simulate", "false") == "true");
-  joint_position_tau_  = std::stod(getParam(info, "joint_position_tau", "0.04"));
-  joint_velocity_tau_  = std::stod(getParam(info, "joint_velocity_tau", "0.01"));
-
-  RCLCPP_INFO(rclcpp::get_logger(LOG),
-    "on_init: ip=%s port=%d simulate=%s pos_tau=%.3f vel_tau=%.3f",
-    robot_ip_.c_str(), fri_port_,
-    simulate_ ? "true" : "false",
-    joint_position_tau_,
-    joint_velocity_tau_);
+  try {
+    robot_ip_ = getParam(info, "robot_ip", "192.170.10.2");
+    size_t used = 0;
+    const auto port = getParam(info, "fri_port", "30200");
+    fri_port_ = std::stoi(port, &used);
+    if (used != port.size() || fri_port_ < 1 || fri_port_ > 65535) {
+      throw std::invalid_argument("Invalid fri_port");
+    }
+    const auto simulation = getParam(info, "simulate", "false");
+    if (simulation != "true" && simulation != "false") {
+      throw std::invalid_argument("simulate must be true or false");
+    }
+    simulate_ = simulation == "true";
+    in_addr address{};
+    if (!simulate_ && inet_pton(AF_INET, robot_ip_.c_str(), &address) != 1) {
+      throw std::invalid_argument("robot_ip must be an IPv4 address");
+    }
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(rclcpp::get_logger(LOG), "Invalid hardware parameters: %s", e.what());
+    return CallbackReturn::ERROR;
+  }
 
   if (info.joints.size() != N_JOINTS) {
     RCLCPP_FATAL(rclcpp::get_logger(LOG),
@@ -62,9 +102,41 @@ CallbackReturn IIWAHardwareInterface::on_init(
     return CallbackReturn::ERROR;
   }
 
+  for (size_t i = 0; i < N_JOINTS; ++i) {
+    const auto & joint = info.joints[i];
+    // SDK arrays are ordered A1..A7. Never silently permute axes.
+    if (joint.name != "joint" + std::to_string(i + 1) ||
+      joint.command_interfaces.size() != 1 || joint.command_interfaces[0].name != "position")
+    {
+      RCLCPP_ERROR(rclcpp::get_logger(LOG), "Expected joint1..joint7 with position commands");
+      return CallbackReturn::ERROR;
+    }
+    for (const auto * name : {"position", "velocity", "effort"}) {
+      if (std::none_of(joint.state_interfaces.begin(), joint.state_interfaces.end(),
+        [&](const auto & interface) {return interface.name == name;}))
+      {
+        return CallbackReturn::ERROR;
+      }
+    }
+    const auto limits = info.limits.find(joint.name);
+    if (limits == info.limits.end() || !limits->second.has_position_limits ||
+      !limits->second.has_velocity_limits)
+    {
+      RCLCPP_ERROR(rclcpp::get_logger(LOG), "Missing position/velocity limits for %s", joint.name.c_str());
+      return CallbackReturn::ERROR;
+    }
+    lower_[i] = limits->second.min_position;
+    upper_[i] = limits->second.max_position;
+    max_velocity_[i] = limits->second.max_velocity;
+    if (!std::isfinite(lower_[i]) || !std::isfinite(upper_[i]) || lower_[i] >= upper_[i] ||
+      !std::isfinite(max_velocity_[i]) || max_velocity_[i] <= 0.0)
+    {
+      return CallbackReturn::ERROR;
+    }
+  }
+
   prev_pos_.fill(0.0);
   velocity_.fill(0.0);
-  velocity_raw_.fill(0.0);
   return CallbackReturn::SUCCESS;
 }
 
@@ -88,7 +160,7 @@ IIWAHardwareInterface::export_unlisted_state_interface_descriptions()
 }
 
 // ── on_configure ───────────────────────────────────────────────────────────────
-// Открывает UDP-сокет и создаёт FRI-объекты. Не запускает поток.
+// Создаёт FRI-объекты. Сокет и поток запускаются при активации.
 
 CallbackReturn IIWAHardwareInterface::on_configure(const rclcpp_lifecycle::State &)
 {
@@ -97,143 +169,148 @@ CallbackReturn IIWAHardwareInterface::on_configure(const rclcpp_lifecycle::State
     return CallbackReturn::SUCCESS;
   }
 
-  fri_client_ = std::make_unique<FRIClient>(joint_position_tau_);
-  // 100 мс таймаут recvfrom — поток корректно завершится после disconnect().
-  connection_ = std::make_unique<KUKA::FRI::UdpConnection>(100);
-  app_        = std::make_unique<KUKA::FRI::ClientApplication>(*connection_, *fri_client_);
+  releaseFRI();
+  fri_client_ = std::make_unique<FRIClient>();
+  fri_client_->setLimits(lower_, upper_, max_velocity_);
+  connection_ = std::make_unique<StartupConnection>(fri_running_);
+  app_ = std::make_unique<KUKA::FRI::ClientApplication>(*connection_, *fri_client_);
+  return CallbackReturn::SUCCESS;
+}
 
-  if (!app_->connect(fri_port_, robot_ip_.c_str())) {
-    RCLCPP_FATAL(rclcpp::get_logger(LOG),
-      "Не удалось открыть UDP-сокет на порту %d (робот: %s)", fri_port_, robot_ip_.c_str());
+CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State & state)
+{
+  stopFRI();
+  velocity_initialized_ = false;
+  last_snapshot_ = {};
+  try {
+    for (size_t i = 0; i < N_JOINTS; ++i) {
+      const auto & name = info_.joints[i].name;
+      h_pos_[i] = get_state_interface_handle(name + "/position");
+      h_vel_[i] = get_state_interface_handle(name + "/velocity");
+      h_eff_[i] = get_state_interface_handle(name + "/effort");
+      h_ext_[i] = get_state_interface_handle(name + "/external_torque");
+      h_cmd_pos_[i] = get_command_interface_handle(name + "/position");
+    }
+    if (!simulate_) {
+      // Recreate SDK sequence counters and buffers for every new session.
+      if (on_configure(state) != CallbackReturn::SUCCESS ||
+        !app_->connect(fri_port_, robot_ip_.c_str()))
+      {
+        releaseFRI();
+        return CallbackReturn::ERROR;
+      }
+      fri_fault_.store(false);
+      fri_running_.store(true);
+      fri_thread_ = std::thread(&IIWAHardwareInterface::friThreadFunc, this);
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+      while (fri_running_.load() && std::chrono::steady_clock::now() < deadline) {
+        last_snapshot_ = fri_client_->getStateSnapshot();
+        if (last_snapshot_.valid && last_snapshot_.quality >= KUKA::FRI::GOOD &&
+          last_snapshot_.session >= KUKA::FRI::MONITORING_READY) {break;}
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      if (fri_fault_.load() || !last_snapshot_.valid ||
+        last_snapshot_.quality < KUKA::FRI::GOOD ||
+        last_snapshot_.session < KUKA::FRI::MONITORING_READY ||
+        std::chrono::steady_clock::now() - last_snapshot_.received_at > std::chrono::milliseconds(100))
+      {
+        stopFRI();
+        RCLCPP_ERROR(rclcpp::get_logger(LOG), "FRI activation failed: no fresh ready session");
+        return CallbackReturn::ERROR;
+      }
+    }
+    for (size_t i = 0; i < N_JOINTS; ++i) {
+      double position = 0.0;
+      if (simulate_) {
+        get_state(h_pos_[i], position, true);
+        if (!std::isfinite(position)) {position = 0.0;}
+      } else {
+        position = last_snapshot_.measured_pos[i];
+      }
+      set_state(h_pos_[i], position, true);
+      set_state(h_vel_[i], 0.0, true);
+      set_state(h_eff_[i], simulate_ ? 0.0 : last_snapshot_.measured_tau[i], true);
+      set_state(h_ext_[i], simulate_ ? 0.0 : last_snapshot_.external_tau[i], true);
+      set_command(h_cmd_pos_[i], position, true);
+    }
+  } catch (const std::exception & e) {
+    stopFRI();
+    RCLCPP_ERROR(rclcpp::get_logger(LOG), "Activation failed: %s", e.what());
     return CallbackReturn::ERROR;
   }
-
-  RCLCPP_INFO(rclcpp::get_logger(LOG),
-    "UDP-порт %d открыт. Запустите ServerFriRos2 на роботе (%s)...",
-    fri_port_, robot_ip_.c_str());
-
+  active_ = true;
   return CallbackReturn::SUCCESS;
 }
 
-// ── on_activate ────────────────────────────────────────────────────────────────
-// Получает хэндлы интерфейсов, запускает FRI-поток и ждёт установки сессии.
-
-CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State &)
+void IIWAHardwareInterface::stopFRI()
 {
-  RCLCPP_INFO(rclcpp::get_logger(LOG), "Активация...");
-
-  for (size_t i = 0; i < N_JOINTS; ++i) {
-    const std::string & jn = info_.joints[i].name;
-
-    h_pos_[i]     = get_state_interface_handle(jn + "/" + hardware_interface::HW_IF_POSITION);
-    h_vel_[i]     = get_state_interface_handle(jn + "/" + hardware_interface::HW_IF_VELOCITY);
-    h_eff_[i]     = get_state_interface_handle(jn + "/" + hardware_interface::HW_IF_EFFORT);
-    h_ext_[i]     = get_state_interface_handle(jn + "/external_torque");
-    h_cmd_pos_[i] = get_command_interface_handle(jn + "/" + hardware_interface::HW_IF_POSITION);
-
-    if (!h_pos_[i] || !h_vel_[i] || !h_eff_[i] || !h_ext_[i] || !h_cmd_pos_[i])
-    {
-      RCLCPP_FATAL(rclcpp::get_logger(LOG),
-        "Не удалось получить хэндл интерфейса для сустава '%s'. "
-        "Проверьте объявление <state_interface>/<command_interface> в URDF.",
-        jn.c_str());
-      return CallbackReturn::ERROR;
-    }
-  }
-
-  if (simulate_) {
-    return CallbackReturn::SUCCESS;
-  }
-
-  fri_running_.store(true, std::memory_order_relaxed);
-  fri_thread_ = std::thread(&IIWAHardwareInterface::friThreadFunc, this);
-
-  constexpr int kTimeoutMs = 15000;
-  constexpr int kPollMs    = 200;
-  for (int elapsed = 0;
-       fri_client_->getSessionState() == KUKA::FRI::IDLE && elapsed < kTimeoutMs;
-       elapsed += kPollMs)
-  {
-    RCLCPP_INFO_THROTTLE(rclcpp::get_logger(LOG), throttle_clock_, 2000,
-      "Ожидание FRI-сессии... (%d мс)", elapsed);
-    std::this_thread::sleep_for(std::chrono::milliseconds(kPollMs));
-  }
-
-  if (fri_client_->getSessionState() == KUKA::FRI::IDLE) {
-    RCLCPP_ERROR(rclcpp::get_logger(LOG),
-      "FRI не подключился за %d с. Проверьте ServerFriRos2 на %s",
-      kTimeoutMs / 1000, robot_ip_.c_str());
-  } else {
-    RCLCPP_INFO(rclcpp::get_logger(LOG), "FRI сессия установлена!");
-    const auto snap = fri_client_->getStateSnapshot();
-    prev_pos_     = snap.measured_pos;
-    last_ts_sec_  = snap.time_stamp_sec;
-    last_ts_nsec_ = snap.time_stamp_nano_sec;
-    velocity_.fill(0.0);
-    velocity_initialized_ = true;
-  }
-
-  previous_session_state_ = fri_client_->getSessionState();
-  return CallbackReturn::SUCCESS;
+  active_ = false;
+  fri_running_.store(false);
+  // Receive has a finite timeout. Never close a socket while step() uses it.
+  if (fri_thread_.joinable()) {fri_thread_.join();}
+  if (app_) {app_->disconnect();}
 }
 
-// ── on_deactivate ──────────────────────────────────────────────────────────────
-// Останавливает FRI-поток. FRI-объекты остаются — их очищает on_cleanup().
+void IIWAHardwareInterface::releaseFRI()
+{
+  stopFRI();
+  // ClientApplication::~ClientApplication calls the connection by reference.
+  app_.reset();
+  connection_.reset();
+  fri_client_.reset();
+}
+
+IIWAHardwareInterface::~IIWAHardwareInterface() {releaseFRI();}
 
 CallbackReturn IIWAHardwareInterface::on_deactivate(const rclcpp_lifecycle::State &)
 {
-  RCLCPP_INFO(rclcpp::get_logger(LOG), "Деактивация...");
-
-  if (!simulate_ && fri_running_.load()) {
-    fri_running_.store(false, std::memory_order_relaxed);
-    // Сначала закрываем сокет — это разблокирует recvfrom() в FRI-потоке.
-    // Только потом join(), иначе он зависнет навсегда.
-    if (app_) { app_->disconnect(); }
-    if (fri_thread_.joinable()) { fri_thread_.join(); }
-    RCLCPP_INFO(rclcpp::get_logger(LOG), "FRI поток остановлен");
-  }
-
-  for (size_t i = 0; i < N_JOINTS; ++i) {
-    h_pos_[i] = h_vel_[i] = h_eff_[i] = h_ext_[i] = nullptr;
-    h_cmd_pos_[i] = nullptr;
-  }
-
+  stopFRI();
   velocity_initialized_ = false;
   return CallbackReturn::SUCCESS;
 }
 
-// ── on_cleanup ─────────────────────────────────────────────────────────────────
-// Освобождает FRI-объекты. Вызывается после on_deactivate().
-
 CallbackReturn IIWAHardwareInterface::on_cleanup(const rclcpp_lifecycle::State &)
 {
-  fri_client_.reset();
-  connection_.reset();
-  app_.reset();
+  releaseFRI();
   return CallbackReturn::SUCCESS;
 }
 
-// ── friThreadFunc ──────────────────────────────────────────────────────────────
+CallbackReturn IIWAHardwareInterface::on_shutdown(const rclcpp_lifecycle::State & state)
+{
+  return on_cleanup(state);
+}
+
+CallbackReturn IIWAHardwareInterface::on_error(const rclcpp_lifecycle::State & state)
+{
+  return on_cleanup(state);
+}
 
 void IIWAHardwareInterface::friThreadFunc()
 {
-  RCLCPP_INFO(rclcpp::get_logger(LOG), "FRI поток запущен");
-
-  while (fri_running_.load(std::memory_order_relaxed)) {
-    if (!app_->step()) {
-      RCLCPP_WARN_THROTTLE(rclcpp::get_logger(LOG), throttle_clock_, 2000,
-        "FRI: step() вернул false, возможно потеряли соединение");
+  try {
+    while (fri_running_.load()) {
+      if (!app_->step()) {
+        throw std::runtime_error("FRI step failed");
+      }
+      if (fri_client_->getSessionState() == KUKA::FRI::IDLE) {
+        throw std::runtime_error("FRI session ended");
+      }
     }
+  } catch (const KUKA::FRI::FRIException & e) {
+    fri_fault_.store(true);
+    RCLCPP_ERROR(rclcpp::get_logger(LOG), "FRI SDK: %s", e.getErrorMessage());
+  } catch (const std::exception & e) {
+    fri_fault_.store(true);
+    RCLCPP_ERROR(rclcpp::get_logger(LOG), "FRI: %s", e.what());
+  } catch (...) {
+    fri_fault_.store(true);
+    RCLCPP_ERROR(rclcpp::get_logger(LOG), "Unknown FRI failure");
   }
-
-  RCLCPP_INFO(rclcpp::get_logger(LOG), "FRI поток завершён");
+  fri_running_.store(false);
 }
 
 // ── compute_velocity_ ──────────────────────────────────────────────────────────
-// Конечные разности + EMA-фильтр.
-// int64-вычитание timestamp'ов предотвращает потерю точности при больших Unix-значениях.
-// EMA-фильтр (joint_velocity_tau) убирает одиночные выбросы, которые видит JTC как
-// скачки состояния и компенсирует агрессивными командами → хруст двигателей.
+// Velocity is the finite difference of measured positions at robot timestamps.
 
 void IIWAHardwareInterface::compute_velocity_(const IIWAStateSnapshot & snap)
 {
@@ -242,7 +319,6 @@ void IIWAHardwareInterface::compute_velocity_(const IIWAStateSnapshot & snap)
     last_ts_sec_  = snap.time_stamp_sec;
     last_ts_nsec_ = snap.time_stamp_nano_sec;
     velocity_.fill(0.0);
-    velocity_raw_.fill(0.0);
     velocity_initialized_ = true;
     return;
   }
@@ -258,23 +334,10 @@ void IIWAHardwareInterface::compute_velocity_(const IIWAStateSnapshot & snap)
     (static_cast<double>(snap.time_stamp_nano_sec) -
      static_cast<double>(last_ts_nsec_)) * 1e-9;
 
-  static constexpr std::array<double, N_JOINTS> kMaxVel =
-    {1.71, 1.71, 1.75, 2.27, 2.44, 3.14, 3.14};
-  static constexpr double kVelDeadband = 1e-4;
 
   if (dt > 0.0) {
-    // EMA alpha для фильтра скорости: tau=0 → alpha=1 (без фильтра)
-    const double vel_alpha = (joint_velocity_tau_ > 0.0)
-      ? dt / (joint_velocity_tau_ + dt)
-      : 1.0;
-
     for (size_t i = 0; i < N_JOINTS; ++i) {
-      const double raw     = (snap.measured_pos[i] - prev_pos_[i]) / dt;
-      const double clamped = std::clamp(raw, -kMaxVel[i], kMaxVel[i]);
-      velocity_raw_[i] = (std::abs(clamped) < kVelDeadband) ? 0.0 : clamped;
-
-      // EMA: velocity_[i] = alpha * raw + (1 - alpha) * prev_filtered
-      velocity_[i] = vel_alpha * velocity_raw_[i] + (1.0 - vel_alpha) * velocity_[i];
+      velocity_[i] = (snap.measured_pos[i] - prev_pos_[i]) / dt;
     }
   }
 
@@ -288,10 +351,13 @@ void IIWAHardwareInterface::compute_velocity_(const IIWAStateSnapshot & snap)
 hardware_interface::return_type IIWAHardwareInterface::read(
   const rclcpp::Time &, const rclcpp::Duration &)
 {
+  if (!active_) {return hardware_interface::return_type::OK;}
   if (simulate_) {
     for (size_t i = 0; i < N_JOINTS; ++i) {
       double pos = 0.0;
-      get_command(h_cmd_pos_[i], pos, false);
+      if (!get_command(h_cmd_pos_[i], pos, false) || !std::isfinite(pos)) {
+        return hardware_interface::return_type::ERROR;
+      }
       set_state(h_pos_[i], pos, false);
       set_state(h_vel_[i], 0.0, false);
       set_state(h_eff_[i], 0.0, false);
@@ -300,19 +366,17 @@ hardware_interface::return_type IIWAHardwareInterface::read(
     return hardware_interface::return_type::OK;
   }
 
-  const auto snap = fri_client_->getStateSnapshot();
-
-  // Обнаружение потери управления: неожиданный выход из COMMANDING_ACTIVE.
-  const auto current_state = fri_client_->getSessionState();
-  if (previous_session_state_ == KUKA::FRI::COMMANDING_ACTIVE &&
-      current_state != KUKA::FRI::COMMANDING_ACTIVE)
-  {
-    RCLCPP_ERROR(rclcpp::get_logger(LOG),
-      "Робот вышел из COMMANDING_ACTIVE! Деактивируйте и повторно активируйте контроллер.");
+  if (!fri_client_ || fri_fault_.load() || !fri_running_.load()) {
     return hardware_interface::return_type::ERROR;
   }
-  previous_session_state_ = current_state;
-
+  fri_client_->tryGetStateSnapshot(last_snapshot_);
+  const auto & snap = last_snapshot_;
+  if (!snap.valid || std::chrono::steady_clock::now() - snap.received_at >
+    std::chrono::milliseconds(100))
+  {
+    fri_running_.store(false);
+    return hardware_interface::return_type::ERROR;
+  }
   compute_velocity_(snap);
 
   for (size_t i = 0; i < N_JOINTS; ++i) {
@@ -330,21 +394,23 @@ hardware_interface::return_type IIWAHardwareInterface::read(
 hardware_interface::return_type IIWAHardwareInterface::write(
   const rclcpp::Time &, const rclcpp::Duration &)
 {
-  if (simulate_) {
-    return hardware_interface::return_type::OK;
+  if (!active_ || simulate_) {return hardware_interface::return_type::OK;}
+  if (!fri_client_ || fri_fault_.load() || !fri_running_.load()) {
+    return hardware_interface::return_type::ERROR;
   }
-
-  if (fri_client_->getSessionState() != KUKA::FRI::COMMANDING_ACTIVE) {
-    return hardware_interface::return_type::OK;
-  }
-
+  if (!fri_client_->isCommandingActive()) {return hardware_interface::return_type::OK;}
   std::array<double, N_JOINTS> pos_cmd{};
   for (size_t i = 0; i < N_JOINTS; ++i) {
-    get_command(h_cmd_pos_[i], pos_cmd[i], false);
+    if (!get_command(h_cmd_pos_[i], pos_cmd[i], false)) {
+      return hardware_interface::return_type::OK;  // retry next cycle; watchdog stays armed
+    }
+    if (!std::isfinite(pos_cmd[i]) || pos_cmd[i] < lower_[i] || pos_cmd[i] > upper_[i]) {
+      fri_fault_.store(true);
+      fri_running_.store(false);
+      return hardware_interface::return_type::ERROR;
+    }
   }
-
   fri_client_->setTargetJointPositions(pos_cmd);
-
   return hardware_interface::return_type::OK;
 }
 

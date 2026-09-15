@@ -33,7 +33,7 @@ file(GLOB_RECURSE FRI_SOURCES
 
 add_library(fri_client_sdk STATIC ${FRI_SOURCES})
 
-target_include_directories(fri_client_sdk PUBLIC
+target_include_directories(fri_client_sdk SYSTEM PUBLIC
   ${FRI_SDK_DIR}/include
   ${FRI_SDK_DIR}/src/nanopb-0.2.8
   ${FRI_SDK_DIR}/src/protobuf
@@ -92,5 +92,13 @@ ament_export_libraries(${PROJECT_NAME})
 ament_export_targets(export_${PROJECT_NAME})
 ament_export_dependencies(
   controller_interface hardware_interface pluginlib rclcpp rclcpp_lifecycle realtime_tools std_msgs)
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_fri_client test/test_fri_client.cpp)
+  target_link_libraries(test_fri_client ${PROJECT_NAME} fri_client_sdk)
+  ament_add_gtest(test_hardware test/test_hardware.cpp)
+  target_link_libraries(test_hardware ${PROJECT_NAME} fri_client_sdk hardware_interface::hardware_interface)
+endif()
 
 ament_package()

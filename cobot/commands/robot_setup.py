@@ -143,13 +143,6 @@ _BLOCKS: List[_Block] = [
             _Field("fri_cycle_ms", "Цикл FRI (мс):", "10",
                    note="5 мс = 200 Гц, 10 мс = 100 Гц",
                    options=["10", "5"]),
-            _Field("active_controller", "Активный ROS-контроллер:", "jtc",
-                   note="jtc = JointTrajectoryController (MoveIt), forward = ForwardCommandController",
-                   options=["jtc", "forward"]),
-            _Field("joint_position_tau", "EMA tau фильтра положения (с):", "0.04",
-                   note="Сглаживает команды положения перед отправкой в FRI"),
-            _Field("joint_velocity_tau", "EMA tau фильтра скорости (с):", "0.01",
-                   note="Убирает выбросы из оценки скорости конечной разностью"),
         ],
     ),
 ]

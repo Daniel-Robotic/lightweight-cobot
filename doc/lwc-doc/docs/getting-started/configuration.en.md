@@ -26,9 +26,6 @@ robot:
   ip: "192.170.10.2"
   port: 30200
   fri_cycle_ms: 10
-  joint_position_tau: 0.04
-  joint_velocity_tau: 0.01
-  active_controller: "jtc"
   description: pkg://iiwa_description/urdf/iiwa7.urdf.xacro
 ```
 
@@ -38,10 +35,9 @@ robot:
 | `ip` | KUKA controller IP address | **Change** to the actual controller address |
 | `port` | FRI UDP port | Default: `30200`; change only if the port conflicts |
 | `fri_cycle_ms` | FRI cycle: `5` ms = 200 Hz, `10` ms = 100 Hz | Use `10` for stable operation or `5` for high-precision tasks |
-| `joint_position_tau` | Position EMA filter [s], smoothing commands before transmission | Decrease for a faster response; increase if vibration occurs |
-| `joint_velocity_tau` | Velocity EMA filter [s], removing finite-difference spikes | Tune in the same way as `joint_position_tau` |
-| `active_controller` | Control mode: `jtc` (MoveIt / JointTrajectory) or `forward` (direct control) | Use `jtc` for most tasks |
 | `description` | Path to the robot URDF | Do not change |
+
+Motion always uses JointTrajectoryController. Position and velocity EMA filters are not applied.
 
 ---
 
@@ -69,6 +65,7 @@ digital_twin:
 | `webots.rotation` | Base orientation `[x y z angle]`, in radians |
 | `webots.cameras` | List of YAML configurations for connected cameras |
 | `rviz.config` | Path to the RViz configuration |
+
 
 ---
 
@@ -169,7 +166,6 @@ The remaining parameters (`tls`, `topic_whitelist`, `min_qos_depth`, and others)
 | ✅ | `robot.fri_cycle_ms` | Select `10` (standard) or `5` (high frequency) |
 | ✅ | `tool.active` | Set the active tool |
 | ✅ | `web.enabled` | Set to `false` if the web interface is not needed |
-| ⚠️ | `robot.active_controller` | Change only when intentionally switching the control mode |
 | ⚠️ | `planning.*` | Change only when another planner or other parameters are required |
 | ❌ | `robot.description` | Do not change; this is the URDF path |
 | ❌ | `controller.moveit.*` | Do not change; these are package-internal MoveIt configuration paths |

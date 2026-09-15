@@ -51,7 +51,6 @@ def _runtime_setup(context, *args, **kwargs):
             "robot_ip": settings.robot.ip,
             "fri_port": str(settings.robot.port),
             "simulate": "false",
-            "joint_position_tau": str(settings.robot.joint_position_tau),
         }
 
     robot_description = converter.load_robot_description(
@@ -117,8 +116,8 @@ def _runtime_setup(context, *args, **kwargs):
             "rotation": str(settings.digital_twin.webots.rotation),
             "controller_timer": str(settings.digital_twin.webots.controller_timer),
             "fri_cycle_ms": str(settings.robot.fri_cycle_ms),
-            "joint_position_tau": str(settings.robot.joint_position_tau),
-            "controller": settings.robot.active_controller,
+            "robot_ip": settings.robot.ip,
+            "fri_port": str(settings.robot.port),
         }
 
     setup.append(IncludeLaunchDescription(

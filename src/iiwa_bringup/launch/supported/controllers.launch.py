@@ -19,9 +19,9 @@ def _setup_controllers(context, *args, **kwargs):
     controller_timer = LaunchConfiguration("controller_timer").perform(context)
     controller_path = LaunchConfiguration("controller_path").perform(context)
     simulate = LaunchConfiguration("simulate").perform(context).lower() in ("true", "1", "yes")
-    controller = LaunchConfiguration("controller").perform(context)  # "jtc" | "forward"
     fri_cycle_ms = int(LaunchConfiguration("fri_cycle_ms").perform(context))
-    joint_position_tau = LaunchConfiguration("joint_position_tau").perform(context)
+    if not 1 <= fri_cycle_ms <= 100:
+        raise ValueError("fri_cycle_ms must be within the FRI 1.16 range 1..100 ms")
     update_rate = 1000 // fri_cycle_ms
 
     xacro_args = {"initial_positions_file": initial_positions_file}
@@ -29,7 +29,8 @@ def _setup_controllers(context, *args, **kwargs):
     if simulate:
         xacro_args["simulate"] = "true"
     else:
-        xacro_args["joint_position_tau"] = joint_position_tau
+        xacro_args["robot_ip"] = LaunchConfiguration("robot_ip").perform(context)
+        xacro_args["fri_port"] = LaunchConfiguration("fri_port").perform(context)
 
     robot_description = converter.load_robot_description(
         model_path=description,
@@ -98,33 +99,17 @@ def _setup_controllers(context, *args, **kwargs):
 
         cm = ["--controller-manager", "/controller_manager"]
 
-        jtc_args = ["iiwa_arm_controller"] + cm
-        if controller == "forward":
-            jtc_args += ["--inactive"]
-
-        # ForwardCommandController: активен если controller=forward, иначе --inactive
-        forward_args = ["forward_position_controller"] + cm
-        if controller != "forward":
-            forward_args += ["--inactive"]
-
         jtc = Node(
             package="controller_manager",
             executable="spawner",
             output="screen",
-            arguments=jtc_args,
-        )
-
-        forward_controller = Node(
-            package="controller_manager",
-            executable="spawner",
-            output="screen",
-            arguments=forward_args,
+            arguments=["iiwa_arm_controller"] + cm,
         )
 
         jtc_after_jsb = RegisterEventHandler(
             OnProcessExit(
                 target_action=jsb,
-                on_exit=[jtc, forward_controller],
+                on_exit=[jtc],
             )
         )
 
@@ -138,7 +123,7 @@ def _setup_controllers(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("fri_cycle_ms", default_value="5"),
-        DeclareLaunchArgument("joint_position_tau", default_value="0.04"),
-        DeclareLaunchArgument("controller", default_value="jtc"),
+        DeclareLaunchArgument("robot_ip", default_value="192.170.10.2"),
+        DeclareLaunchArgument("fri_port", default_value="30200"),
         OpaqueFunction(function=_setup_controllers),
     ])
