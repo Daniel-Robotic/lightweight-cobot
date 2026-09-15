@@ -20,6 +20,7 @@
 #include "rclcpp_lifecycle/state.hpp"
 
 #include "iiwa_controller/FRIClient.h"
+#include "iiwa_controller/FRICycleGate.hpp"
 
 namespace iiwa_controller
 {
@@ -59,6 +60,7 @@ private:
   // Параметры из секции <hardware><param> в URDF
   std::string robot_ip_;
   int fri_port_{30200};
+  int fri_cycle_ms_{5};
   bool simulate_{false};
   // Объекты FRI SDK
   std::unique_ptr<FRIClient> fri_client_;
@@ -66,8 +68,10 @@ private:
   std::unique_ptr<KUKA::FRI::ClientApplication> app_;
 
   // FRI работает в отдельном потоке: step() блокируется в recvfrom().
-  // read() лишь читает готовый снимок — без блокировки RT-потока.
+  // read/write rendezvous once per SDK step; network I/O stays in this worker.
+  // Requires controller_manager hardware_synchronization mode (Jazzy 4.48+).
   std::thread fri_thread_;
+  FRICycleGate cycle_gate_;
   std::atomic<bool> fri_running_{false};
   void friThreadFunc();
   void stopFRI();

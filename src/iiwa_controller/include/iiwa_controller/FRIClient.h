@@ -48,6 +48,7 @@ public:
 
   // Configure before starting the FRI thread; limits come from the robot URDF.
   void setLimits(const Joints & lower, const Joints & upper, const Joints & velocity);
+  void setExpectedSampleTime(double seconds) {expected_sample_time_ = seconds;}
   void setTargetJointPositions(const Joints & q);
   IIWAStateSnapshot getStateSnapshot() const;  // lifecycle/non-RT use
   bool tryGetStateSnapshot(IIWAStateSnapshot & snapshot) const;
@@ -64,6 +65,7 @@ private:
   Joints lower_, upper_, max_velocity_;
   bool initialized_{false};
   bool requested_{false};
+  double expected_sample_time_{0.0};
   std::chrono::steady_clock::time_point requested_at_{};
   std::chrono::steady_clock::time_point last_command_at_{};
   IIWAStateSnapshot snapshot_{};  // published under state_mutex_

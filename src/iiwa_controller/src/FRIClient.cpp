@@ -53,6 +53,18 @@ void FRIClient::captureData(bool commanding)
   if (nsec >= 1000000000 || !std::isfinite(current_.sample_time) || current_.sample_time <= 0.0) {
     throw std::runtime_error("Invalid FRI timestamp/sample period");
   }
+  if (expected_sample_time_ > 0.0 &&
+    std::abs(current_.sample_time - expected_sample_time_) > 1e-9)
+  {
+    throw std::runtime_error("Sunrise FRI period differs from robot.fri_cycle_ms");
+  }
+  if (current_.valid && current_.session == COMMANDING_ACTIVE) {
+    const double elapsed = static_cast<double>(sec - current_.time_stamp_sec) +
+      (static_cast<double>(nsec) - current_.time_stamp_nano_sec) * 1e-9;
+    if (std::abs(elapsed - current_.sample_time) > 1e-6) {
+      throw std::runtime_error("FRI commanding packet gap; refusing to catch up trajectory");
+    }
+  }
   for (size_t i = 0; i < N_JOINTS; ++i) {
     if (!std::isfinite(current_.measured_pos[i]) || !std::isfinite(current_.measured_tau[i]) ||
       !std::isfinite(current_.external_tau[i]) ||
@@ -117,11 +129,12 @@ void FRIClient::command()
     initialized_ = true;
   }
   {
-    std::unique_lock<std::mutex> lock(command_mutex_, std::try_to_lock);
-    if (lock.owns_lock() && requested_ && requested_at_ > last_command_at_) {
+    std::lock_guard<std::mutex> lock(command_mutex_);
+    if (requested_ && requested_at_ > last_command_at_) {
       target_pos_ = requested_pos_;
       last_command_at_ = requested_at_;
     }
+    requested_ = false;
   }
   // Local watchdog: a stalled ros2_control loop must not leave a moving target active.
   if (current_.received_at - last_command_at_ > std::chrono::milliseconds(100)) {
@@ -156,12 +169,13 @@ void FRIClient::setTargetJointPositions(const Joints & q)
       throw std::invalid_argument("Invalid FRI position command");
     }
   }
-  std::unique_lock<std::mutex> lock(command_mutex_, std::try_to_lock);
-  if (lock.owns_lock()) {
-    requested_pos_ = q;
-    requested_at_ = std::chrono::steady_clock::now();
-    requested_ = true;
+  std::lock_guard<std::mutex> lock(command_mutex_);
+  if (requested_) {
+    throw std::logic_error("Previous FRI command has not been consumed");
   }
+  requested_pos_ = q;
+  requested_at_ = std::chrono::steady_clock::now();
+  requested_ = true;
 }
 
 IIWAStateSnapshot FRIClient::getStateSnapshot() const

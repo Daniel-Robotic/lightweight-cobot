@@ -6,6 +6,7 @@
     <xacro:arg name="simulate" default="false"/>
     <xacro:arg name="robot_ip" default="192.170.10.2"/>
     <xacro:arg name="fri_port" default="30200"/>
+    <xacro:arg name="fri_cycle_ms" default="5"/>
 
     <xacro:property name="initial_positions"
                     value="${xacro.load_yaml('$(arg initial_positions_file)')['initial_positions']}"/>
@@ -143,6 +144,7 @@
                 <plugin>iiwa_controller/IIWAHardwareInterface</plugin>
                 <param name="robot_ip">$(arg robot_ip)</param>
                 <param name="fri_port">$(arg fri_port)</param>
+                <param name="fri_cycle_ms">$(arg fri_cycle_ms)</param>
                 <param name="simulate">false</param>
             </hardware>
 

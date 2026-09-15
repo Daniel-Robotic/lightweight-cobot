@@ -94,6 +94,11 @@ ament_export_dependencies(
   controller_interface hardware_interface pluginlib rclcpp rclcpp_lifecycle realtime_tools std_msgs)
 
 if(BUILD_TESTING)
+  # Manual bounded loopback integration harness; no physical hardware access.
+  add_executable(fake_fri_server test/fake_fri_server.cpp)
+  target_link_libraries(fake_fri_server fri_client_sdk)
+  add_library(fri_loopback_bind SHARED test/loopback_bind.cpp)
+  target_link_libraries(fri_loopback_bind dl)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_fri_client test/test_fri_client.cpp)
   target_link_libraries(test_fri_client ${PROJECT_NAME} fri_client_sdk)

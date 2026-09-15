@@ -5,6 +5,9 @@
 #include <stdexcept>
 #include <thread>
 #include "iiwa_controller/FRIClient.h"
+#include "iiwa_controller/FRICycleGate.hpp"
+#include <atomic>
+#include <vector>
 #include "friClientData.h"
 #include "pb_frimessages_callbacks.h"
 
@@ -143,6 +146,18 @@ TEST(FRIClient, DuplicateTimestampIsNotFreshTelemetry)
   EXPECT_THROW(client.monitor(), std::runtime_error);
 }
 
+TEST(FRIClient, RejectsMismatchedPeriodAndMissingCommandingPackets)
+{
+  ClientFixture mismatch;
+  mismatch.setExpectedSampleTime(0.005);
+  EXPECT_THROW(mismatch.cycle(MONITORING_READY), std::runtime_error);
+  ClientFixture gap;
+  gap.cycle(COMMANDING_WAIT);
+  gap.data->monitoringMsg.monitorData.timestamp.nanosec += 10000000;
+  EXPECT_THROW(gap.cycle(COMMANDING_ACTIVE), std::runtime_error);
+  EXPECT_FALSE(gap.data->commandMsg.commandData.has_jointPosition);
+}
+
 TEST(FRIClient, LeavingCommandingRequiresExplicitRecovery)
 {
   ClientFixture client;
@@ -171,4 +186,77 @@ TEST(FRIClient, StalledRosCommandStreamStopsBeforeSending)
   std::this_thread::sleep_for(std::chrono::milliseconds(110));
   EXPECT_THROW(client.cycle(COMMANDING_ACTIVE), std::runtime_error);
   EXPECT_FALSE(client.data->commandMsg.commandData.has_jointPosition);
+}
+
+TEST(FRIClient, RejectsOverwritingAnUnconsumedPoint)
+{
+  ClientFixture client;
+  client.cycle(COMMANDING_WAIT);
+  client.cycle(COMMANDING_ACTIVE);
+  iiwa_controller::FRIClient::Joints q;
+  q.fill(0.401);
+  client.setTargetJointPositions(q);
+  q.fill(0.402);
+  EXPECT_THROW(client.setTargetJointPositions(q), std::logic_error);
+  client.cycle(COMMANDING_ACTIVE);
+  EXPECT_DOUBLE_EQ(client.sentPosition(), 0.401);
+}
+
+TEST(FRIClient, SynchronizedCyclesPreserveEveryPointDespiteSchedulingJitter)
+{
+  ClientFixture client;
+  client.cycle(COMMANDING_WAIT);
+  iiwa_controller::FRICycleGate gate;
+  gate.reset();
+  std::atomic<bool> worker_ok{true};
+  std::vector<double> sent;
+  std::thread worker([&] {
+    for (int frame = 0; frame <= 8; ++frame) {
+      client.cycle(COMMANDING_ACTIVE);
+      sent.push_back(client.sentPosition());
+      if (frame < 8 && !gate.publishAndWait()) {worker_ok = false; break;}
+    }
+  });
+  for (int frame = 1; frame <= 8; ++frame) {
+    if (!gate.acquire()) {worker_ok = false; break;}
+    // Variable controller execution time cannot cause a point to be overwritten.
+    std::this_thread::sleep_for(std::chrono::milliseconds(frame % 3));
+    iiwa_controller::FRIClient::Joints q;
+    q.fill(0.4 + frame * 0.001);
+    client.setTargetJointPositions(q);
+    if (!gate.complete()) {worker_ok = false; break;}
+  }
+  worker.join();
+  ASSERT_TRUE(worker_ok);
+  ASSERT_EQ(sent.size(), 9u);
+  for (size_t frame = 1; frame < sent.size(); ++frame) {
+    EXPECT_NEAR(sent[frame] - sent[frame - 1], 0.001, 1e-12);
+  }
+}
+
+TEST(FRICycleGate, DuplicateReadOrWriteCannotAdvanceWorker)
+{
+  iiwa_controller::FRICycleGate gate;
+  gate.reset();
+  EXPECT_FALSE(gate.complete());
+  std::thread worker([&] {EXPECT_TRUE(gate.publishAndWait());});
+  EXPECT_TRUE(gate.acquire());
+  EXPECT_FALSE(gate.acquire());
+  EXPECT_TRUE(gate.complete());
+  EXPECT_FALSE(gate.complete());
+  worker.join();
+}
+
+TEST(FRICycleGate, StopWakesWorkerAndMissingWriteTimesOut)
+{
+  iiwa_controller::FRICycleGate gate;
+  gate.reset();
+  std::thread worker([&] {EXPECT_FALSE(gate.publishAndWait());});
+  EXPECT_TRUE(gate.acquire());
+  gate.stop();
+  worker.join();
+  gate.reset();
+  EXPECT_FALSE(gate.publishAndWait());
+  EXPECT_FALSE(gate.acquire());
+  EXPECT_FALSE(gate.complete());
 }

@@ -36,13 +36,21 @@ as described in [Writing a Hardware Component](https://control.ros.org/jazzy/doc
 - Hardware IP/port reach the URDF from `robot.ip`/`robot.port`; project defaults
   remain `192.170.10.2:30200`. Match `robot.fri_cycle_ms` to the Sunrise period.
 
-One thread owns SDK `step()`. Cyclic exchange uses `try_lock`, so a busy mutex
-never stalls either cycle. Readers retain a complete previous snapshot with a
-freshness check; writers retry next cycle. Startup allows 15 seconds for the
+One worker owns SDK `step()`. Each step is followed by exactly one
+`read → JTC update → write` exchange. `read()` waits for a fresh snapshot;
+`write()` releases the next SDK step. Waits are bounded to 100 ms. The computed
+command is sent in the next SDK step, a one-cycle pipeline without EMA or a
+queue of skipped points. Network I/O stays in the worker. The real-hardware
+launch requires Jazzy Controller Manager **4.48.0 or later** and enables
+`hardware_synchronization.expect_blocking_read_write`, using its
+[hardware-paced control loop](https://github.com/ros-controls/ros2_control/blob/jazzy/controller_manager/src/ros2_control_node.cpp)
+without an independent timer. `robot.fri_cycle_ms` is checked against Sunrise
+telemetry. Startup allows 15 seconds for the
 first UDP packet. After that, a failed `step()` is terminal. Activation requires
 fresh telemetry, at least MONITORING_READY, and GOOD/EXCELLENT quality.
 
-Missing telemetry/commands for 100 ms, non-increasing timestamps, invalid
+Missing telemetry/commands for 100 ms, timestamp gaps in COMMANDING_ACTIVE,
+mismatched sample periods, non-increasing timestamps, invalid
 telemetry, unexpected commanding mode, a safety stop, inactive drives or poor
 commanding quality stop command generation and surface ERROR to ROS. Leaving
 COMMANDING_ACTIVE requires explicit lifecycle recovery and a new Sunrise
@@ -78,9 +86,16 @@ a separate hardware plugin; it does not validate UDP/FRI. No physical robot was
 run for this revision. Hardware testing requires the networking, limits,
 tool/load, mode, operator supervision and stop checks in AGENTS.md.
 
-Revision results: all five affected ROS packages built; 14 C++ cases in two
+Initial revision results: all five affected ROS packages built; 14 C++ cases in two
 CTest checks passed. The local smoke script loaded the actual URDF with our
 plugin in simulation mode, activated JSB/JTC and completed a +0.02 rad joint-1
 trajectory with SUCCEEDED. On SIGINT, Controller Manager's `pal_statistics`
 reported an invalid shutdown context; hardware lifecycle shutdown succeeded.
 Webots and physical FRI were not run.
+
+2026-09-16 correction: reproduced a doubled 0.001 → 0.002 rad step when
+independent cycles overwrite a command. Added synchronization, overwrite,
+stop/timeout, sample-period and packet-gap tests. Synchronization prevents
+inter-thread point loss; it does not by itself guarantee freedom from OS or
+network delays. Elimination of physical drive knocking remains unverified;
+the original hardware-test logs were not retained.

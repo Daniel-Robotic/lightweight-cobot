@@ -5,6 +5,9 @@ from launch.event_handlers import OnProcessExit
 from launch.actions import RegisterEventHandler
 from launch_ros.actions import Node
 from webots_ros2_driver.urdf_spawner import URDFSpawner
+from ament_index_python.packages import get_package_share_directory
+from pathlib import Path
+from xml.etree import ElementTree
 
 
 from iiwa_utils import converter
@@ -31,6 +34,7 @@ def _setup_controllers(context, *args, **kwargs):
     else:
         xacro_args["robot_ip"] = LaunchConfiguration("robot_ip").perform(context)
         xacro_args["fri_port"] = LaunchConfiguration("fri_port").perform(context)
+        xacro_args["fri_cycle_ms"] = str(fri_cycle_ms)
 
     robot_description = converter.load_robot_description(
         model_path=description,
@@ -76,6 +80,13 @@ def _setup_controllers(context, *args, **kwargs):
 
     # FRI
     else:
+        manifest = Path(get_package_share_directory("controller_manager")) / "package.xml"
+        version = ElementTree.parse(manifest).findtext("version", "0.0.0")
+        if tuple(int(part) for part in version.split(".")[:3]) < (4, 48, 0):
+            raise RuntimeError(
+                "FRI synchronization requires controller_manager >= 4.48.0 (ROS 2 Jazzy); "
+                f"installed: {version}"
+            )
         ros2_control_node = Node(
             package="controller_manager",
             executable="ros2_control_node",
@@ -84,6 +95,7 @@ def _setup_controllers(context, *args, **kwargs):
                 {"robot_description": robot_description},
                 controller_path,
                 {"update_rate": update_rate},
+                {"hardware_synchronization.expect_blocking_read_write": True},
             ],
         )
 

@@ -82,6 +82,11 @@ CallbackReturn IIWAHardwareInterface::on_init(
     if (used != port.size() || fri_port_ < 1 || fri_port_ > 65535) {
       throw std::invalid_argument("Invalid fri_port");
     }
+    const auto cycle = getParam(info, "fri_cycle_ms", "5");
+    fri_cycle_ms_ = std::stoi(cycle, &used);
+    if (used != cycle.size() || fri_cycle_ms_ < 1 || fri_cycle_ms_ > 100) {
+      throw std::invalid_argument("Invalid fri_cycle_ms (expected 1..100)");
+    }
     const auto simulation = getParam(info, "simulate", "false");
     if (simulation != "true" && simulation != "false") {
       throw std::invalid_argument("simulate must be true or false");
@@ -172,6 +177,7 @@ CallbackReturn IIWAHardwareInterface::on_configure(const rclcpp_lifecycle::State
   releaseFRI();
   fri_client_ = std::make_unique<FRIClient>();
   fri_client_->setLimits(lower_, upper_, max_velocity_);
+  fri_client_->setExpectedSampleTime(fri_cycle_ms_ * 0.001);
   connection_ = std::make_unique<StartupConnection>(fri_running_);
   app_ = std::make_unique<KUKA::FRI::ClientApplication>(*connection_, *fri_client_);
   return CallbackReturn::SUCCESS;
@@ -201,15 +207,11 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
       }
       fri_fault_.store(false);
       fri_running_.store(true);
+      cycle_gate_.reset();
       fri_thread_ = std::thread(&IIWAHardwareInterface::friThreadFunc, this);
-      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-      while (fri_running_.load() && std::chrono::steady_clock::now() < deadline) {
-        last_snapshot_ = fri_client_->getStateSnapshot();
-        if (last_snapshot_.valid && last_snapshot_.quality >= KUKA::FRI::GOOD &&
-          last_snapshot_.session >= KUKA::FRI::MONITORING_READY) {break;}
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-      }
-      if (fri_fault_.load() || !last_snapshot_.valid ||
+      const bool ready = cycle_gate_.waitReady(std::chrono::seconds(15));
+      last_snapshot_ = fri_client_->getStateSnapshot();
+      if (!ready || fri_fault_.load() || !last_snapshot_.valid ||
         last_snapshot_.quality < KUKA::FRI::GOOD ||
         last_snapshot_.session < KUKA::FRI::MONITORING_READY ||
         std::chrono::steady_clock::now() - last_snapshot_.received_at > std::chrono::milliseconds(100))
@@ -246,6 +248,7 @@ void IIWAHardwareInterface::stopFRI()
 {
   active_ = false;
   fri_running_.store(false);
+  cycle_gate_.stop();
   // Receive has a finite timeout. Never close a socket while step() uses it.
   if (fri_thread_.joinable()) {fri_thread_.join();}
   if (app_) {app_->disconnect();}
@@ -288,12 +291,25 @@ CallbackReturn IIWAHardwareInterface::on_error(const rclcpp_lifecycle::State & s
 void IIWAHardwareInterface::friThreadFunc()
 {
   try {
+    bool synchronized = false;
+    const auto startup_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
     while (fri_running_.load()) {
       if (!app_->step()) {
         throw std::runtime_error("FRI step failed");
       }
       if (fri_client_->getSessionState() == KUKA::FRI::IDLE) {
         throw std::runtime_error("FRI session ended");
+      }
+      const auto snapshot = fri_client_->getStateSnapshot();
+      synchronized = synchronized || (snapshot.quality >= KUKA::FRI::GOOD &&
+        snapshot.session >= KUKA::FRI::MONITORING_READY);
+      if (synchronized) {
+        if (!cycle_gate_.publishAndWait()) {
+          if (!fri_running_.load()) {break;}
+          throw std::runtime_error("FRI cycle was not completed by ros2_control within 100 ms");
+        }
+      } else if (std::chrono::steady_clock::now() >= startup_deadline) {
+        throw std::runtime_error("FRI did not reach MONITORING_READY within 15 s");
       }
     }
   } catch (const KUKA::FRI::FRIException & e) {
@@ -307,6 +323,7 @@ void IIWAHardwareInterface::friThreadFunc()
     RCLCPP_ERROR(rclcpp::get_logger(LOG), "Unknown FRI failure");
   }
   fri_running_.store(false);
+  cycle_gate_.stop();
 }
 
 // ── compute_velocity_ ──────────────────────────────────────────────────────────
@@ -369,7 +386,13 @@ hardware_interface::return_type IIWAHardwareInterface::read(
   if (!fri_client_ || fri_fault_.load() || !fri_running_.load()) {
     return hardware_interface::return_type::ERROR;
   }
-  fri_client_->tryGetStateSnapshot(last_snapshot_);
+  if (!cycle_gate_.acquire()) {
+    fri_fault_.store(true);
+    fri_running_.store(false);
+    cycle_gate_.stop();
+    return hardware_interface::return_type::ERROR;
+  }
+  last_snapshot_ = fri_client_->getStateSnapshot();
   const auto & snap = last_snapshot_;
   if (!snap.valid || std::chrono::steady_clock::now() - snap.received_at >
     std::chrono::milliseconds(100))
@@ -398,11 +421,15 @@ hardware_interface::return_type IIWAHardwareInterface::write(
   if (!fri_client_ || fri_fault_.load() || !fri_running_.load()) {
     return hardware_interface::return_type::ERROR;
   }
-  if (!fri_client_->isCommandingActive()) {return hardware_interface::return_type::OK;}
+  if (!fri_client_->isCommandingActive()) {
+    return cycle_gate_.complete() ? hardware_interface::return_type::OK :
+           hardware_interface::return_type::ERROR;
+  }
   std::array<double, N_JOINTS> pos_cmd{};
   for (size_t i = 0; i < N_JOINTS; ++i) {
     if (!get_command(h_cmd_pos_[i], pos_cmd[i], false)) {
-      return hardware_interface::return_type::OK;  // retry next cycle; watchdog stays armed
+      cycle_gate_.stop();
+      return hardware_interface::return_type::ERROR;
     }
     if (!std::isfinite(pos_cmd[i]) || pos_cmd[i] < lower_[i] || pos_cmd[i] > upper_[i]) {
       fri_fault_.store(true);
@@ -410,8 +437,14 @@ hardware_interface::return_type IIWAHardwareInterface::write(
       return hardware_interface::return_type::ERROR;
     }
   }
-  fri_client_->setTargetJointPositions(pos_cmd);
-  return hardware_interface::return_type::OK;
+  try {
+    fri_client_->setTargetJointPositions(pos_cmd);
+  } catch (const std::exception &) {
+    cycle_gate_.stop();
+    return hardware_interface::return_type::ERROR;
+  }
+  return cycle_gate_.complete() ? hardware_interface::return_type::OK :
+         hardware_interface::return_type::ERROR;
 }
 
 }  // namespace iiwa_controller
