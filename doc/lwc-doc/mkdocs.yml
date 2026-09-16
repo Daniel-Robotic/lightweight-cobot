@@ -141,5 +141,6 @@ nav:
         - Меню IO Group:       sunrise/kuka/features/io-group.md
 
   - Решение проблем:
+    - Реальное время FRI: realtime-fri.md
     - Ошибка конфигурации: troubleshooting/config-error.md
     - Ошибка SSL (rosdep/setup): troubleshooting/ssl-error.md
