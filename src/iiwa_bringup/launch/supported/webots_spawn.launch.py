@@ -39,6 +39,13 @@ def _spawn_setup(context, *args, **kwargs):
     with open(controller, "r") as f:
         controller_cfg = yaml.safe_load(f) or {}
 
+    # FRI sets the hardware cycle dynamically in controllers.launch.py. Webots
+    # has no FRI period, so preserve its established 200 Hz controller cycle.
+    manager_params = controller_cfg.setdefault("controller_manager", {}).setdefault(
+        "ros__parameters", {}
+    )
+    manager_params["update_rate"] = 200
+
     combined = {
         "/**": {"ros__parameters": {
             "robot_description": robot_description,
