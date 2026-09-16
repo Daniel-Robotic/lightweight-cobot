@@ -61,6 +61,7 @@ private:
   std::string robot_ip_;
   int fri_port_{30200};
   int fri_cycle_ms_{5};
+  int rt_prio_{80};
   bool simulate_{false};
   // Объекты FRI SDK
   std::unique_ptr<FRIClient> fri_client_;
@@ -86,6 +87,8 @@ private:
   std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_vel_;
   std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_eff_;
   std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_ext_;
+  std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_ipo_;
+  std::array<hardware_interface::StateInterface::SharedPtr, N_JOINTS> h_fri_cmd_;
 
   std::array<hardware_interface::CommandInterface::SharedPtr, N_JOINTS> h_cmd_pos_;
 

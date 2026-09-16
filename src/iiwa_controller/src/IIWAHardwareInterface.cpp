@@ -15,6 +15,7 @@
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "realtime_tools/realtime_helpers.hpp"
 
 PLUGINLIB_EXPORT_CLASS(
   iiwa_controller::IIWAHardwareInterface,
@@ -87,6 +88,11 @@ CallbackReturn IIWAHardwareInterface::on_init(
     if (used != cycle.size() || fri_cycle_ms_ < 1 || fri_cycle_ms_ > 100) {
       throw std::invalid_argument("Invalid fri_cycle_ms (expected 1..100)");
     }
+    const auto rt_prio = getParam(info, "rt_prio", "80");
+    rt_prio_ = std::stoi(rt_prio, &used);
+    if (used != rt_prio.size() || rt_prio_ < 1 || rt_prio_ > 99) {
+      throw std::invalid_argument("Invalid rt_prio (expected 1..99)");
+    }
     const auto simulation = getParam(info, "simulate", "false");
     if (simulation != "true" && simulation != "false") {
       throw std::invalid_argument("simulate must be true or false");
@@ -151,14 +157,16 @@ std::vector<hardware_interface::InterfaceDescription>
 IIWAHardwareInterface::export_unlisted_state_interface_descriptions()
 {
   std::vector<hardware_interface::InterfaceDescription> descs;
-  descs.reserve(N_JOINTS);
+  descs.reserve(3 * N_JOINTS);
 
   for (size_t i = 0; i < N_JOINTS; ++i) {
-    hardware_interface::InterfaceInfo if_info;
-    if_info.name          = "external_torque";
-    if_info.data_type     = "double";
-    if_info.initial_value = "0.0";
-    descs.emplace_back(info_.joints[i].name, if_info);
+    for (const auto * name : {"external_torque", "ipo_position", "fri_command_position"}) {
+      hardware_interface::InterfaceInfo if_info;
+      if_info.name = name;
+      if_info.data_type = "double";
+      if_info.initial_value = "0.0";
+      descs.emplace_back(info_.joints[i].name, if_info);
+    }
   }
 
   return descs;
@@ -195,6 +203,8 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
       h_vel_[i] = get_state_interface_handle(name + "/velocity");
       h_eff_[i] = get_state_interface_handle(name + "/effort");
       h_ext_[i] = get_state_interface_handle(name + "/external_torque");
+      h_ipo_[i] = get_state_interface_handle(name + "/ipo_position");
+      h_fri_cmd_[i] = get_state_interface_handle(name + "/fri_command_position");
       h_cmd_pos_[i] = get_command_interface_handle(name + "/position");
     }
     if (!simulate_) {
@@ -233,6 +243,8 @@ CallbackReturn IIWAHardwareInterface::on_activate(const rclcpp_lifecycle::State 
       set_state(h_vel_[i], 0.0, true);
       set_state(h_eff_[i], simulate_ ? 0.0 : last_snapshot_.measured_tau[i], true);
       set_state(h_ext_[i], simulate_ ? 0.0 : last_snapshot_.external_tau[i], true);
+      set_state(h_ipo_[i], position, true);
+      set_state(h_fri_cmd_[i], position, true);
       set_command(h_cmd_pos_[i], position, true);
     }
   } catch (const std::exception & e) {
@@ -291,6 +303,13 @@ CallbackReturn IIWAHardwareInterface::on_error(const rclcpp_lifecycle::State & s
 void IIWAHardwareInterface::friThreadFunc()
 {
   try {
+    if (!realtime_tools::configure_sched_fifo(rt_prio_)) {
+      RCLCPP_WARN(rclcpp::get_logger(LOG),
+        "FRI worker could not enable FIFO priority %d; configure realtime permissions for this user",
+        rt_prio_);
+    } else {
+      RCLCPP_INFO(rclcpp::get_logger(LOG), "FRI worker uses FIFO priority %d", rt_prio_);
+    }
     bool synchronized = false;
     const auto startup_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
     while (fri_running_.load()) {
@@ -379,6 +398,8 @@ hardware_interface::return_type IIWAHardwareInterface::read(
       set_state(h_vel_[i], 0.0, false);
       set_state(h_eff_[i], 0.0, false);
       set_state(h_ext_[i], 0.0, false);
+      set_state(h_ipo_[i], pos, false);
+      set_state(h_fri_cmd_[i], pos, false);
     }
     return hardware_interface::return_type::OK;
   }
@@ -407,6 +428,8 @@ hardware_interface::return_type IIWAHardwareInterface::read(
     set_state(h_vel_[i], velocity_[i],         false);
     set_state(h_eff_[i], snap.measured_tau[i], false);
     set_state(h_ext_[i], snap.external_tau[i], false);
+    set_state(h_ipo_[i], snap.ipo_valid ? snap.ipo_pos[i] : snap.measured_pos[i], false);
+    set_state(h_fri_cmd_[i], snap.command_pos[i], false);
   }
 
   return hardware_interface::return_type::OK;

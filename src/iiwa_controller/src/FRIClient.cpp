@@ -29,6 +29,10 @@ void FRIClient::captureData(bool commanding)
   std::copy_n(state.getMeasuredJointPosition(), N_JOINTS, current_.measured_pos.begin());
   std::copy_n(state.getMeasuredTorque(), N_JOINTS, current_.measured_tau.begin());
   std::copy_n(state.getExternalTorque(), N_JOINTS, current_.external_tau.begin());
+  if (!commanding) {
+    // No application command exists outside a commanding FRI state.
+    current_.command_pos = current_.measured_pos;
+  }
   current_.sample_time = state.getSampleTime();
   current_.session = state.getSessionState();
   current_.quality = state.getConnectionQuality();
@@ -117,6 +121,7 @@ void FRIClient::waitForCommand()
   validateCommanding();
   LBRClient::waitForCommand();  // SDK 1.16 mirrors IPO, not measured position.
   sent_pos_ = target_pos_ = current_.ipo_pos;
+  current_.command_pos = sent_pos_;
   initialized_ = true;
   last_command_at_ = current_.received_at;
   publishState();
@@ -154,6 +159,7 @@ void FRIClient::command()
     sent_pos_[i] += std::clamp(step, -max_velocity_[i] * dt, max_velocity_[i] * dt);
   }
   robotCommand().setJointPosition(sent_pos_.data());
+  current_.command_pos = sent_pos_;
   publishState();
 }
 

@@ -45,6 +45,14 @@ TEST(Hardware, RejectsMalformedPortWithoutThrowing)
   EXPECT_EQ(hardware.on_init(params), Return::ERROR);
 }
 
+TEST(Hardware, RejectsInvalidRealtimePriority)
+{
+  Hardware hardware;
+  auto params = parameters();
+  params.hardware_info.hardware_parameters["rt_prio"] = "0";
+  EXPECT_EQ(hardware.on_init(params), Return::ERROR);
+}
+
 TEST(Hardware, RejectsWrongJointOrderAndMissingInterfaces)
 {
   auto params = parameters();

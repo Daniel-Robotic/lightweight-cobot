@@ -17,6 +17,7 @@ struct IIWAStateSnapshot
   std::array<double, 7> measured_tau{};  // measured torque [Nm]
   std::array<double, 7> external_tau{};  // estimated external torque [Nm]
   std::array<double, 7> ipo_pos{};       // interpolator position [rad]
+  std::array<double, 7> command_pos{};   // position sent in the current FRI reply [rad]
   double sample_time{0.0};
   KUKA::FRI::ESessionState session{KUKA::FRI::IDLE};
   KUKA::FRI::EConnectionQuality quality{KUKA::FRI::POOR};
