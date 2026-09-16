@@ -120,7 +120,7 @@ void FRIClient::waitForCommand()
   captureData(true);
   validateCommanding();
   LBRClient::waitForCommand();  // SDK 1.16 mirrors IPO, not measured position.
-  sent_pos_ = target_pos_ = current_.ipo_pos;
+  sent_pos_ = target_pos_ = filtered_pos_ = current_.ipo_pos;
   current_.command_pos = sent_pos_;
   initialized_ = true;
   last_command_at_ = current_.received_at;
@@ -132,7 +132,7 @@ void FRIClient::command()
   captureData(true);
   validateCommanding();
   if (!initialized_) {
-    sent_pos_ = target_pos_ = current_.ipo_pos;
+    sent_pos_ = target_pos_ = filtered_pos_ = current_.ipo_pos;
     last_command_at_ = current_.received_at;
     initialized_ = true;
   }
@@ -149,13 +149,15 @@ void FRIClient::command()
     throw std::runtime_error("FRI command watchdog expired");
   }
   const double dt = current_.sample_time;
+  const double alpha = dt / (kPositionSmoothingTau + dt);
   for (size_t i = 0; i < N_JOINTS; ++i) {
     if (!std::isfinite(target_pos_[i]) || target_pos_[i] < lower_[i] ||
       target_pos_[i] > upper_[i])
     {
       throw std::runtime_error("FRI position command outside configured limits");
     }
-    const double step = target_pos_[i] - sent_pos_[i];
+    filtered_pos_[i] = alpha * target_pos_[i] + (1.0 - alpha) * filtered_pos_[i];
+    const double step = filtered_pos_[i] - sent_pos_[i];
     sent_pos_[i] += std::clamp(step, -max_velocity_[i] * dt, max_velocity_[i] * dt);
   }
   robotCommand().setJointPosition(sent_pos_.data());

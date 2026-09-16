@@ -37,7 +37,7 @@ robot:
 | `fri_cycle_ms` | FRI cycle: `5` ms = 200 Hz, `10` ms = 100 Hz | Use `10` for stable operation or `5` for high-precision tasks |
 | `description` | Path to the robot URDF | Do not change |
 
-Motion always uses JointTrajectoryController. Position and velocity EMA filters are not applied.
+Motion always uses JointTrajectoryController. The position command is smoothed before FRI transmission with a 40 ms EMA time constant; no velocity filter is applied.
 
 ---
 

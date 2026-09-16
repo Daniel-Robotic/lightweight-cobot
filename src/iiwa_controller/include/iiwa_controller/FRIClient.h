@@ -61,11 +61,14 @@ private:
   mutable std::mutex state_mutex_;
   std::mutex command_mutex_;
   Joints target_pos_{};
+  Joints filtered_pos_{};
   Joints requested_pos_{};
   Joints sent_pos_{};
   Joints lower_, upper_, max_velocity_;
   bool initialized_{false};
   bool requested_{false};
+  // Matches the established lbr_fri_ros2_stack FRI position smoothing.
+  static constexpr double kPositionSmoothingTau = 0.04;
   double expected_sample_time_{0.0};
   std::chrono::steady_clock::time_point requested_at_{};
   std::chrono::steady_clock::time_point last_command_at_{};

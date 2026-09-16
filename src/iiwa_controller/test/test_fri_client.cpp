@@ -99,7 +99,7 @@ TEST(FRIClient, RejectsUnsupportedCommandModeBeforeSending)
   EXPECT_FALSE(client.data->commandMsg.commandData.has_jointPosition);
 }
 
-TEST(FRIClient, PositionCommandsHaveNoEmaDelay)
+TEST(FRIClient, PositionCommandsAreSmoothedBeforeSending)
 {
   ClientFixture client;
   client.cycle(COMMANDING_WAIT);
@@ -108,7 +108,8 @@ TEST(FRIClient, PositionCommandsHaveNoEmaDelay)
   q.fill(0.41);
   client.setTargetJointPositions(q);
   client.cycle(COMMANDING_ACTIVE);
-  EXPECT_DOUBLE_EQ(client.sentPosition(), 0.41);
+  // tau=40 ms, dt=10 ms: alpha=dt/(tau+dt)=0.2.
+  EXPECT_DOUBLE_EQ(client.sentPosition(), 0.402);
   EXPECT_DOUBLE_EQ(client.getStateSnapshot().measured_pos[0], 0.2);
 }
 
@@ -199,7 +200,7 @@ TEST(FRIClient, RejectsOverwritingAnUnconsumedPoint)
   q.fill(0.402);
   EXPECT_THROW(client.setTargetJointPositions(q), std::logic_error);
   client.cycle(COMMANDING_ACTIVE);
-  EXPECT_DOUBLE_EQ(client.sentPosition(), 0.401);
+  EXPECT_DOUBLE_EQ(client.sentPosition(), 0.4002);
 }
 
 TEST(FRIClient, SynchronizedCyclesPreserveEveryPointDespiteSchedulingJitter)
@@ -229,8 +230,11 @@ TEST(FRIClient, SynchronizedCyclesPreserveEveryPointDespiteSchedulingJitter)
   worker.join();
   ASSERT_TRUE(worker_ok);
   ASSERT_EQ(sent.size(), 9u);
+  double expected = 0.4;
   for (size_t frame = 1; frame < sent.size(); ++frame) {
-    EXPECT_NEAR(sent[frame] - sent[frame - 1], 0.001, 1e-12);
+    const double target = 0.4 + static_cast<double>(frame) * 0.001;
+    expected = 0.2 * target + 0.8 * expected;
+    EXPECT_NEAR(sent[frame], expected, 1e-12);
   }
 }
 
