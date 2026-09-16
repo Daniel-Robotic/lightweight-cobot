@@ -1,3 +1,5 @@
+import math
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
@@ -25,6 +27,9 @@ def _setup_controllers(context, *args, **kwargs):
     fri_cycle_ms = int(LaunchConfiguration("fri_cycle_ms").perform(context))
     if not 1 <= fri_cycle_ms <= 100:
         raise ValueError("fri_cycle_ms must be within the FRI 1.16 range 1..100 ms")
+    joint_position_tau = float(LaunchConfiguration("joint_position_tau").perform(context))
+    if not math.isfinite(joint_position_tau) or joint_position_tau < 0.0:
+        raise ValueError("joint_position_tau must be finite and non-negative")
     update_rate = 1000 // fri_cycle_ms
 
     xacro_args = {"initial_positions_file": initial_positions_file}
@@ -35,6 +40,7 @@ def _setup_controllers(context, *args, **kwargs):
         xacro_args["robot_ip"] = LaunchConfiguration("robot_ip").perform(context)
         xacro_args["fri_port"] = LaunchConfiguration("fri_port").perform(context)
         xacro_args["fri_cycle_ms"] = str(fri_cycle_ms)
+        xacro_args["joint_position_tau"] = str(joint_position_tau)
 
     robot_description = converter.load_robot_description(
         model_path=description,
@@ -126,7 +132,8 @@ def _setup_controllers(context, *args, **kwargs):
         )
 
         return [
-            LogInfo(msg=f"FRI controller period={fri_cycle_ms} ms; Controller Manager rate={update_rate} Hz"),
+            LogInfo(msg=(f"FRI controller period={fri_cycle_ms} ms; Controller Manager rate={update_rate} Hz; "
+                         f"position smoothing tau={joint_position_tau:.3f} s")),
             ros2_control_node,
             jsb,
             jtc_after_jsb,
@@ -136,6 +143,7 @@ def _setup_controllers(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("fri_cycle_ms", default_value="5"),
+        DeclareLaunchArgument("joint_position_tau", default_value="0.04"),
         DeclareLaunchArgument("robot_ip", default_value="192.170.10.2"),
         DeclareLaunchArgument("fri_port", default_value="30200"),
         OpaqueFunction(function=_setup_controllers),

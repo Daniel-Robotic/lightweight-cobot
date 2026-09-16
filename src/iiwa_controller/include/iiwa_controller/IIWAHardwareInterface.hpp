@@ -61,6 +61,7 @@ private:
   std::string robot_ip_;
   int fri_port_{30200};
   int fri_cycle_ms_{5};
+  double joint_position_tau_{0.04};
   int rt_prio_{80};
   bool simulate_{false};
   // Объекты FRI SDK

@@ -53,6 +53,14 @@ TEST(Hardware, RejectsInvalidRealtimePriority)
   EXPECT_EQ(hardware.on_init(params), Return::ERROR);
 }
 
+TEST(Hardware, RejectsInvalidPositionSmoothingTau)
+{
+  Hardware hardware;
+  auto params = parameters();
+  params.hardware_info.hardware_parameters["joint_position_tau"] = "-0.01";
+  EXPECT_EQ(hardware.on_init(params), Return::ERROR);
+}
+
 TEST(Hardware, RejectsWrongJointOrderAndMissingInterfaces)
 {
   auto params = parameters();

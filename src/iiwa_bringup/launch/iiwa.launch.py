@@ -51,6 +51,7 @@ def _runtime_setup(context, *args, **kwargs):
             "robot_ip": settings.robot.ip,
             "fri_port": str(settings.robot.port),
             "fri_cycle_ms": str(settings.robot.fri_cycle_ms),
+            "joint_position_tau": str(settings.robot.joint_position_tau),
             "simulate": "false",
         }
 
@@ -117,6 +118,7 @@ def _runtime_setup(context, *args, **kwargs):
             "rotation": str(settings.digital_twin.webots.rotation),
             "controller_timer": str(settings.digital_twin.webots.controller_timer),
             "fri_cycle_ms": str(settings.robot.fri_cycle_ms),
+            "joint_position_tau": str(settings.robot.joint_position_tau),
             "robot_ip": settings.robot.ip,
             "fri_port": str(settings.robot.port),
         }
@@ -125,6 +127,7 @@ def _runtime_setup(context, *args, **kwargs):
         setup.append(LogInfo(msg=(
             "FRI configured from cobot-setting.yaml: "
             f"period={settings.robot.fri_cycle_ms} ms, "
+            f"position_tau={settings.robot.joint_position_tau:.3f} s, "
             f"endpoint={settings.robot.ip}:{settings.robot.port}"
         )))
 

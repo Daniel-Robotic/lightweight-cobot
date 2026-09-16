@@ -9,8 +9,12 @@ namespace iiwa_controller
 {
 using namespace KUKA::FRI;
 
-FRIClient::FRIClient()
+FRIClient::FRIClient(double position_smoothing_tau)
+: position_smoothing_tau_(position_smoothing_tau)
 {
+  if (!std::isfinite(position_smoothing_tau_) || position_smoothing_tau_ < 0.0) {
+    throw std::invalid_argument("Position smoothing tau must be finite and non-negative");
+  }
   lower_.fill(-std::numeric_limits<double>::infinity());
   upper_.fill(std::numeric_limits<double>::infinity());
   max_velocity_.fill(std::numeric_limits<double>::infinity());
@@ -149,7 +153,8 @@ void FRIClient::command()
     throw std::runtime_error("FRI command watchdog expired");
   }
   const double dt = current_.sample_time;
-  const double alpha = dt / (kPositionSmoothingTau + dt);
+  const double alpha = position_smoothing_tau_ == 0.0 ? 1.0 :
+    dt / (position_smoothing_tau_ + dt);
   for (size_t i = 0; i < N_JOINTS; ++i) {
     if (!std::isfinite(target_pos_[i]) || target_pos_[i] < lower_[i] ||
       target_pos_[i] > upper_[i])

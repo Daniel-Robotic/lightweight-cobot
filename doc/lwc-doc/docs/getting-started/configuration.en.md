@@ -35,9 +35,10 @@ robot:
 | `ip` | KUKA controller IP address | **Change** to the actual controller address |
 | `port` | FRI UDP port | Default: `30200`; change only if the port conflicts |
 | `fri_cycle_ms` | FRI cycle: `5` ms = 200 Hz, `10` ms = 100 Hz | Use `10` for stable operation or `5` for high-precision tasks |
+| `joint_position_tau` | FRI command EMA time constant, s | `0.04`; `0` disables smoothing |
 | `description` | Path to the robot URDF | Do not change |
 
-Motion always uses JointTrajectoryController. The position command is smoothed before FRI transmission with a 40 ms EMA time constant; no velocity filter is applied.
+Motion always uses JointTrajectoryController. The position command is smoothed before FRI transmission with `robot.joint_position_tau`; no velocity filter is applied.
 
 ---
 

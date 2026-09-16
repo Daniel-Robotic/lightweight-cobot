@@ -23,7 +23,8 @@ public:
 class ClientFixture : public iiwa_controller::FRIClient
 {
 public:
-  ClientFixture() : FRIClient(), app(connection, *this), data(app.data())
+  explicit ClientFixture(double position_smoothing_tau = 0.04)
+  : FRIClient(position_smoothing_tau), app(connection, *this), data(app.data())
   {
     auto & m = data->monitoringMsg;
     m.connectionInfo.sendPeriod = 10;
@@ -111,6 +112,18 @@ TEST(FRIClient, PositionCommandsAreSmoothedBeforeSending)
   // tau=40 ms, dt=10 ms: alpha=dt/(tau+dt)=0.2.
   EXPECT_DOUBLE_EQ(client.sentPosition(), 0.402);
   EXPECT_DOUBLE_EQ(client.getStateSnapshot().measured_pos[0], 0.2);
+}
+
+TEST(FRIClient, ZeroPositionSmoothingTauForwardsStepImmediately)
+{
+  ClientFixture client(0.0);
+  client.cycle(COMMANDING_WAIT);
+  client.cycle(COMMANDING_ACTIVE);
+  iiwa_controller::FRIClient::Joints q;
+  q.fill(0.41);
+  client.setTargetJointPositions(q);
+  client.cycle(COMMANDING_ACTIVE);
+  EXPECT_DOUBLE_EQ(client.sentPosition(), 0.41);
 }
 
 TEST(FRIClient, RejectsInvalidCommandsAndBoundsCommandRate)

@@ -40,7 +40,7 @@ class FRIClient : public KUKA::FRI::LBRClient
 public:
   static constexpr size_t N_JOINTS = KUKA::FRI::LBRState::NUMBER_OF_JOINTS;
   using Joints = std::array<double, N_JOINTS>;
-  FRIClient();
+  explicit FRIClient(double position_smoothing_tau = 0.04);
   void monitor() override;
   void waitForCommand() override;
   void command() override;
@@ -67,8 +67,7 @@ private:
   Joints lower_, upper_, max_velocity_;
   bool initialized_{false};
   bool requested_{false};
-  // Matches the established lbr_fri_ros2_stack FRI position smoothing.
-  static constexpr double kPositionSmoothingTau = 0.04;
+  double position_smoothing_tau_{0.04};
   double expected_sample_time_{0.0};
   std::chrono::steady_clock::time_point requested_at_{};
   std::chrono::steady_clock::time_point last_command_at_{};

@@ -88,6 +88,13 @@ CallbackReturn IIWAHardwareInterface::on_init(
     if (used != cycle.size() || fri_cycle_ms_ < 1 || fri_cycle_ms_ > 100) {
       throw std::invalid_argument("Invalid fri_cycle_ms (expected 1..100)");
     }
+    const auto position_tau = getParam(info, "joint_position_tau", "0.04");
+    joint_position_tau_ = std::stod(position_tau, &used);
+    if (used != position_tau.size() || !std::isfinite(joint_position_tau_) ||
+      joint_position_tau_ < 0.0)
+    {
+      throw std::invalid_argument("Invalid joint_position_tau (expected >= 0)");
+    }
     const auto rt_prio = getParam(info, "rt_prio", "80");
     rt_prio_ = std::stoi(rt_prio, &used);
     if (used != rt_prio.size() || rt_prio_ < 1 || rt_prio_ > 99) {
@@ -183,7 +190,7 @@ CallbackReturn IIWAHardwareInterface::on_configure(const rclcpp_lifecycle::State
   }
 
   releaseFRI();
-  fri_client_ = std::make_unique<FRIClient>();
+  fri_client_ = std::make_unique<FRIClient>(joint_position_tau_);
   fri_client_->setLimits(lower_, upper_, max_velocity_);
   fri_client_->setExpectedSampleTime(fri_cycle_ms_ * 0.001);
   connection_ = std::make_unique<StartupConnection>(fri_running_);
