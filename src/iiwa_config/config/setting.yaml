@@ -1,6 +1,6 @@
 robot:
   name: "iiwa7"
-  ip: "192.170.10.2"
+  ip: "192.168.21.147"
   port: 30200
   fri_cycle_ms: 10          # период FRI-цикла: 5 мс (200 Гц) или 10 мс (100 Гц)
   description: pkg://iiwa_description/urdf/iiwa7.urdf.xacro
