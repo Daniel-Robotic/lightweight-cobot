@@ -1,6 +1,8 @@
 controller_manager:
   ros__parameters:
-    update_rate: 200  # резервное значение; при запуске через launch: 1000 // fri_cycle_ms
+    # `update_rate` задаётся FRI launch-файлом как 1000 / robot.fri_cycle_ms.
+    # Не фиксировать его здесь: KLI Position всегда выдаёт 10 мс (100 Гц),
+    # а KONI может работать с 5 мс (200 Гц).
 
     joint_state_broadcaster:
       type: "joint_state_broadcaster/JointStateBroadcaster"
