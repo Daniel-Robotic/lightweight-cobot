@@ -56,7 +56,10 @@ void FRIClient::captureData(bool commanding)
   if (expected_sample_time_ > 0.0 &&
     std::abs(current_.sample_time - expected_sample_time_) > 1e-9)
   {
-    throw std::runtime_error("Sunrise FRI period differs from robot.fri_cycle_ms");
+    throw std::runtime_error(
+            "Sunrise FRI period is " + std::to_string(current_.sample_time * 1000.0) +
+            " ms, but robot.fri_cycle_ms is " +
+            std::to_string(expected_sample_time_ * 1000.0) + " ms");
   }
   if (current_.valid && current_.session == COMMANDING_ACTIVE) {
     const double elapsed = static_cast<double>(sec - current_.time_stamp_sec) +
