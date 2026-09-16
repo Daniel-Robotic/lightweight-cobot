@@ -11,6 +11,16 @@ from cobot.process import StepProgress
 _PROJECT_DIR = Path(__file__).parent.parent.parent
 
 
+def _plain(message: str) -> None:
+    """Print after replacing this command's own uv environment.
+
+    Rich modules loaded before ``uv tool install`` can no longer be complete after
+    uv replaces the editable tool environment. Do not render with Rich after that
+    command returns.
+    """
+    print(message, flush=True)
+
+
 def _git(*args: str) -> str:
     """Run a git command in the project dir and return its stripped stdout.
     Запускает git-команду в директории проекта и возвращает обрезанный stdout.
@@ -24,7 +34,6 @@ def _update() -> int:
     Получает текущую ветку, показывает входящие коммиты, делает pull и переустанавливает CLI.
     Прогресс: fetch (0-30 %), pull (30-80 %), переустановка (80-100 %).
     """
-    ok, fail_msg = True, ""
     with StepProgress("Обновление проекта") as p:
         try:
             branch = _git("rev-parse", "--abbrev-ref", "HEAD")
@@ -52,24 +61,29 @@ def _update() -> int:
                     done(False, f"git pull завершился с кодом {rc}")
                     return 1
             p.set(80)
-
-            p.set(80, "Переустановка cobot CLI...")
-            p.raw("\n[cyan]▸[/cyan] Переустановка cobot CLI...")
-            rc = process.stream(["uv", "tool", "install", "--editable", str(_PROJECT_DIR)],
-                               on_line=p.log)
-            if rc == 0:
-                p.raw("[green]✓[/green] cobot переустановлен")
-                p.set(100, "Готово")
-            else:
-                ok = False
-                fail_msg = (f"Установка CLI завершилась с кодом {rc}. "
-                            "Исходники обновлены, но установка не завершена. "
-                            "Сохраните вывод ошибки выше и повторите cobot update.")
         except (subprocess.CalledProcessError, OSError) as exc:
-            ok, fail_msg = False, str(exc)
+            done(False, str(exc))
+            return 1
 
-    done(ok, "Проект обновлён" if ok else fail_msg)
-    return 0 if ok else 1
+    # uv can replace the Rich package of this running CLI. Keep this stage outside
+    # StepProgress and only use built-in print afterwards.
+    _plain("\n▸ Переустановка cobot CLI...")
+    try:
+        rc = process.stream(
+            ["uv", "tool", "install", "--editable", str(_PROJECT_DIR)],
+            on_line=lambda line: _plain(f"  {line}"),
+        )
+    except OSError as exc:
+        _plain(f"✗ Не удалось запустить установщик: {exc}")
+        return 1
+    if rc != 0:
+        _plain(
+            f"✗ Установка CLI завершилась с кодом {rc}. Исходники обновлены, "
+            "но установка не завершена. Сохраните вывод выше и повторите cobot update."
+        )
+        return 1
+    _plain("✓ Проект обновлён и cobot переустановлен")
+    return 0
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:

@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch.event_handlers import OnProcessExit
 from launch.actions import RegisterEventHandler
@@ -126,6 +126,7 @@ def _setup_controllers(context, *args, **kwargs):
         )
 
         return [
+            LogInfo(msg=f"FRI controller period={fri_cycle_ms} ms; Controller Manager rate={update_rate} Hz"),
             ros2_control_node,
             jsb,
             jtc_after_jsb,

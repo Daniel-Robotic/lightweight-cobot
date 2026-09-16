@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -50,6 +50,7 @@ def _runtime_setup(context, *args, **kwargs):
             "initial_positions_file": settings.controller.moveit.initial_positions,
             "robot_ip": settings.robot.ip,
             "fri_port": str(settings.robot.port),
+            "fri_cycle_ms": str(settings.robot.fri_cycle_ms),
             "simulate": "false",
         }
 
@@ -119,6 +120,13 @@ def _runtime_setup(context, *args, **kwargs):
             "robot_ip": settings.robot.ip,
             "fri_port": str(settings.robot.port),
         }
+
+    if not simulate:
+        setup.append(LogInfo(msg=(
+            "FRI configured from cobot-setting.yaml: "
+            f"period={settings.robot.fri_cycle_ms} ms, "
+            f"endpoint={settings.robot.ip}:{settings.robot.port}"
+        )))
 
     setup.append(IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
