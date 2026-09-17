@@ -17,6 +17,9 @@ from moveit.core.robot_state import RobotState
 
 from iiwa_msgs.action import MoveToPose, MoveToJoints
 from iiwa_msgs.srv import MoveToNamedPose
+from iiwa_planning.motion_priority import (
+    MotionLease, MotionPriorityClient, MotionSerialiser, LeaseError,
+)
 
 
 # Таблица планировщиков
@@ -48,6 +51,10 @@ class IiwaMotionServer(Node):
         super().__init__("iiwa_motion_server")
         self._setup_parameters()
         self._setup_moveit()
+        self._motion_serial = MotionSerialiser()
+        self._operation = threading.local()
+        self._priority = MotionPriorityClient(context=self.context)
+        self._gizmo_enabled = self.get_parameter("tcp_gizmo_enabled").value
         self._setup_servers()
 
         self.get_logger().info("Сервер движения iiwa запущен")
@@ -59,6 +66,7 @@ class IiwaMotionServer(Node):
         self.declare_parameter("default_frame", "base_link")
         self.declare_parameter("default_planner", "ompl")
         self.declare_parameter("planning_attempts", 3)
+        self.declare_parameter("tcp_gizmo_enabled", False)
 
         self._pose_link = self.get_parameter("pose_link").value
         self._planning_group = self.get_parameter("planning_group").value
@@ -67,7 +75,7 @@ class IiwaMotionServer(Node):
         self._planning_attempts = self.get_parameter("planning_attempts").value
 
     def _setup_moveit(self):
-        self._moveit = MoveItPy(node_name="iiwa_motion_server")
+        self._moveit = MoveItPy(node_name="iiwa_motion_moveit")
         self._arm: PlanningComponent = self._moveit.get_planning_component(self._planning_group)
         self._robot_model = self._moveit.get_robot_model()
 
@@ -75,19 +83,67 @@ class IiwaMotionServer(Node):
         cb = ReentrantCallbackGroup()
 
         ActionServer(
-            self, MoveToPose, "cobot/move_to_pose", self._execute_pose,
+            self, MoveToPose, "cobot/move_to_pose", lambda gh: self._guard_action(gh, MoveToPose.Result, self._execute_pose),
             callback_group=cb,
             goal_callback=lambda _: GoalResponse.ACCEPT,
             cancel_callback=lambda _: CancelResponse.ACCEPT,
         )
         ActionServer(
-            self, MoveToJoints, "cobot/move_to_joints", self._execute_joints,
+            self, MoveToJoints, "cobot/move_to_joints", lambda gh: self._guard_action(gh, MoveToJoints.Result, self._execute_joints),
             callback_group=cb,
             goal_callback=lambda _: GoalResponse.ACCEPT,
             cancel_callback=lambda _: CancelResponse.ACCEPT,
         )
-        self.create_service(MoveToNamedPose, "cobot/move_to_named", self._handle_named, callback_group=cb)
-        self.create_service(Trigger, "cobot/stop", self._handle_stop, callback_group=cb)
+        self.create_service(MoveToNamedPose, "cobot/move_to_named", self._guard_named, callback_group=cb)
+        self._priority.create_stop_service(self._handle_stop)
+
+    def _stop_execution(self):
+        self._motion_serial.stop(
+            lambda: self._moveit.get_trajectory_execution_manager().stop_execution())
+
+    def _lease(self):
+        return MotionLease(self._priority.exchange if self._gizmo_enabled else None,
+                           on_lost=self._stop_execution)
+
+    def _guarded(self, callback):
+        generation = self._motion_serial.generation()
+        # Reserve before waiting so queued requests also exclude the gizmo.
+        with self._lease() as lease:
+            with self._motion_serial.lock:
+                self._motion_serial.check(generation)
+                lease.check()
+                self._operation.generation = generation
+                self._operation.lease = lease
+                return callback()
+
+    def _guard_action(self, goal_handle, result_type, callback):
+        try:
+            result, ok, message = self._guarded(lambda: callback(goal_handle))
+            return self._finish_action(goal_handle, result, ok, message)
+        except Exception as exc:
+            result = result_type()
+            result.success = False
+            result.message = str(exc)
+            if goal_handle.is_active:
+                goal_handle.abort()
+            return result
+
+    def _guard_named(self, request, response):
+        try:
+            return self._guarded(lambda: self._handle_named(request, response))
+        except Exception as exc:
+            response.success = False
+            response.message = str(exc)
+            return response
+
+    def _check_operation(self):
+        self._operation.lease.check()
+        self._motion_serial.check(self._operation.generation)
+
+    def destroy_node(self):
+        if self._priority:
+            self._priority.close()
+        return super().destroy_node()
 
     def _make_plan_params(self, pipeline: str, planner_id: str, plan_time: float, velocity_scale: float, accel_scale: float | None = None) -> PlanRequestParameters:
         params = PlanRequestParameters(self._moveit, self._planning_group)
@@ -105,19 +161,29 @@ class IiwaMotionServer(Node):
         Возвращает (True, msg) при успехе, (False, msg) при ошибке,
         (None, 'canceled') если цель была отменена.
         """
+        self._check_operation()
         plan_result = self._arm.plan(single_plan_parameters=plan_params)
         if not plan_result:
             return False, "Планирование не удалось: поза недостижима или в столкновении"
 
+        self._check_operation()
         if goal_handle.is_cancel_requested:
             return None, "canceled"
 
         done = threading.Event()
         failed = threading.Event()
 
+        generation = self._operation.generation
+        lease = self._operation.lease
+
         def do_execute():
             try:
-                self._moveit.execute(plan_result.trajectory, controllers=[])
+                lease.check()
+                self._motion_serial.check(generation)
+                execution = self._moveit.execute(plan_result.trajectory, controllers=[])
+                # Jazzy ExecutionStatus.__bool__ is true only for SUCCEEDED.
+                if not bool(execution):
+                    failed.set()
             except Exception as exc:
                 self.get_logger().error(f"Ошибка выполнения траектории: {exc}")
                 failed.set()
@@ -126,14 +192,21 @@ class IiwaMotionServer(Node):
 
         threading.Thread(target=do_execute, daemon=True).start()
 
+        interrupted = False
         while not done.wait(timeout=0.05):
-            if goal_handle.is_cancel_requested:
+            if (goal_handle.is_cancel_requested or generation != self._motion_serial.generation()
+                    or lease.lost):
+                interrupted = True
+                # Repeat to cover stop racing the blocking execute() submission.
                 try:
                     self._moveit.get_trajectory_execution_manager().stop_execution()
-                except Exception:
-                    pass
-                done.wait()
-                return None, "canceled"
+                except Exception as exc:
+                    self.get_logger().error(f"Stop retry failed: {exc}")
+        if goal_handle.is_cancel_requested:
+            return None, "canceled"
+        self._check_operation()
+        if interrupted:
+            return False, "Выполнение траектории остановлено"
 
         if failed.is_set():
             return False, "Выполнение траектории завершилось ошибкой"
@@ -165,8 +238,7 @@ class IiwaMotionServer(Node):
             result.success = False
             result.message = f"Неизвестный планировщик '{planner_key}'. Доступные: {', '.join(PLANNERS)}"
             self.get_logger().error(result.message)
-            goal_handle.abort()
-            return result
+            return result, False, result.message
 
         pipeline, planner_id, plan_time = PLANNERS[planner_key]
 
@@ -198,7 +270,7 @@ class IiwaMotionServer(Node):
 
         plan_params = self._make_plan_params(pipeline, planner_id, plan_time, velocity_scale)
         ok, msg = self._plan_and_execute(plan_params, goal_handle)
-        return self._finish_action(goal_handle, result, ok, msg)
+        return result, ok, msg
 
     def _execute_joints(self, goal_handle):
         req = goal_handle.request
@@ -230,7 +302,7 @@ class IiwaMotionServer(Node):
             "ompl", "RRTConnectkConfigDefault", 10.0, velocity_scale
         )
         ok, msg = self._plan_and_execute(plan_params, goal_handle)
-        return self._finish_action(goal_handle, result, ok, msg)
+        return result, ok, msg
 
     def _handle_named(self, request: MoveToNamedPose.Request, response: MoveToNamedPose.Response):
         name = request.name.strip()
@@ -254,30 +326,26 @@ class IiwaMotionServer(Node):
         plan_params = self._make_plan_params(
             "pilz_industrial_motion_planner", "PTP", 2.0, velocity_scale, accel_scale
         )
-        plan_result = self._arm.plan(single_plan_parameters=plan_params)
-        if not plan_result:
-            response.success = False
-            response.message = f"Не удалось построить траекторию для '{name}'"
-            self.get_logger().error(response.message)
-            return response
+        class NamedGoal:
+            is_cancel_requested = False
 
-        exec_result = self._moveit.execute(plan_result.trajectory, controllers=[])
-        if exec_result:
-            response.success = True
-            response.message = f"Переместился в '{name}'"
-            self.get_logger().info(response.message)
-        else:
-            response.success = False
-            response.message = f"Выполнение траектории для '{name}' прервано (hardware fault?)"
-            self.get_logger().error(response.message)
+        ok, message = self._plan_and_execute(plan_params, NamedGoal())
+        response.success = bool(ok)
+        response.message = message
         return response
 
     def _handle_stop(self, request: Trigger.Request, response: Trigger.Response):
         try:
-            self._moveit.get_trajectory_execution_manager().stop_execution()
+            with self._lease():
+                self._stop_execution()
             response.success = True
             response.message = "Выполнение траектории остановлено"
         except Exception as exc:
+            # Failure to reserve must never prevent the requested high-priority stop.
+            try:
+                self._stop_execution()
+            except Exception as stop_exc:
+                self.get_logger().error(f"Stop failed: {stop_exc}")
             response.success = False
             response.message = str(exc)
         self.get_logger().info(f"[stop] {response.message}")
@@ -294,7 +362,10 @@ def main(args=None):
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        rclpy.shutdown()
+        if "node" in locals():
+            node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

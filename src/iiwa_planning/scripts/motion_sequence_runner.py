@@ -28,6 +28,12 @@ import rosbag2_py
 from rosidl_runtime_py.utilities import get_message
 
 from iiwa_msgs.action import MoveToJoints, MoveToPose
+from rcl_interfaces.srv import GetParameters
+from rcl_interfaces.msg import ParameterType
+from std_srvs.srv import Trigger
+from iiwa_planning.motion_priority import (
+    MotionLease, MotionPriorityClient, LeaseError, wait_response,
+)
 
 
 def _is_joints_waypoint(wp: dict) -> bool:
@@ -70,6 +76,15 @@ class MotionSequenceRunner(Node):
         )
         self.get_logger().info(f'joints_action={joints_action}  pose_action={pose_action}')
 
+        self._parameters_client = self.create_client(
+            GetParameters, '/iiwa_motion_server/get_parameters', callback_group=self._cb_group)
+        self._stop_client = self.create_client(
+            Trigger, '/cobot/stop', callback_group=self._cb_group)
+        self._priority = None
+        self._lease_active = None
+        self._aborted = threading.Event()
+        self._active_goal = None
+        self.exit_code = 1
         self._writer: rosbag2_py.SequentialWriter | None = None
         self._registered_topics: set[str] = set()
         self._subs = []
@@ -180,6 +195,9 @@ class MotionSequenceRunner(Node):
 
         def _on_goal(future):
             gh = future.result()
+            self._active_goal = gh
+            if self._aborted.is_set() and gh.accepted:
+                gh.cancel_goal_async()
             if not gh.accepted:
                 self.get_logger().error('MoveToJoints goal rejected')
                 done.set()
@@ -187,8 +205,15 @@ class MotionSequenceRunner(Node):
             gh.get_result_async().add_done_callback(_on_result)
 
         self._joints_client.send_goal_async(goal).add_done_callback(_on_goal)
-        done.wait()
-        return result_holder[0]
+        deadline = time.monotonic() + 300.0
+        while not done.wait(0.1):
+            if self._aborted.is_set() or time.monotonic() >= deadline or not rclpy.ok():
+                self._abort_sequence()
+                return False
+            if self._lease_active:
+                self._lease_active.check()
+        self._active_goal = None
+        return result_holder[0] and not self._aborted.is_set()
 
     def _send_pose_goal(self, wp: dict, idx: int | None = None) -> bool:
         goal = MoveToPose.Goal()
@@ -215,6 +240,9 @@ class MotionSequenceRunner(Node):
 
         def _on_goal(future):
             gh = future.result()
+            self._active_goal = gh
+            if self._aborted.is_set() and gh.accepted:
+                gh.cancel_goal_async()
             if not gh.accepted:
                 self.get_logger().error('MoveToPose goal rejected')
                 done.set()
@@ -222,8 +250,15 @@ class MotionSequenceRunner(Node):
             gh.get_result_async().add_done_callback(_on_result)
 
         self._pose_client.send_goal_async(goal).add_done_callback(_on_goal)
-        done.wait()
-        return result_holder[0]
+        deadline = time.monotonic() + 300.0
+        while not done.wait(0.1):
+            if self._aborted.is_set() or time.monotonic() >= deadline or not rclpy.ok():
+                self._abort_sequence()
+                return False
+            if self._lease_active:
+                self._lease_active.check()
+        self._active_goal = None
+        return result_holder[0] and not self._aborted.is_set()
 
     def _send_waypoint(self, wp: dict, idx: int | None = None) -> bool:
         if _is_joints_waypoint(wp):
@@ -231,21 +266,49 @@ class MotionSequenceRunner(Node):
         return self._send_pose_goal(wp, idx=idx)
 
 
+    def _abort_sequence(self):
+        self._aborted.set()
+        if self._active_goal is not None and self._active_goal.accepted:
+            self._active_goal.cancel_goal_async()
+        # Asynchronous so renewal never waits on the motion server's callback pool.
+        if self._stop_client.service_is_ready():
+            self._stop_client.call_async(Trigger.Request())
+
+    def _discover_priority(self):
+        if not self._parameters_client.wait_for_service(timeout_sec=5.0):
+            raise LeaseError('Motion server parameter service unavailable')
+        response = wait_response(self._parameters_client.call_async(
+            GetParameters.Request(names=['tcp_gizmo_enabled'])))
+        if len(response.values) != 1 or response.values[0].type != ParameterType.PARAMETER_BOOL:
+            raise LeaseError('Motion server tcp_gizmo_enabled parameter unavailable')
+        if response.values[0].bool_value:
+            self._priority = MotionPriorityClient(context=self.context)
+
     def run(self, done_event: threading.Event):
+        self.exit_code = 1
         try:
-            for i in range(self._n_iter):
-                self.get_logger().info(f'======= Iteration {i + 1}/{self._n_iter} =======')
-
-                self._send_waypoint(self._home)
-
-                for idx, wp in enumerate(self._waypoints):
-                    self._send_waypoint(wp, idx=idx)
-
-                self._send_waypoint(self._home)
-                time.sleep(self._delay)
-
+            self._discover_priority()
+            with MotionLease(self._priority.exchange if self._priority else None,
+                             on_lost=self._abort_sequence) as lease:
+                self._lease_active = lease
+                for i in range(self._n_iter):
+                    self.get_logger().info(f'======= Iteration {i + 1}/{self._n_iter} =======')
+                    for idx, wp in enumerate([self._home, *self._waypoints, self._home]):
+                        lease.check()
+                        if self._aborted.is_set() or not self._send_waypoint(wp, idx=idx):
+                            raise LeaseError(f'Sequence interrupted at waypoint {idx}')
+                    if self._aborted.wait(max(0.0, self._delay)):
+                        raise LeaseError('Sequence reservation lost during pause')
+                    lease.check()
             self.get_logger().info('======= Sequence complete =======')
+            self.exit_code = 0
+        except Exception as exc:
+            self._abort_sequence()
+            self.get_logger().error(f'Sequence failed: {exc}')
         finally:
+            self._lease_active = None
+            if self._priority:
+                self._priority.close()
             self.close_bag()
             done_event.set()
 
@@ -264,12 +327,16 @@ def main():
         while not done_event.is_set():
             executor.spin_once(timeout_sec=0.1)
     except KeyboardInterrupt:
-        pass
+        node._abort_sequence()
+        deadline = time.monotonic() + 5.0
+        while not done_event.is_set() and time.monotonic() < deadline:
+            executor.spin_once(timeout_sec=0.1)
     finally:
         node.close_bag()
         node.destroy_node()
         rclpy.shutdown()
+    return node.exit_code
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

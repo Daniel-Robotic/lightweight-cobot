@@ -90,6 +90,7 @@ def _runtime_setup(context, *args, **kwargs):
                 "controller_timer": str(settings.digital_twin.webots.controller_timer),
                 "controller": str(settings.controller.controller_path),
                 "initial_positions_file": str(settings.controller.moveit.initial_positions),
+                "tcp_gizmo_enabled": str(settings.digital_twin.tcp_gizmo.enabled).lower(),
             }.items(),
         ))
 

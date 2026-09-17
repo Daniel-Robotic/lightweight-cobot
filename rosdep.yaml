@@ -18,3 +18,22 @@ python3-fastmcp:
     pip:
       packages: [fastmcp]
 
+# TCP gizmo / MoveIt Servo (ROS 2 Jazzy).
+moveit_servo:
+  ubuntu: [ros-jazzy-moveit-servo]
+rclcpp_action:
+  ubuntu: [ros-jazzy-rclcpp-action]
+control_msgs:
+  ubuntu: [ros-jazzy-control-msgs]
+trajectory_msgs:
+  ubuntu: [ros-jazzy-trajectory-msgs]
+action_msgs:
+  ubuntu: [ros-jazzy-action-msgs]
+rcl_interfaces:
+  ubuntu: [ros-jazzy-rcl-interfaces]
+tf2_eigen:
+  ubuntu: [ros-jazzy-tf2-eigen]
+python3-numpy:
+  ubuntu: [python3-numpy]
+python3-scipy:
+  ubuntu: [python3-scipy]

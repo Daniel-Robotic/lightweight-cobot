@@ -34,9 +34,20 @@ class RvizCfg:
 
 
 @dataclass(frozen=True)
+class TcpGizmoCfg:
+    enabled: bool = False
+    publish_period: float = 0.032
+    command_timeout: float = 0.3
+    state_timeout: float = 0.5
+    max_linear_speed: float = 0.10
+    max_angular_speed: float = 0.4
+
+
+@dataclass(frozen=True)
 class DigitalTwinCfg:
     webots: WebotsCfg
     rviz: RvizCfg
+    tcp_gizmo: TcpGizmoCfg = TcpGizmoCfg()
 
 
 @dataclass(frozen=True)
@@ -105,6 +116,24 @@ class FoxgloveCfg:
 
 class SettingsError(RuntimeError):
     pass
+
+
+def parse_tcp_gizmo(raw) -> TcpGizmoCfg:
+    if raw is None:
+        return TcpGizmoCfg()
+    if not isinstance(raw, dict):
+        raise SettingsError('digital_twin.tcp_gizmo must be a mapping')
+    values = {f.name: raw.get(f.name, f.default) for f in fields(TcpGizmoCfg)}
+    if type(values['enabled']) is not bool:
+        raise SettingsError('digital_twin.tcp_gizmo.enabled must be true or false')
+    for key in values.keys() - {'enabled'}:
+        value = values[key]
+        if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or value <= 0:
+            raise SettingsError(f'digital_twin.tcp_gizmo.{key} must be finite and positive')
+        values[key] = float(value)
+    if values['command_timeout'] < 2 * values['publish_period']:
+        raise SettingsError('tcp_gizmo.command_timeout must allow at least two publish periods')
+    return TcpGizmoCfg(**values)
 
 
 @dataclass(frozen=True)
@@ -314,7 +343,8 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
     rviz = RvizCfg(
         config=resolve_path(str(require(rviz_raw, "config")), settings_dir)
     )
-    digital_twin = DigitalTwinCfg(webots=webots, rviz=rviz)
+    digital_twin = DigitalTwinCfg(webots=webots, rviz=rviz,
+                                 tcp_gizmo=parse_tcp_gizmo(dt_raw.get('tcp_gizmo')))
 
     # controller + moveit
     ctrl_raw = require(raw, "controller")

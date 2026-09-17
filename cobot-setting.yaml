@@ -8,6 +8,13 @@ robot:
 
 
 digital_twin:
+  tcp_gizmo:
+    enabled: true              # TCP-гизма в Webots; только в режиме симуляции
+    publish_period: 0.032      # период управления [с]
+    command_timeout: 0.3       # максимальный возраст цели при отпускании мыши [с]
+    state_timeout: 0.5         # допустимый возраст состояния робота [с]
+    max_linear_speed: 0.50     # верхний предел скорости TCP [м/с]
+    max_angular_speed: 0.4     # скорость вращения TCP [рад/с]
   webots:
     world: pkg://iiwa_description/worlds/iiwa.wbt
     # world: pkg://iiwa_description/worlds/simple_world.wbt

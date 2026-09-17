@@ -1,0 +1,7 @@
+# Acquire/renew or release a named high-priority lease. TTL uses wall time [s].
+string owner
+bool acquire
+float64 ttl
+---
+bool success
+string message

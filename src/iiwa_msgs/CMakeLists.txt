@@ -7,6 +7,9 @@ find_package(geometry_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/GizmoCommand.msg"
+  "msg/GizmoState.msg"
+  "srv/MotionPriority.srv"
   "srv/MoveToPose.srv"
   "srv/MoveToNamedPose.srv"
   "action/MoveToPose.action"

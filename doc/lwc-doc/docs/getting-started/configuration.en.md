@@ -48,6 +48,13 @@ Configures the Webots environment and RViz visualization.
 
 ```yaml
 digital_twin:
+  tcp_gizmo:
+    enabled: true
+    publish_period: 0.032
+    command_timeout: 0.3
+    state_timeout: 0.5
+    max_linear_speed: 0.50
+    max_angular_speed: 0.4
   webots:
     world: pkg://iiwa_description/worlds/iiwa.wbt
     transform: "-0.25 0 0.79"
@@ -67,6 +74,28 @@ digital_twin:
 | `webots.cameras` | List of YAML configurations for connected cameras |
 | `rviz.config` | Path to the RViz configuration |
 
+### TCP gizmo in Webots
+
+Select the TCP marker, translate or rotate it with the native Webots gizmo, and release the left mouse button. Holding the button only changes the preview. Releasing it submits one complete trajectory. Another drag is accepted after that trajectory finishes. An unreachable target or a colliding trajectory resets the marker to the current TCP.
+
+The gizmo controls the active tool's `tcp` link independently of `planning.pose_link`. For `patron`, TCP is at the chuck's working end, 55.2 mm along local Z from the `patron` link origin. Without a tool, it coincides with the `link_ee` flange. Regular Cartesian commands also use this point when `planning.pose_link: tcp`.
+
+The gizmo has the lowest motion priority. It is unavailable during regular motion. If a coordinate, joint, or file command arrives while a committed gizmo trajectory is running, that command waits for the trajectory to finish before proceeding.
+
+| `tcp_gizmo` parameter | Description |
+|---|---|
+| `enabled` | Set to `false` to disable the gizmo at the next launch; simulation only |
+| `publish_period` | State update period, seconds |
+| `command_timeout` | Maximum age of an incoming target, seconds; not a delay after dragging |
+| `state_timeout` | Maximum age of robot feedback, seconds |
+| `max_linear_speed` | TCP linear speed cap, m/s |
+| `max_angular_speed` | TCP angular speed cap, rad/s |
+
+Mouse release is detected directly, so no idle timer is needed. Joint limits, acceleration, and deceleration can reduce speed below the configured cap. The trajectory interpolates joint positions to reach the requested TCP pose; a straight Cartesian path is not guaranteed.
+
+See the [simulation guide](concepts/simulation.md) for the operating sequence.
+
+
 
 ---
 
@@ -85,6 +114,8 @@ tool:
 | `patron` | Patron chuck/gripper |
 
 Available tools are defined in `src/iiwa_config/config/tools.yaml`. To add a tool, describe it there and then set its name in `tool.active`.
+
+Apply tool selection through `cobot robot-setup`, which updates the tool description and SRDF. Rebuild the project and restart the simulation after changing tools.
 
 ---
 

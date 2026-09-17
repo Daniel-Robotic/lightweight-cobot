@@ -1,5 +1,6 @@
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
+from .tcp_gizmo_nodes import make_tcp_gizmo_nodes
 
 
 def make_moveit_nodes(settings, robot_description: str, use_sim_time: bool):
@@ -46,8 +47,9 @@ def make_moveit_nodes(settings, robot_description: str, use_sim_time: bool):
                 "default_frame": settings.planning.default_frame,
                 "default_planner": settings.planning.default_planner,
                 "planning_attempts": settings.planning.planning_attempts,
+                "tcp_gizmo_enabled": use_sim_time and settings.digital_twin.tcp_gizmo.enabled,
             },
         ],
     )
 
-    return moveit_configs, [move_group, move_to_pose_server]
+    return moveit_configs, [move_group, move_to_pose_server, *make_tcp_gizmo_nodes(settings, common_params, use_sim_time)]

@@ -11,6 +11,8 @@
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>control_msgs</depend>
   <depend>rclpy</depend>
   <depend>moveit_ros_planning_interface</depend>
   <depend>moveit_core</depend>
@@ -25,9 +27,19 @@
   <depend>tf_transformations</depend>
   <depend>python3-scipy</depend>
   <depend>iiwa_msgs</depend>
+  <depend>moveit_servo</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>action_msgs</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>tf2_eigen</depend>
 
   <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>iiwa_utils</test_depend>
+  <test_depend>controller_manager_msgs</test_depend>
+  <test_depend>python3-numpy</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

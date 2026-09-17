@@ -12,6 +12,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
     ],
     install_requires=['setuptools'],
+    tests_require=['pytest'],
     zip_safe=True,
     maintainer='daniel',
     maintainer_email='grabardm@ml-dev.ru',
@@ -21,6 +22,7 @@ setup(
         'console_scripts': [
             "object_spawner = iiwa_utils.object_spawner:main",
             "camera_spawner = iiwa_utils.camera_spawner:main",
+            "tcp_gizmo_spawner = iiwa_utils.tcp_gizmo_spawner:main",
         ],
     },
 )

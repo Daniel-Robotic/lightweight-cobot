@@ -15,7 +15,7 @@ tools:
     label: "Без захвата"
     xacro: null
     tip_link: "link_ee"
-    tcp_link: "link_ee"
+    tcp_link: "tcp"
     collisions: []
 
   patron:
@@ -61,4 +61,3 @@ tools:
       - [camera_hand, link2, Never]
       - [camera_hand, link1, Never]
       - [camera_hand, base_link, Never]
-

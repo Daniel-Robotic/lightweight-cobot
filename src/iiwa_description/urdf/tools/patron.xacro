@@ -107,7 +107,8 @@
     </joint>
 
     <joint name="patron_tcp" type="fixed">
-        <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 -1.5708"/>
+        <!-- Working end of patron.dae, 55.2 mm from the patron link origin. -->
+        <origin xyz="0.0 0.0 0.0552" rpy="0.0 0.0 -1.5708"/>
         <parent link="patron"/>
         <child link="tcp"/>
     </joint>

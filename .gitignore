@@ -4,13 +4,15 @@ doc/lwc-doc/site/
 log/
 /install/
 /build/
-.vscode
-.idea
-venv
-.venv
-.claude
-.codex
-__pycache__
+.vscode/
+.idea/
+venv/
+.venv/
+.claude/
+.agents/
+.codex/
+__pycache__/
+.pytest_cache/
 
 *.egg-info
 **.FCBak

@@ -22,6 +22,7 @@ def _spawn_setup(context, *args, **kwargs):
     world = LaunchConfiguration("world").perform(context)
     controller = LaunchConfiguration("controller").perform(context)
     initial_positions_file = LaunchConfiguration("initial_positions_file").perform(context)
+    gizmo_enabled = LaunchConfiguration("tcp_gizmo_enabled", default="false").perform(context) == "true"
 
     robot_description = converter.load_robot_description(
         model_path=description,
@@ -64,6 +65,10 @@ def _spawn_setup(context, *args, **kwargs):
 
     driver = WebotsController(
         robot_name=robot_name,
+        remappings=[
+            ('/iiwa_arm_controller/joint_trajectory', '/cobot/tcp_gizmo/controller_command'),
+            ('/iiwa_arm_controller/follow_joint_trajectory', '/cobot/tcp_gizmo/follow_joint_trajectory'),
+        ] if gizmo_enabled else [],
         parameters=[
             {"use_sim_time": True},  # dict → triggers --ros-args prefix
             params_file,             # file → --params-file (robot_description + controllers)
