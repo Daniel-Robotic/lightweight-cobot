@@ -22,6 +22,26 @@ digital_twin:
     rotation: "0 0 1 0"
     controller_timer: "50"
 
+    objects:
+      enabled: true
+      count: 5                    # точное общее количество; модели могут повторяться
+      models:
+        - path: pkg://iiwa_description/objects/hammer/hammer1.obj
+          rotation_deg: [0, 0, 0]  # X, Y, Z в градусах, относительно робота
+        - path: pkg://iiwa_description/objects/hammer/hammer2.obj
+          rotation_deg: [0, 0, 0]  # X, Y, Z в градусах, относительно робота
+        - path: pkg://iiwa_description/objects/hammer/hammer3.obj
+          rotation_deg: [0, 0, 0]  # X, Y, Z в градусах, относительно робота
+        - path: pkg://iiwa_description/objects/hammer/hammer4.obj
+          rotation_deg: [0, 0, 0]  # X, Y, Z в градусах, относительно робота
+        - path: pkg://iiwa_description/objects/hammer/hammer5.obj
+          rotation_deg: [0, 0, 0]  # X, Y, Z в градусах, относительно робота
+      area:                       # метры в системе основания робота, до падения
+        x: [0.3, 0.7]
+        y: [-0.3, 0.3]
+        z: [0.1, 0.1]             # высота нижней точки модели
+
+
     cameras:
       - pkg://iiwa_config/config/cameras/d455_top.yaml
 

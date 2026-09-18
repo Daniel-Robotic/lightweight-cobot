@@ -1,10 +1,12 @@
 import math
 import os
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
+
+from iiwa_utils.object_scene import ObjectsCfg, load_obj, parse_objects, robot_pose
 
 T = TypeVar("T")
 
@@ -26,6 +28,7 @@ class WebotsCfg:
     rotation: str
     controller_timer: str
     cameras: List[str]
+    objects: ObjectsCfg = field(default_factory=ObjectsCfg)
 
 
 @dataclass(frozen=True)
@@ -339,7 +342,14 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         rotation=str(require(webots_raw, "rotation")),
         controller_timer=str(int(require(webots_raw, "controller_timer"))),
         cameras=cameras,
+        objects=parse_objects(webots_raw.get("objects"),
+                              lambda p: resolve_path(p, settings_dir)),
     )
+    if webots.objects.enabled and webots.objects.count:
+        robot_pose(webots.transform, webots.rotation)
+        if check_files:
+            for model in webots.objects.models:
+                load_obj(model.path)
     rviz = RvizCfg(
         config=resolve_path(str(require(rviz_raw, "config")), settings_dir)
     )
