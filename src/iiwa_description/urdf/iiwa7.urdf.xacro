@@ -17,6 +17,7 @@
     <xacro:include filename="$(find iiwa_description)/urdf/links.xacro"/>
     <xacro:include filename="$(find iiwa_description)/urdf/joints.xacro"/>
 
+    <xacro:property name="tool_has_camera" value="false"/>
     <xacro:include filename="$(find iiwa_description)/urdf/tools/tool_active.xacro"/>
 
     <xacro:if value="$(arg simulate)">
@@ -26,6 +27,7 @@
 
             <device reference="camera_rgb" type="Camera">
                 <ros>
+                    <enabled>false</enabled>
                     <topicName>/camera/color</topicName>
                     <updateRate>30</updateRate>
                     <alwaysOn>True</alwaysOn>
@@ -35,12 +37,30 @@
 
             <device reference="camera_depth" type="RangeFinder">
                 <ros>
+                    <enabled>false</enabled>
                     <topicName>/camera/depth</topicName>
                     <updateRate>30</updateRate>
                     <alwaysOn>True</alwaysOn>
                     <frameName>camera_optical_frame</frameName>
                 </ros>
             </device>
+
+            <!-- Keep the 30 Hz deadlines independent of Webots' 32 ms steps. -->
+            <xacro:if value="${tool_has_camera}">
+                <plugin type="iiwa_utils.webots_camera.WebotsCamera">
+                    <device>camera_rgb</device>
+                    <topicName>/camera/color</topicName>
+                    <updateRate>30</updateRate>
+                    <frameName>camera_optical_frame</frameName>
+                </plugin>
+                <plugin type="iiwa_utils.webots_camera.WebotsCamera">
+                    <device>camera_depth</device>
+                    <depth>true</depth>
+                    <topicName>/camera/depth</topicName>
+                    <updateRate>30</updateRate>
+                    <frameName>camera_optical_frame</frameName>
+                </plugin>
+            </xacro:if>
 
         </webots>
 

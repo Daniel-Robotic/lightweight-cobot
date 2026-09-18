@@ -178,12 +178,19 @@ def build_ros_urdf(cfg: CameraConfig) -> str:
         devices.append(
             f'    <device reference="{cfg.name}" type="Camera">\n'
             f'      <ros>\n'
+            f'        <enabled>false</enabled>\n'
             f'        <topicName>{ros.topic}</topicName>\n'
             f'        <updateRate>{ros.update_rate}</updateRate>\n'
             f'        <alwaysOn>True</alwaysOn>\n'
             f'        <frameName>{cfg.name}_link</frameName>\n'
             f'      </ros>\n'
-            f'    </device>'
+            f'    </device>\n'
+            f'    <plugin type="iiwa_utils.webots_camera.WebotsCamera">\n'
+            f'      <device>{cfg.name}</device>\n'
+            f'      <topicName>{ros.topic}</topicName>\n'
+            f'      <updateRate>{ros.update_rate}</updateRate>\n'
+            f'      <frameName>{cfg.name}_link</frameName>\n'
+            f'    </plugin>'
         )
 
     if cfg.range_finder is not None:
@@ -191,12 +198,20 @@ def build_ros_urdf(cfg: CameraConfig) -> str:
         devices.append(
             f'    <device reference="{cfg.name}_depth" type="RangeFinder">\n'
             f'      <ros>\n'
+            f'        <enabled>false</enabled>\n'
             f'        <topicName>{ros.topic}</topicName>\n'
             f'        <updateRate>{ros.update_rate}</updateRate>\n'
             f'        <alwaysOn>True</alwaysOn>\n'
             f'        <frameName>{cfg.name}_link</frameName>\n'
             f'      </ros>\n'
-            f'    </device>'
+            f'    </device>\n'
+            f'    <plugin type="iiwa_utils.webots_camera.WebotsCamera">\n'
+            f'      <device>{cfg.name}_depth</device>\n'
+            f'      <depth>true</depth>\n'
+            f'      <topicName>{ros.topic}</topicName>\n'
+            f'      <updateRate>{ros.update_rate}</updateRate>\n'
+            f'      <frameName>{cfg.name}_link</frameName>\n'
+            f'    </plugin>'
         )
 
     devices_str = "\n".join(devices)

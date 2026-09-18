@@ -17,7 +17,9 @@ rotation: "0 1 0 1.5708"
 camera:
   width: 640
   height: 480
-  fieldOfView: 1.047        # ~60° в радианах
+  # VGA RGB: приближение центрального 4:3 crop сенсора 1280x800 с HFOV 90°.
+  # 2*atan(tan(90°/2)*(4/3)/(1280/800)) = 79.61°; уточнить по калибровке.
+  fieldOfView: 1.3894765524
   near: 0.1
   far: 0.0                  # 0 = без ограничений
   exposure: 1.0
@@ -40,13 +42,13 @@ camera:
 range_finder:
   width: 640
   height: 480
-  fieldOfView: 1.047
-  minRange: 0.1
-  maxRange: 5.0
-  resolution: -1.0          # -1 = без ограничений по дискретизации
+  fieldOfView: 1.308996939  # D455 VGA depth: HFOV 75°, не HD 87°
+  minRange: 0.4            # Выбранное ограничение симуляции, не точный Min-Z VGA
+  maxRange: 6.0
+  resolution: 0.001        # Шаг глубины 1 мм, не погрешность измерения
   noise: 0.0
 
   # Параметры публикации в ROS2
   ros:
     topic: /d455_top/depth/image_raw
-    update_rate: 15
+    update_rate: 30

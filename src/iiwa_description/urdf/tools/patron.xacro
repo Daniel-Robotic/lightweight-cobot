@@ -1,6 +1,8 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tool_patron">
 
+    <xacro:property name="tool_has_camera" value="true"/>
+
     <link name="camera_holder">
         <inertial>
             <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
@@ -134,7 +136,8 @@
     <gazebo reference="camera_optical_frame">
         <sensor type="camera" name="camera_rgb">
             <camera>
-                <horizontal_fov>1.3089969</horizontal_fov>
+                <!-- VGA RGB central-crop approximation: 79.61 deg; calibrate per device. -->
+                <horizontal_fov>1.3894765524</horizontal_fov>
                 <image>
                     <width>640</width>
                     <height>480</height>
@@ -146,7 +149,7 @@
                 </clip>
                 <noise>
                     <type>gaussian</type>
-                    <stddev>0.005</stddev>
+                    <stddev>0.0</stddev>
                 </noise>
             </camera>
         </sensor>
@@ -159,18 +162,20 @@
                     <height>480</height>
                 </image>
                 <clip>
-                    <near>0.52</near>
+                    <near>0.01</near>
                     <far>6.0</far>
                 </clip>
             </camera>
             <range>
-                <min>0.52</min>
+                <!-- Conservative simulation cutoff, not calibrated VGA Min-Z. -->
+                <min>0.4</min>
                 <max>6.0</max>
                 <resolution>0.001</resolution>
             </range>
             <noise>
                 <type>gaussian</type>
-                <stddev>0.02</stddev>
+                <!-- No arbitrary Gaussian noise: this is an ideal depth model. -->
+                <stddev>0.0</stddev>
             </noise>
         </sensor>
     </gazebo> 
