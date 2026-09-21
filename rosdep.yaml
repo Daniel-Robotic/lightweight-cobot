@@ -18,3 +18,13 @@ python3-fastmcp:
     pip:
       packages: [fastmcp]
 
+
+# Used by the shared C++ JTC spline validator's Python binding.
+pybind11-dev:
+  ubuntu:
+    apt:
+      packages: [pybind11-dev]
+python3-numpy:
+  ubuntu:
+    apt:
+      packages: [python3-numpy]

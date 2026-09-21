@@ -1,5 +1,11 @@
 import csv
 import io
+import math
+import threading
+import time
+import yaml
+from pathlib import Path
+from iiwa_planning.direct_trajectory import prepare_trajectory
 from collections import deque
 from datetime import datetime
 from builtin_interfaces.msg import Duration
@@ -7,7 +13,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-from .config_loader import load_joint_limits, load_joint_names
+from .config_loader import load_joint_limits, load_joint_names, _resolve_path
 from .ros_node import get_bridge
 
 router = APIRouter(prefix="/trajectory", tags=["trajectory"])
@@ -15,6 +21,10 @@ router = APIRouter(prefix="/trajectory", tags=["trajectory"])
 TOPIC = "/iiwa_arm_controller/joint_trajectory"
 JOINT_NAMES = load_joint_names()
 N_JOINTS = len(JOINT_NAMES)
+_prepare_lock = threading.Lock()
+_admission_lock = threading.Lock()
+_generation = 0
+_direct_until = 0.0
 
 _log_lines: deque[str] = deque(maxlen=300)
 
@@ -24,13 +34,13 @@ def _log(msg: str) -> None:
 
 
 def _to_duration(seconds: float) -> Duration:
-    sec = int(seconds)
-    nanosec = int(round((seconds - sec) * 1e9))
+    total_ns = round(seconds * 1e9)
+    sec, nanosec = divmod(total_ns, 1_000_000_000)
     return Duration(sec=sec, nanosec=nanosec)
 
 
 def _validate_limits(points: list[list[float]]) -> None:
-    limits = load_joint_limits()
+    limits = load_joint_limits(path=get_bridge().get_parameter("joint_limits_path").value or None)
     for row_idx, positions in enumerate(points):
         for j, (pos, (lo, hi)) in enumerate(zip(positions, limits)):
             if not (lo <= pos <= hi):
@@ -50,6 +60,81 @@ def _build_msg(rows: list[tuple[list[float], float]]) -> JointTrajectory:
         pt.time_from_start = _to_duration(t)
         msg.points.append(pt)
     return msg
+
+
+def _stationary_state():
+    bridge = get_bridge()
+    state, age = bridge.get_latest_with_age('/joint_states')
+    timeout = bridge.get_parameter('trajectory_state_timeout').value
+    tolerance = bridge.get_parameter('trajectory_start_tolerance').value
+    stopped = bridge.get_parameter('trajectory_stopped_velocity').value
+    if any(not math.isfinite(x) or x <= 0 for x in (timeout, tolerance, stopped)):
+        raise HTTPException(503, 'Invalid direct trajectory monitoring parameters')
+    if state is None or age > timeout:
+        raise HTTPException(409, 'Fresh joint_states required before sending a trajectory')
+    stamp = state.header.stamp.sec + state.header.stamp.nanosec * 1e-9
+    source_age = bridge.get_clock().now().nanoseconds * 1e-9 - stamp
+    if not math.isfinite(source_age) or not 0 <= source_age <= timeout:
+        raise HTTPException(409, 'joint_states timestamp is stale or in the future')
+    try:
+        indexes = [list(state.name).index(name) for name in JOINT_NAMES]
+        current = [state.position[i] for i in indexes]
+        velocity = [state.velocity[i] for i in indexes]
+    except (ValueError, IndexError):
+        raise HTTPException(409, 'Complete named position and velocity feedback required')
+    if any(not math.isfinite(x) for x in current + velocity) or any(abs(v) > stopped for v in velocity):
+        raise HTTPException(409, 'Direct trajectories must start from a stationary robot')
+    return current, tolerance
+
+
+def _build_safe_msg(rows):
+    bridge = get_bridge()
+    current, tolerance = _stationary_state()
+    path = bridge.get_parameter('joint_limits_path').value
+    resolved = Path(path) if path else _resolve_path('iiwa_config', 'config/moveit/joint_limits.yaml')
+    data = yaml.safe_load(resolved.read_text())['joint_limits']
+    caps = []
+    for name in JOINT_NAMES:
+        j = data[name]
+        caps.append([max(j['min_position'], j.get('soft_min_position', j['min_position'])),
+                     min(j['max_position'], j.get('soft_max_position', j['max_position'])),
+                     j['max_velocity'], j['max_acceleration'], j['max_jerk']])
+    rows = [(list(q), float(t)) for q, t in rows]
+    if rows[0][1] > 0:
+        rows.insert(0, (current, 0.0))
+    elif rows[0][1] == 0 and max(abs(a-b) for a,b in zip(rows[0][0],current)) > tolerance:
+        raise HTTPException(422, 'A waypoint at t=0 must match the current joint positions')
+    else:
+        rows[0] = (current, rows[0][1])
+    try:
+        times, positions, velocities, accelerations, scale = prepare_trajectory(
+            [t for _, t in rows], [q for q, _ in rows], caps)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    msg = _build_msg(list(zip(positions, times)))
+    for point, v, a in zip(msg.points, velocities, accelerations):
+        point.velocities = v
+        point.accelerations = a
+    return msg, times[-1], scale
+
+
+def _send_rows(rows):
+    global _direct_until
+    with _prepare_lock:
+        with _admission_lock:
+            generation = _generation
+            if time.monotonic() < _direct_until:
+                raise HTTPException(409, 'A direct trajectory is still active; stop it before replacing it')
+        msg, duration, scale = _build_safe_msg(rows)
+        with _admission_lock:
+            if generation != _generation:
+                raise HTTPException(409, 'Trajectory preparation was canceled by stop')
+            current, tolerance = _stationary_state()
+            if max(abs(a-b) for a,b in zip(current, msg.points[0].positions)) > tolerance:
+                raise HTTPException(409, 'Robot moved during trajectory preparation; retry from its new state')
+            _publish(msg)
+            _direct_until = time.monotonic() + duration + get_bridge().get_parameter('trajectory_state_timeout').value
+        return msg, duration, scale
 
 
 def _publish(msg: JointTrajectory) -> None:
@@ -80,9 +165,9 @@ def send_trajectory(req: SendRequest):
     if req.validate_limits:
         _validate_limits([r[0] for r in rows])
 
-    _publish(_build_msg(rows))
+    msg, duration, time_scale = _send_rows(rows)
     _log(f"[send] {len(rows)} точек, t_end={rows[-1][1]:.2f}с")
-    return {"status": "sent", "points": len(rows)}
+    return {"status": "sent", "points": len(msg.points), "duration": duration, "time_scale": time_scale}
 
 
 @router.post("/send_csv", summary="Загрузить CSV и отправить траекторию")
@@ -166,26 +251,30 @@ async def send_csv_trajectory(
     if validate_limits:
         _validate_limits([r[0] for r in rows])
 
-    _publish(_build_msg(rows))
+    msg, duration, time_scale = _send_rows(rows)
     _log(f"[csv] {file.filename} → {len(rows)} точек, t_end={rows[-1][1]:.2f}с")
-    return {"status": "sent", "points": len(rows), "filename": file.filename}
+    return {"status": "sent", "points": len(msg.points), "filename": file.filename, "duration": duration, "time_scale": time_scale}
 
 
 def send_stop_trajectory() -> None:
-    """Publish a hold-position (or empty) trajectory to freeze joint motion."""
-    bridge = get_bridge()
-    joint_states = bridge.get_latest("/joint_states")
-    if joint_states is not None and len(joint_states.position) >= N_JOINTS:
-        current_positions = list(joint_states.position[:N_JOINTS])
-        hold_msg = _build_msg([(current_positions, 0.5)])
-        _publish(hold_msg)
-        _log("[stop] отправлена точка удержания текущей позиции")
-    else:
-        msg = JointTrajectory()
-        msg.joint_names = JOINT_NAMES
-        _publish(msg)
-        _log("[stop] joint_states недоступны, отправлена пустая траектория")
-
+    """Cancel preparation and publish hold; malformed feedback falls back to cancellation."""
+    global _generation, _direct_until
+    with _admission_lock:
+        _generation += 1
+        _direct_until = 0.0
+        bridge = get_bridge()
+        state = bridge.get_latest('/joint_states')
+        try:
+            current = [state.position[list(state.name).index(name)] for name in JOINT_NAMES]
+            if not all(math.isfinite(x) for x in current):
+                raise ValueError('Non-finite feedback')
+            _publish(_build_msg([(current, 0.5)]))
+            _log('[stop] отправлена точка удержания текущей позиции')
+        except (AttributeError, ValueError, IndexError):
+            msg = JointTrajectory()
+            msg.joint_names = JOINT_NAMES
+            _publish(msg)
+            _log('[stop] отправлена пустая траектория: неполная обратная связь')
 
 
 @router.get("/logs", summary="Последние лог-записи траекторного модуля")

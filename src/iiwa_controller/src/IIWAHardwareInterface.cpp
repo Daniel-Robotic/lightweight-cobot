@@ -145,6 +145,11 @@ CallbackReturn IIWAHardwareInterface::on_init(
     }
     lower_[i] = limits->second.min_position;
     upper_[i] = limits->second.max_position;
+    const auto soft = info.soft_limits.find(joint.name);
+    if (soft != info.soft_limits.end()) {
+      lower_[i] = std::max(lower_[i], soft->second.min_position);
+      upper_[i] = std::min(upper_[i], soft->second.max_position);
+    }
     max_velocity_[i] = limits->second.max_velocity;
     if (!std::isfinite(lower_[i]) || !std::isfinite(upper_[i]) || lower_[i] >= upper_[i] ||
       !std::isfinite(max_velocity_[i]) || max_velocity_[i] <= 0.0)

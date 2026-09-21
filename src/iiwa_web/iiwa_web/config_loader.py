@@ -48,7 +48,7 @@ def _resolve_path(package: str, relative: str) -> Path:
         from ament_index_python.packages import get_package_share_directory
         return Path(get_package_share_directory(package)) / relative
     except Exception:
-        src = Path(__file__).parents[3]  # .../src/iiwa_web/iiwa_web/ -> .../src/
+        src = Path(__file__).parents[2]  # .../src/iiwa_web/iiwa_web/ -> .../src/
         return src / package / relative
 
 
@@ -60,7 +60,8 @@ def _parse_joint_limits_data(data: dict) -> tuple[list[str], list[tuple[float, f
     while f"joint{i}" in joints:
         j = joints[f"joint{i}"]
         names.append(f"joint{i}")
-        limits.append((j["min_position"], j["max_position"]))
+        limits.append((max(j["min_position"], j.get("soft_min_position", j["min_position"])),
+                       min(j["max_position"], j.get("soft_max_position", j["max_position"]))))
         i += 1
     return names, limits
 

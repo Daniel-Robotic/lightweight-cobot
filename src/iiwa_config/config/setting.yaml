@@ -43,6 +43,8 @@ planning:
   default_frame: "base_link"  # Система отсчёта по умолчанию
   default_planner: "ompl"     # Планировщик по умолчанию
   planning_attempts: 3        # Число попыток планирования
+  stopped_velocity_tolerance: 0.01  # рад/с: проверка начала движения из покоя
+  state_timeout: 0.5  # с: максимальный возраст joint_states для проверки покоя
 
 web:
   enabled: true
@@ -50,6 +52,11 @@ web:
   port: 8007
   endpoints: pkg://iiwa_config/config/api_endpoints.yaml
   joint_limits: pkg://iiwa_config/config/moveit/joint_limits.yaml
+
+  # Direct CSV/JSON trajectories require fresh feedback and a stationary start.
+  trajectory_state_timeout: 0.5       # s
+  trajectory_start_tolerance: 0.001   # rad
+  trajectory_stopped_velocity: 0.01  # rad/s
 
 foxglove:
   enabled: true  # Запускать ли foxglove_bridge вместе с роботом

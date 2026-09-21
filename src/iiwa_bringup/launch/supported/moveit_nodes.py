@@ -1,5 +1,6 @@
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
+from iiwa_utils.converter import effective_joint_limits
 
 
 def make_moveit_nodes(settings, robot_description: str, use_sim_time: bool):
@@ -9,7 +10,8 @@ def make_moveit_nodes(settings, robot_description: str, use_sim_time: bool):
         .robot_description(
             file_path=settings.robot.description,
             mappings={
-                "initial_positions_file": settings.controller.moveit.initial_positions
+                "initial_positions_file": settings.controller.moveit.initial_positions,
+                "joint_limits_file": settings.controller.moveit.joint_limits
             },
         )
         .robot_description_semantic(file_path=settings.controller.moveit.srdf)
@@ -21,10 +23,16 @@ def make_moveit_nodes(settings, robot_description: str, use_sim_time: bool):
         .to_moveit_configs()
     )
 
+    moveit_configs.joint_limits["robot_description_planning"] = effective_joint_limits(
+        moveit_configs.joint_limits["robot_description_planning"]
+    )
+
     common_params = [
         moveit_configs.to_dict(),
         {"robot_description": robot_description},
         {"use_sim_time": use_sim_time},
+        {"iiwa_dynamics.stopped_velocity_tolerance": settings.planning.stopped_velocity_tolerance,
+         "iiwa_dynamics.state_timeout": settings.planning.state_timeout},
     ]
 
     move_group = Node(

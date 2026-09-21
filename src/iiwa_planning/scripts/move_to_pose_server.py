@@ -117,7 +117,8 @@ class IiwaMotionServer(Node):
 
         def do_execute():
             try:
-                self._moveit.execute(plan_result.trajectory, controllers=[])
+                if not self._moveit.execute(plan_result.trajectory, controllers=[]):
+                    failed.set()
             except Exception as exc:
                 self.get_logger().error(f"Ошибка выполнения траектории: {exc}")
                 failed.set()

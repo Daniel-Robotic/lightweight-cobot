@@ -27,7 +27,10 @@ def make_web_server_node(settings, use_sim_time: bool) -> Node:
             "host": settings.web.host,
             "port": settings.web.port,
             "endpoints_path": settings.web.endpoints,
-            "joint_limits_path": settings.web.joint_limits,
+            "joint_limits_path": settings.controller.moveit.joint_limits,
+            "trajectory_state_timeout": settings.web.trajectory_state_timeout,
+            "trajectory_start_tolerance": settings.web.trajectory_start_tolerance,
+            "trajectory_stopped_velocity": settings.web.trajectory_stopped_velocity,
             "use_sim_time": use_sim_time,
         }],
     )

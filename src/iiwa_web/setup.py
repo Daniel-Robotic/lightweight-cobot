@@ -19,6 +19,7 @@ setup(
         'python-multipart',
         'fastmcp',
     ],
+    tests_require=['pytest'],
     zip_safe=True,
     maintainer='daniel',
     maintainer_email='grabardm@ml-dev.ru',

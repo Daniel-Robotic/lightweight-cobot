@@ -1,4 +1,6 @@
 import yaml
+import copy
+import math
 import tempfile
 
 from pathlib import Path
@@ -28,9 +30,24 @@ def load_robot_description(
     raise FileNotFoundError(f"Supported file formats: .xacro/.urdf, got: {model_path}")
 
 
+def effective_joint_limits(data: dict) -> dict:
+    """Keep MoveIt's YAML overrides inside the same protective bounds as FRI."""
+    result = copy.deepcopy(data)
+    for name, joint in result['joint_limits'].items():
+        joint['min_position'] = max(joint['min_position'], joint.get('soft_min_position', joint['min_position']))
+        joint['max_position'] = min(joint['max_position'], joint.get('soft_max_position', joint['max_position']))
+        if not all(math.isfinite(joint[key]) for key in ('min_position', 'max_position', 'max_velocity', 'max_acceleration', 'max_jerk')):
+            raise ValueError(f'Non-finite joint limits: {name}')
+        if joint['min_position'] >= joint['max_position'] or any(joint[key] <= 0 for key in ('max_velocity', 'max_acceleration', 'max_jerk')):
+            raise ValueError(f'Invalid joint limits: {name}')
+    return result
+
+
 def wrap_for_ros2_params(yaml_path: str, namespace: str) -> str:
     with open(yaml_path, "r") as f:
         data = yaml.safe_load(f)
+    if namespace == 'robot_description_planning':
+        data = effective_joint_limits(data)
     wrapped = {namespace: {"ros__parameters": data}}
     tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
     yaml.dump(wrapped, tmp, default_flow_style=False)

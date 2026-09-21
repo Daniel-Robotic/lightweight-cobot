@@ -29,6 +29,7 @@ def _spawn_setup(context, *args, **kwargs):
         xacro_args={
             "simulate": "true",
             "initial_positions_file": initial_positions_file,
+            "joint_limits_file": LaunchConfiguration("joint_limits_file").perform(context),
         },
     )
 

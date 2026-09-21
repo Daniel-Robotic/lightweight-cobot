@@ -32,7 +32,8 @@ def _setup_controllers(context, *args, **kwargs):
         raise ValueError("joint_position_tau must be finite and non-negative")
     update_rate = 1000 // fri_cycle_ms
 
-    xacro_args = {"initial_positions_file": initial_positions_file}
+    xacro_args = {"initial_positions_file": initial_positions_file,
+                  "joint_limits_file": LaunchConfiguration("joint_limits_file").perform(context)}
 
     if simulate:
         xacro_args["simulate"] = "true"
