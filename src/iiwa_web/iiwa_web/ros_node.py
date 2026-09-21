@@ -15,8 +15,12 @@ class CobotWebNode(Node):
         self.declare_parameter('port', 8007)
         self.declare_parameter('endpoints_path', '')
         self.declare_parameter('joint_limits_path', '')
+        self.declare_parameter('trajectory_state_timeout', 0.5)
+        self.declare_parameter('trajectory_start_tolerance', 0.001)
+        self.declare_parameter('trajectory_stopped_velocity', 0.01)
 
         self._topic_cache: dict = {}
+        self._topic_received: dict = {}
         self._pub_registry: dict = {}
         self._service_clients: dict = {}
         self._action_clients: dict = {}
@@ -47,9 +51,15 @@ class CobotWebNode(Node):
         with self._lock:
             return self._topic_cache.get(topic_name)
 
+    def get_latest_with_age(self, topic_name: str):
+        with self._lock:
+            return (self._topic_cache.get(topic_name),
+                    time.monotonic() - self._topic_received.get(topic_name, float('-inf')))
+
     def _handle_message(self, topic_name: str, msg):
         with self._lock:
             self._topic_cache[topic_name] = msg
+            self._topic_received[topic_name] = time.monotonic()
 
     def call_service(self, srv_type, srv_name: str, request, timeout: float = 5.0):
         if srv_name not in self._service_clients:

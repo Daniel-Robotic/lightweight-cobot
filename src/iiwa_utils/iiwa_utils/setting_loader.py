@@ -77,6 +77,8 @@ class PlanningCfg:
     default_frame: str
     default_planner: str
     planning_attempts: int
+    stopped_velocity_tolerance: float = 0.01
+    state_timeout: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,9 @@ class WebCfg:
     port: int
     endpoints: str    # resolved absolute path to api_endpoints.yaml
     joint_limits: str  # resolved absolute path to joint_limits.yaml
+    trajectory_state_timeout: float = 0.5
+    trajectory_start_tolerance: float = 0.001
+    trajectory_stopped_velocity: float = 0.01
 
 
 @dataclass(frozen=True)
@@ -223,6 +228,9 @@ _WEB_DEFAULTS: Dict[str, Any] = {
     "port": 8007,
     "endpoints": "pkg://iiwa_config/config/api_endpoints.yaml",
     "joint_limits": "pkg://iiwa_config/config/moveit/joint_limits.yaml",
+    "trajectory_state_timeout": 0.5,
+    "trajectory_start_tolerance": 0.001,
+    "trajectory_stopped_velocity": 0.01,
 }
 
 
@@ -239,6 +247,9 @@ def _parse_web(raw: Optional[Dict[str, Any]], settings_dir: str) -> WebCfg:
         port=int(get("port")),
         endpoints=resolve_path(str(get("endpoints")), settings_dir),
         joint_limits=resolve_path(str(get("joint_limits")), settings_dir),
+        trajectory_state_timeout=float(get("trajectory_state_timeout")),
+        trajectory_start_tolerance=float(get("trajectory_start_tolerance")),
+        trajectory_stopped_velocity=float(get("trajectory_stopped_velocity")),
     )
 
 
@@ -382,6 +393,8 @@ def build_settings(settings_path: str, check_files: bool = True) -> Settings:
         default_frame=str(planning_raw.get("default_frame", "base_link")),
         default_planner=str(planning_raw.get("default_planner", "ompl")),
         planning_attempts=int(planning_raw.get("planning_attempts", 3)),
+        stopped_velocity_tolerance=float(planning_raw.get("stopped_velocity_tolerance", 0.01)),
+        state_timeout=float(planning_raw.get("state_timeout", 0.5)),
     )
 
     # tool

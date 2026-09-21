@@ -107,3 +107,14 @@ TEST(Hardware, ConfiguredRealHardwareCleansUpInDependencyOrder)
   EXPECT_EQ(hardware.on_cleanup(state), Return::SUCCESS);
   EXPECT_EQ(hardware.on_error(state), Return::SUCCESS);
 }
+
+TEST(Hardware, RejectsInconsistentSoftLimits)
+{
+  Hardware hardware;
+  auto params = parameters();
+  joint_limits::SoftJointLimits soft;
+  soft.min_position = 1.0;
+  soft.max_position = -1.0;
+  params.hardware_info.soft_limits["joint1"] = soft;
+  EXPECT_EQ(hardware.on_init(params), Return::ERROR);
+}

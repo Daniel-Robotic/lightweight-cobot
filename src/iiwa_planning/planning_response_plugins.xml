@@ -1,0 +1,8 @@
+<library path="iiwa_spline_limits">
+  <class name="iiwa_planning/LimitSplineDynamics" type="iiwa_planning::LimitSplineDynamics" base_class_type="planning_interface::PlanningResponseAdapter">
+    <description>Bound the complete JTC quintic interpolation, stretching time without changing its joint-space curve.</description>
+  </class>
+  <class name="iiwa_planning/SetRestBoundary" type="iiwa_planning::SetRestBoundary" base_class_type="planning_interface::PlanningResponseAdapter">
+    <description>Zero stationary endpoint acceleration before Ruckig; reject moving endpoints.</description>
+  </class>
+</library>

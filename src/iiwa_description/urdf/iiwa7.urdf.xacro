@@ -3,6 +3,8 @@
 
     <xacro:arg name="initial_positions_file"
                default="$(find iiwa_config)/config/moveit/initial_positions.yaml"/>
+    <xacro:arg name="joint_limits_file" default="$(find iiwa_config)/config/moveit/joint_limits.yaml"/>
+    <xacro:property name="joint_limits" value="${xacro.load_yaml('$(arg joint_limits_file)')['joint_limits']}"/>
     <xacro:arg name="simulate" default="false"/>
     <xacro:arg name="robot_ip" default="192.170.10.2"/>
     <xacro:arg name="fri_port" default="30200"/>
@@ -72,8 +74,8 @@
 
             <joint name="joint1">
                 <command_interface name="position">
-                    <param name="min">-2.97</param>
-                    <param name="max"> 2.97</param>
+                    <param name="min">${joint_limits['joint1']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint1']['soft_max_position']}</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint1']}</param>
@@ -84,8 +86,8 @@
 
             <joint name="joint2">
                 <command_interface name="position">
-                    <param name="min">-2.09</param>
-                    <param name="max"> 2.09</param>
+                    <param name="min">${joint_limits['joint2']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint2']['soft_max_position']}</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint2']}</param>
@@ -96,8 +98,8 @@
 
             <joint name="joint3">
                 <command_interface name="position">
-                    <param name="min">-2.97</param>
-                    <param name="max"> 2.97</param>
+                    <param name="min">${joint_limits['joint3']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint3']['soft_max_position']}</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint3']}</param>
@@ -108,8 +110,8 @@
 
             <joint name="joint4">
                 <command_interface name="position">
-                    <param name="min">-2.09</param>
-                    <param name="max"> 2.09</param>
+                    <param name="min">${joint_limits['joint4']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint4']['soft_max_position']}</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint4']}</param>
@@ -120,8 +122,8 @@
 
             <joint name="joint5">
                 <command_interface name="position">
-                    <param name="min">-2.97</param>
-                    <param name="max"> 2.97</param>
+                    <param name="min">${joint_limits['joint5']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint5']['soft_max_position']}</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint5']}</param>
@@ -132,8 +134,8 @@
 
             <joint name="joint6">
                 <command_interface name="position">
-                    <param name="min">-2.09</param>
-                    <param name="max"> 2.09</param>
+                    <param name="min">${joint_limits['joint6']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint6']['soft_max_position']}</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint6']}</param>
@@ -144,8 +146,8 @@
 
             <joint name="joint7">
                 <command_interface name="position">
-                    <param name="min">-3.05</param>
-                    <param name="max"> 3.05</param>
+                    <param name="min">${joint_limits['joint7']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint7']['soft_max_position']}</param>
                 </command_interface>
                 <state_interface name="position">
                     <param name="initial_value">${initial_positions['joint7']}</param>
@@ -173,8 +175,8 @@
 
             <joint name="joint1">
                 <command_interface name="position">
-                    <param name="min">-2.97</param>
-                    <param name="max"> 2.97</param>
+                    <param name="min">${joint_limits['joint1']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint1']['soft_max_position']}</param>
                 </command_interface>
 
                 <state_interface name="position">
@@ -186,8 +188,8 @@
 
             <joint name="joint2">
                 <command_interface name="position">
-                    <param name="min">-2.09</param>
-                    <param name="max"> 2.09</param>
+                    <param name="min">${joint_limits['joint2']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint2']['soft_max_position']}</param>
                 </command_interface>
 
                 <state_interface name="position">
@@ -199,8 +201,8 @@
 
             <joint name="joint3">
                 <command_interface name="position">
-                    <param name="min">-2.97</param>
-                    <param name="max"> 2.97</param>
+                    <param name="min">${joint_limits['joint3']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint3']['soft_max_position']}</param>
                 </command_interface>
 
                 <state_interface name="position">
@@ -212,8 +214,8 @@
 
             <joint name="joint4">
                 <command_interface name="position">
-                    <param name="min">-2.09</param>
-                    <param name="max"> 2.09</param>
+                    <param name="min">${joint_limits['joint4']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint4']['soft_max_position']}</param>
                 </command_interface>
 
                 <state_interface name="position">
@@ -225,8 +227,8 @@
 
             <joint name="joint5">
                 <command_interface name="position">
-                    <param name="min">-2.97</param>
-                    <param name="max"> 2.97</param>
+                    <param name="min">${joint_limits['joint5']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint5']['soft_max_position']}</param>
                 </command_interface>
 
                 <state_interface name="position">
@@ -238,8 +240,8 @@
 
             <joint name="joint6">
                 <command_interface name="position">
-                    <param name="min">-2.09</param>
-                    <param name="max"> 2.09</param>
+                    <param name="min">${joint_limits['joint6']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint6']['soft_max_position']}</param>
                 </command_interface>
 
                 <state_interface name="position">
@@ -251,8 +253,8 @@
 
             <joint name="joint7">
                 <command_interface name="position">
-                    <param name="min">-3.05</param>
-                    <param name="max"> 3.05</param>
+                    <param name="min">${joint_limits['joint7']['soft_min_position']}</param>
+                    <param name="max">${joint_limits['joint7']['soft_max_position']}</param>
                 </command_interface>
 
                 <state_interface name="position">

@@ -43,11 +43,13 @@ def _runtime_setup(context, *args, **kwargs):
     if simulate:
         xacro_args = {
             "initial_positions_file": settings.controller.moveit.initial_positions,
+            "joint_limits_file": settings.controller.moveit.joint_limits,
             "simulate": "true",
         }
     else:
         xacro_args = {
             "initial_positions_file": settings.controller.moveit.initial_positions,
+            "joint_limits_file": settings.controller.moveit.joint_limits,
             "robot_ip": settings.robot.ip,
             "fri_port": str(settings.robot.port),
             "fri_cycle_ms": str(settings.robot.fri_cycle_ms),
@@ -91,6 +93,7 @@ def _runtime_setup(context, *args, **kwargs):
                 "controller": str(settings.controller.controller_path),
                 "initial_positions_file": str(settings.controller.moveit.initial_positions),
                 "tcp_gizmo_enabled": str(settings.digital_twin.tcp_gizmo.enabled).lower(),
+                "joint_limits_file": str(settings.controller.moveit.joint_limits),
             }.items(),
         ))
 
@@ -102,6 +105,7 @@ def _runtime_setup(context, *args, **kwargs):
             "robot_name": settings.robot.name,
             "description": description_path,
             "initial_positions_file": settings.controller.moveit.initial_positions,
+            "joint_limits_file": settings.controller.moveit.joint_limits,
             "controller_path": settings.controller.controller_path,
             "simulate": "true",
             "transform": str(settings.digital_twin.webots.transform),
@@ -113,6 +117,7 @@ def _runtime_setup(context, *args, **kwargs):
             "robot_name": settings.robot.name,
             "description": description_path,
             "initial_positions_file": settings.controller.moveit.initial_positions,
+            "joint_limits_file": settings.controller.moveit.joint_limits,
             "controller_path": settings.controller.controller_path,
             "simulate": "false",
             "transform": str(settings.digital_twin.webots.transform),

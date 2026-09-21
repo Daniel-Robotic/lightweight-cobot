@@ -37,3 +37,7 @@ python3-numpy:
   ubuntu: [python3-numpy]
 python3-scipy:
   ubuntu: [python3-scipy]
+
+# Python binding for the shared JTC spline validator.
+pybind11-dev:
+  ubuntu: [pybind11-dev]

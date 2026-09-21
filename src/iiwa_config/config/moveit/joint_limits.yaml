@@ -1,73 +1,84 @@
-# joint_limits.yaml allows the dynamics properties specified in the URDF to be overwritten or augmented as needed
-
-# For beginners, we downscale velocity and acceleration limits.
-# You can always specify higher scaling factors (<= 1.0) in your motion requests.  # Increase the values below to 1.0 to always move at maximum speed.
+# Single source for all seven axes: URDF, ros2_control, MoveIt and web validation.
+# KUKA iiwa 7 R800 datasheet 0000-246-832 V1.2 (2022-06-01):
+# range [deg]: 170,120,170,120,170,120,175; speed [deg/s]: 98,98,100,130,140,180,180.
+# Working hard limits never exceed either that datasheet or the previous URDF.
+# Soft bounds preserve the existing protective operating margin.
+# Acceleration and jerk below are PROJECT limits, NOT verified KUKA ratings.
 default_velocity_scaling_factor: 0.1
 default_acceleration_scaling_factor: 0.1
-
-# Specific joint properties can be changed with the keys [max_position, min_position, max_velocity, max_acceleration]
-# Joint limits can be turned off with [has_velocity_limits, has_acceleration_limits]
 joint_limits:
   joint1:
     has_position_limits: true
-    min_position: -2.97
-    max_position: 2.97
+    min_position: -2.9670597283903604
+    max_position: 2.9670597283903604
     has_velocity_limits: true
     max_velocity: 1.71
     has_acceleration_limits: true
     max_acceleration: 8.5521
     has_jerk_limits: true
     max_jerk: 85.0
+    soft_min_position: -2.8827
+    soft_max_position: 2.8827
   joint2:
     has_position_limits: true
-    min_position: -2.10
-    max_position: 2.10
+    min_position: -2.09
+    max_position: 2.09
     has_velocity_limits: true
     max_velocity: 1.71
     has_acceleration_limits: true
     max_acceleration: 8.5521
     has_jerk_limits: true
     max_jerk: 85.0
+    soft_min_position: -2.0027
+    soft_max_position: 2.0027
   joint3:
     has_position_limits: true
-    min_position: -2.97
-    max_position: 2.97
+    min_position: -2.9670597283903604
+    max_position: 2.9670597283903604
     has_velocity_limits: true
-    max_velocity: 1.75
+    max_velocity: 1.7453292519943295
     has_acceleration_limits: true
     max_acceleration: 8.7266
     has_jerk_limits: true
     max_jerk: 87.0
+    soft_min_position: -2.8827
+    soft_max_position: 2.8827
   joint4:
     has_position_limits: true
-    min_position: -2.10
-    max_position: 2.10
+    min_position: -2.09
+    max_position: 2.09
     has_velocity_limits: true
-    max_velocity: 2.27
+    max_velocity: 2.2689280275926285
     has_acceleration_limits: true
     max_acceleration: 11.3446
     has_jerk_limits: true
     max_jerk: 113.0
+    soft_min_position: -2.0027
+    soft_max_position: 2.0027
   joint5:
     has_position_limits: true
-    min_position: -2.97
-    max_position: 2.97
+    min_position: -2.9670597283903604
+    max_position: 2.9670597283903604
     has_velocity_limits: true
     max_velocity: 2.44
     has_acceleration_limits: true
     max_acceleration: 12.2173
     has_jerk_limits: true
     max_jerk: 122.0
+    soft_min_position: -2.8827
+    soft_max_position: 2.8827
   joint6:
     has_position_limits: true
-    min_position: -2.10
-    max_position: 2.10
+    min_position: -2.09
+    max_position: 2.09
     has_velocity_limits: true
     max_velocity: 3.14
     has_acceleration_limits: true
-    max_acceleration: 15.7080
+    max_acceleration: 15.708
     has_jerk_limits: true
     max_jerk: 157.0
+    soft_min_position: -2.0027
+    soft_max_position: 2.0027
   joint7:
     has_position_limits: true
     min_position: -3.05
@@ -75,7 +86,8 @@ joint_limits:
     has_velocity_limits: true
     max_velocity: 3.14
     has_acceleration_limits: true
-    max_acceleration: 15.7080
+    max_acceleration: 15.708
     has_jerk_limits: true
     max_jerk: 157.0
-    
+    soft_min_position: -2.9627
+    soft_max_position: 2.9627
