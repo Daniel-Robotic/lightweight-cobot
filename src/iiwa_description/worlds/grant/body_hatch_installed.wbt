@@ -1,0 +1,182 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "../../resource/protos/CollaborativeRobotTable.proto"
+EXTERNPROTO "../../resource/protos/WorkspaceLimiter.proto"
+EXTERNPROTO "../../resource/protos/GrantToolRack.proto"
+
+# Based on ../iiwa.wbt. The robot is spawned by iiwa_bringup at
+# (-0.25, 0, 0.79), facing world +X. All workpieces stay on the table
+# in front of its base. The tabletop is at world Z = 0.793 m.
+# The workpiece OBJ meshes use Y as their vertical axis. The shared axis-angle
+# rotation first maps Y to world Z, then turns the workpieces 45 degrees
+# around world Z. Coordinates and dimensions are metres.
+#
+# Installed scene for experiments 04, 14 and 15: the hatch is fixed on
+# the body surface. The magazine holds the four static tool models.
+# For a loose hatch that the robot can pick up, use body_hatch.wbt.
+
+WorldInfo {
+  title "Body with installed hatch and tool magazine"
+  basicTimeStep 32
+  optimalThreadCount 4
+  contactProperties [
+    ContactProperties {
+      material1 "TableMaterial"
+      coulombFriction [ 0.6 ]
+      bounce 0
+      bounceVelocity 0
+      softERP 1
+      softCFM 0.0001
+    }
+    ContactProperties {
+      material1 "tool"
+      material2 "TableMaterial"
+      bounce 0
+      softCFM 0.002
+      maxContactJoints 100
+    }
+    ContactProperties {
+      material1 "default"
+      material2 "default"
+      maxContactJoints 20
+      bounce 0
+      softCFM 0.001
+    }
+  ]
+}
+Viewpoint {
+  orientation 0.19663259328507318 -0.09057124279298501 -0.9762850368805829 3.9867817928674034
+  position 1.75 -1.85 1.77
+  followType "Mounted Shot"
+  ambientOcclusionRadius 3
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+  texture "noon_sunny_empty"
+  luminosity 2
+}
+RectangleArena {
+  name "Arena"
+  floorSize 12 12
+  wallHeight 2
+}
+CollaborativeRobotTable {
+  translation 0 0 -0.007
+  locked TRUE
+  showCabinet TRUE
+}
+DEF limiter Group {
+  children [
+    WorkspaceLimiter {
+      translation -1.56 -0.219999 1.01
+      rotation 0 0 1 1.5708
+      name "WorkspaceLimiter_back"
+      locked TRUE
+      scale 2.32 1 2
+    }
+    WorkspaceLimiter {
+      translation -0.04 1.18 1.01
+      name "WorkspaceLimiter_right"
+      locked TRUE
+      scale 2.43 1 2
+    }
+  ]
+}
+DirectionalLight {
+  direction -0.1 0.1 0
+  intensity 2
+}
+
+# Fixture plate: bottom Y=-0.010 m rests on the tabletop. The two rails
+# support the body at Y=+0.0161 m without intersecting its underside.
+DEF BODY_HATCH_STAPEL Solid {
+  translation 0.30 0.12 0.803
+  rotation 0.862856209461 0.357406744337 0.357406744337 1.717771517458
+  name "body_hatch_stapel"
+  locked TRUE
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.30 0.34 0.39
+        roughness 0.55
+        metalness 0.55
+      }
+      geometry Mesh {
+        url [ "../../objects/grant/stapel.obj" ]
+      }
+    }
+  ]
+  boundingObject Group {
+    children [
+      Pose {
+        translation 0 -0.005 0
+        children [ Box { size 0.35 0.01 0.22 } ]
+      }
+      Pose {
+        translation -0.104 0.008 0
+        children [ Box { size 0.014 0.016 0.156 } ]
+      }
+      Pose {
+        translation 0.104 0.008 0
+        children [ Box { size 0.014 0.016 0.156 } ]
+      }
+    ]
+  }
+}
+
+# The body shares the fixture centre. Its +0.020 m height puts the
+# underside on top of the fixture rails.
+DEF BODY_HATCH_BODY Solid {
+  translation 0.30 0.12 0.823
+  rotation 0.862856209461 0.357406744337 0.357406744337 1.717771517458
+  name "body_hatch_body"
+  locked TRUE
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.64 0.68 0.72
+        roughness 0.45
+        metalness 0.45
+      }
+      geometry Mesh {
+        url [ "../../objects/grant/base-detail.obj" ]
+      }
+    }
+  ]
+  boundingObject Pose {
+    translation 0 0.000695 0
+    children [ Box { size 0.30 0.00915 0.17 } ]
+  }
+}
+DEF BODY_HATCH_CAP Solid {
+  translation 0.30 0.12 0.82594
+  rotation 0.862856209461 0.357406744337 0.357406744337 1.717771517458
+  name "body_hatch_cap"
+  locked TRUE
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.78 0.82 0.86
+        roughness 0.35
+        metalness 0.55
+      }
+      geometry Mesh {
+        url [ "../../objects/grant/cap.obj" ]
+      }
+    }
+  ]
+  boundingObject Pose {
+    translation 0 0.004165 0
+    children [ Box { size 0.1384 0.00367 0.0984 } ]
+  }
+}
+
+# The rack is visible in the front-left work area, facing the robot.
+GrantToolRack {
+  translation 0.12 -0.42 0.793
+  rotation 0 0.70710678118 0.70710678118 3.14159265359
+}

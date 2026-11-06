@@ -16,14 +16,14 @@ digital_twin:
     max_linear_speed: 0.50     # верхний предел скорости TCP [м/с]
     max_angular_speed: 0.4     # скорость вращения TCP [рад/с]
   webots:
-    world: pkg://iiwa_description/worlds/iiwa.wbt
+    world: pkg://iiwa_description/worlds/grant/body_hatch_installed.wbt
     # world: pkg://iiwa_description/worlds/simple_world.wbt
     transform: "-0.25 0 0.79"
     rotation: "0 0 1 0"
     controller_timer: "50"
 
     objects:
-      enabled: true
+      enabled: false
       count: 5                    # точное общее количество; модели могут повторяться
       models:
         # - path: pkg://iiwa_description/objects/hammer/hammer1.obj
@@ -42,7 +42,6 @@ digital_twin:
         x: [0.3, 0.7]
         y: [-0.3, 0.3]
         z: [0.1, 0.1]             # высота нижней точки модели
-
 
     cameras:
     - pkg://iiwa_config/config/cameras/d455_top.yaml

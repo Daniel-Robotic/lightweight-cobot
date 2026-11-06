@@ -1,7 +1,7 @@
 # Blender 5.2.1 LTS MTL File: 'None'
 # www.blender.org
 
-newmtl Black_elastomer
+newmtl Black_elastomer.001
 Ns 193.600006
 Ka 1.000000 1.000000 1.000000
 Kd 0.012000 0.016000 0.019000
@@ -11,7 +11,7 @@ Ni 1.500000
 d 1.000000
 illum 2
 
-newmtl Dark_tool_steel.001
+newmtl Dark_tool_steel.005
 Ns 504.100067
 Ka 0.820000 0.820000 0.820000
 Kd 0.160000 0.180000 0.200000
@@ -21,7 +21,7 @@ Ni 1.500000
 d 1.000000
 illum 3
 
-newmtl Satin_stainless_steel.001
+newmtl Satin_stainless_steel.005
 Ns 562.500000
 Ka 0.880000 0.880000 0.880000
 Kd 0.520000 0.560000 0.590000
@@ -31,7 +31,7 @@ Ni 1.500000
 d 1.000000
 illum 3
 
-newmtl Socket_recess.001
+newmtl Socket_recess.004
 Ns 250.000000
 Ka 0.100000 0.100000 0.100000
 Kd 0.006000 0.007000 0.008000
