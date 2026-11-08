@@ -114,6 +114,7 @@ class MotionAdapter:
         stability_epsilon: float = 0.001,
         stability_angle: float = 0.01,
         pose_correction_attempts: int = 2,
+        joint_correction_attempts: int = 2,
         joint_position_tolerance: float = 0.05,
     ) -> None:
         self.node = node
@@ -153,6 +154,7 @@ class MotionAdapter:
         self.stability_epsilon = float(stability_epsilon)
         self.stability_angle = float(stability_angle)
         self.pose_correction_attempts = max(1, int(pose_correction_attempts))
+        self.joint_correction_attempts = max(1, int(joint_correction_attempts))
         self.joint_position_tolerance = float(joint_position_tolerance)
         self._joint_positions: tuple[float, ...] | None = None
         self.stopped = False
@@ -375,37 +377,53 @@ class MotionAdapter:
         request.joints = list(values)
         request.speed = float(speed)
         started = time.monotonic()
-        future = self.joints_client.send_goal_async(request)
-        if not self._spin_until(future, self.command_timeout_sec):
-            return self._fail(label, 'joint goal response timed out', None, started)
-        try:
-            goal_handle = future.result()
-        except Exception as error:
-            return self._fail(label, f'joint goal call failed: {error}', None, started)
-        if goal_handle is None or not goal_handle.accepted:
-            return self._fail(label, 'joint goal was rejected', None, started)
-        result_future = goal_handle.get_result_async()
-        if not self._spin_until(result_future, self.command_timeout_sec):
-            return self._fail(label, 'joint result timed out', None, started)
-        try:
-            result = result_future.result().result
-        except Exception as error:
-            return self._fail(label, f'joint result failed: {error}', None, started)
-        if not result.success:
-            return self._fail(
-                label, result.message or 'joint motion failed', None, started,
-            )
-        self._settle()
-        actual = self._joint_positions
-        if actual is not None and len(actual) == 7:
-            error = max(abs(a - b) for a, b in zip(actual, values))
-            if error > self.joint_position_tolerance:
+        last_error = 0.0
+        for attempt in range(self.joint_correction_attempts):
+            future = self.joints_client.send_goal_async(request)
+            if not self._spin_until(future, self.command_timeout_sec):
+                return self._fail(label, 'joint goal response timed out', None, started)
+            try:
+                goal_handle = future.result()
+            except Exception as error:
                 return self._fail(
-                    label,
-                    f'joint positions are {error:.4f} rad from the joint goal',
-                    None,
-                    started,
+                    label, f'joint goal call failed: {error}', None, started,
                 )
+            if goal_handle is None or not goal_handle.accepted:
+                return self._fail(label, 'joint goal was rejected', None, started)
+            result_future = goal_handle.get_result_async()
+            if not self._spin_until(result_future, self.command_timeout_sec):
+                return self._fail(label, 'joint result timed out', None, started)
+            try:
+                result = result_future.result().result
+            except Exception as error:
+                return self._fail(
+                    label, f'joint result failed: {error}', None, started,
+                )
+            if not result.success:
+                return self._fail(
+                    label, result.message or 'joint motion failed', None, started,
+                )
+            actual = self._settle_joints()
+            if actual is None or len(actual) != 7:
+                break
+            last_error = max(abs(a - b) for a, b in zip(actual, values))
+            if last_error <= self.joint_position_tolerance:
+                break
+            if attempt + 1 < self.joint_correction_attempts:
+                # The controller can stop short after a transient Webots
+                # contact.  Re-issue the same verified joint goal once.
+                if self.node is not None:
+                    self.node.get_logger().warning(
+                        f'{label}: joint positions {last_error:.4f} rad off; '
+                        're-issuing the goal'
+                    )
+                continue
+            return self._fail(
+                label,
+                f'joint positions are {last_error:.4f} rad from the joint goal',
+                None,
+                started,
+            )
         return MotionResult(
             True, 'joint motion completed', label, True, None, self.actual_tcp(),
             time.monotonic() - started,
@@ -473,6 +491,37 @@ class MotionAdapter:
                 self.node,
                 timeout_sec=min(0.05, max(0.0, end - time.monotonic())),
             )
+
+    def _settle_joints(self) -> tuple[float, ...] | None:
+        """Wait until the measured joint positions stop changing.
+
+        The joint action result can arrive while the Webots controller is
+        still following the last trajectory points.  Comparing that first
+        sample produced false 'joint positions are ... off' failures.
+        """
+        self._settle()
+        if self.node is None:
+            return self._joint_positions
+        import rclpy
+
+        deadline = time.monotonic() + self.stability_timeout_sec
+        last = self._joint_positions
+        stable_since = None
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+            current = self._joint_positions
+            if current is None or last is None or len(current) != len(last):
+                last = current
+                stable_since = None
+                continue
+            if max(abs(a - b) for a, b in zip(current, last)) <= 0.001:
+                stable_since = stable_since or time.monotonic()
+                if time.monotonic() - stable_since >= 0.25:
+                    return current
+            else:
+                stable_since = None
+            last = current
+        return self._joint_positions
 
     def _settle_and_measure(self) -> Transform | None:
         """Wait until the controller stops moving before verifying tcp.

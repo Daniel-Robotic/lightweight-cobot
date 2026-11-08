@@ -74,13 +74,13 @@ def test_scenarios_one_six_eleven_sixteen_nineteen_are_complete():
         16: [
             'grant_fixture', 'grant_body', 'grant_rack',
             'grant_vacuum', 'grant_magnetic_tool', 'grant_sealant_tool',
-            'grant_tray',
+            'grant_torque_tool', 'grant_tray',
             *[f'grant_screw_{i:02d}' for i in range(1, 11)], 'grant_cap',
         ],
         19: [
             'grant_fixture', 'grant_body', 'grant_rack',
             'grant_vacuum', 'grant_magnetic_tool', 'grant_sealant_tool',
-            'grant_tray',
+            'grant_torque_tool', 'grant_tray',
             *[f'grant_screw_{i:02d}' for i in range(1, 11)], 'grant_cap',
         ],
     }
@@ -161,8 +161,8 @@ def test_working_tools_are_in_their_own_sockets():
     positions = {
         translation(parsed[TOOL_NODE_NAMES[name]]) for name in scenario.tool_names
     }
-    assert len(positions) == len(scenario.tool_names) == 3
-    assert 'grant_torque_tool' not in parsed
+    assert len(positions) == len(scenario.tool_names) == 4
+    assert 'grant_torque_tool' in parsed
 
 
 def test_experiment_nineteen_shifts_the_tray_and_all_ten_screws():

@@ -15,6 +15,7 @@ from webots_ros2_msgs.srv import SetString
 from .geometry import (
     GeometrySpec,
     Transform,
+    object_pose_transform,
     sealant_point,
     tcp_goal,
     world_target,
@@ -332,6 +333,28 @@ class ReferenceOperations:
         self._move(approach, 'lin', self.geometry.speeds['approach'], f'{label}:retreat')
         self._move(transfer, 'ompl', self.geometry.speeds['transfer'], f'{label}:clear')
 
+    def _contact_with_home_retry(self, goal: Transform, label: str, **kwargs) -> None:
+        """Contact a target, reconfiguring through home only if planning fails.
+
+        The routes use the closer 'work' pose between tasks.  A few tray and
+        rack cells are nevertheless only reachable from the home branch, so
+        the fallback is applied on demand instead of forcing a home detour on
+        every transition.
+        """
+        try:
+            self._contact(goal, label, **kwargs)
+        except OperationError as error:
+            if 'Планирование' not in str(error):
+                raise
+            self._emit('reconfigure', label=label, target='home',
+                       reason=str(error))
+            self.motion.reset_stop()
+            named = self.motion.move_named('home', 0.3)
+            if not getattr(named, 'success', False):
+                raise error
+            self.motion.reset_stop()
+            self._contact(goal, f'{label}:home_retry', **kwargs)
+
     def _require_synchronized(self) -> None:
         try:
             self.bridge.assert_synchronized(*self.bridge.expected_sets())
@@ -364,12 +387,35 @@ class ReferenceOperations:
             self._require_synchronized()
             tool_pose = self.supervisor.object_pose(f'grant_{tool_name}')
             goal = tcp_goal(tool_pose, self.geometry.tool_tcp_to_nodes[tool_name])
-            self._contact(
+            self._contact_with_home_retry(
                 goal, f'take_tool({tool_name})',
                 remove_before_contact=f'grant_{tool_name}',
             )
             self.supervisor.command('attach_tool', tool_name)
-            self._retreat(goal, f'take_tool({tool_name})')
+            # Lift straight up, clear of the magazine, before any lateral or
+            # joint-space move.  Without this the tool body sweeps through the
+            # rack obstacles while the arm travels to 'work'.  The sockets sit
+            # at slightly different reachable heights, so accept the highest
+            # clearance that plans.
+            lift_error = None
+            for gap in (0.16, 0.14, 0.12):
+                label = (
+                    f'take_tool({tool_name}):lift' if gap == 0.16
+                    else f'take_tool({tool_name}):lift:{gap:.2f}'
+                )
+                try:
+                    self._move(
+                        self._above(goal, gap), 'lin',
+                        self.geometry.speeds['approach'], label,
+                    )
+                    break
+                except OperationError as error:
+                    if 'Планирование' not in str(error):
+                        raise
+                    self.motion.reset_stop()
+                    lift_error = error
+            else:
+                raise lift_error
             self._emit('take_tool', object=tool_name, phase='done',
                        tool=tool_name, tcp=goal.xyz)
             return OperationResult(True, 'take_tool', f'{tool_name} mounted', tuple(self.events))
@@ -388,7 +434,7 @@ class ReferenceOperations:
             # pose is verified by both the motion adapter and supervisor.
             self.bridge.remove(f'grant_{tool_name}')
             self._require_synchronized()
-            self._contact(goal, f'dock_tool({tool_name})')
+            self._contact_with_home_retry(goal, f'dock_tool({tool_name})')
             self.supervisor.command('dock_tool', tool_name)
             self.bridge.add_world(
                 f'grant_{tool_name}',
@@ -529,7 +575,7 @@ class ReferenceOperations:
             self._require_synchronized()
             screw_pose = self.supervisor.object_pose(def_name)
             goal = tcp_goal(screw_pose, self.geometry.screw_tcp_to_node)
-            self._contact(
+            self._contact_with_home_retry(
                 goal, f'pick_screw({screw_id})',
                 remove_before_contact=def_name,
             )
@@ -569,6 +615,70 @@ class ReferenceOperations:
         except Exception as error:
             self._emit('handoff_screw', object=screw_id, target=hole_id,
                        phase='failed', error=str(error))
+            raise
+
+    # ------------------------------------------------------------------ tightening
+    def tighten_hole(self, hole_id: str, twist_deg: float = 60.0) -> OperationResult:
+        """Simulate tightening at an empty hole with the torque tool.
+
+        The screw has already been handed to the virtual operator and removed
+        from the scene.  The torque tool approaches the hole, rotates around
+        its own axis, returns and retracts.  Nothing is inserted or retained,
+        so the hole stays empty.
+        """
+        self._emit('tighten_simulated', object=hole_id, phase='start',
+                   twist_deg=twist_deg)
+        try:
+            self._require_synchronized()
+            hole = world_target(self.spec, self.geometry, f'hole:{hole_id}')
+            # Reuse the calibrated handoff pose: an upright tool node 4 mm
+            # above the hole with the same body yaw as the screw delivery.
+            target = object_pose_transform(
+                hole.xyz[0], hole.xyz[1], hole.xyz[2] + 0.004,
+                self.spec.body.yaw_deg, child='tighten_target',
+            )
+            tip = self.geometry.tool_tcp_to_nodes['torque_tool']
+            goal = tcp_goal(target, tip)
+            self._contact(goal, f'tighten_hole({hole_id})')
+            twist_error = None
+            for suffix, offset in (
+                ('twist:positive', twist_deg),
+                ('twist:negative', -twist_deg),
+            ):
+                twisted = goal.compose_relaxed(Transform.from_xyz_rpy(
+                    [0.0, 0.0, 0.0], [0.0, 0.0, offset],
+                    parent='tcp', child='tighten_twist',
+                ))
+                try:
+                    self._move(
+                        twisted, 'lin', self.geometry.speeds['contour'],
+                        f'tighten_hole({hole_id}):{suffix}',
+                    )
+                    break
+                except OperationError as error:
+                    # Holes on the far side of the body can sit against the
+                    # wrist limit in one direction.  A failed plan executes no
+                    # motion, so the opposite twist is safe to try.
+                    if 'Планирование' not in str(error):
+                        raise
+                    self.motion.reset_stop()
+                    twist_error = error
+            else:
+                raise twist_error
+            self._move(
+                goal, 'lin', self.geometry.speeds['contour'],
+                f'tighten_hole({hole_id}):return',
+            )
+            self._retreat(goal, f'tighten_hole({hole_id})')
+            self._emit('tighten_simulated', object=hole_id, phase='done',
+                       twist_deg=twist_deg)
+            return OperationResult(
+                True, 'tighten_simulated',
+                f'{hole_id} tightening simulated', tuple(self.events),
+            )
+        except Exception as error:
+            self._emit('tighten_simulated', object=hole_id, phase='failed',
+                       error=str(error))
             raise
 
     # ------------------------------------------------------------------ recovery

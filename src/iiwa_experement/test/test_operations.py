@@ -78,13 +78,16 @@ class FakeMotion:
 
     def move_pose(self, goal, planner='ptp', speed=0.2, label=''):
         self.moves.append((label, planner, speed, goal))
-        if label in self.fail_labels:
-            return MotionResult(False, 'injected failure', label)
+        if any(label.startswith(prefix) for prefix in self.fail_labels):
+            return MotionResult(False, 'Планирование не удалось: injected failure', label)
         return MotionResult(True, 'ok', label, True, goal, goal)
 
     def move_named(self, name, speed=0.2):
         self.named.append((name, speed))
         return MotionResult(True, 'ok', f'move_named({name})')
+
+    def reset_stop(self):
+        return None
 
 
 def make_operations(experiment_id):
@@ -118,8 +121,7 @@ def test_take_tool_follows_the_visible_axial_route():
         'take_tool(vacuum):transfer',
         'take_tool(vacuum):approach',
         'take_tool(vacuum):contact',
-        'take_tool(vacuum):retreat',
-        'take_tool(vacuum):clear',
+        'take_tool(vacuum):lift',
     ]
     assert supervisor.commands[0][:2] == ('attach_tool', 'vacuum')
     assert bridge.attached == []
@@ -202,9 +204,49 @@ def test_screw_pick_and_handoff_are_one_motion_and_one_removal():
     assert bridge.attached == []
 
 
+def test_tighten_hole_is_a_visible_revolution_without_a_screw():
+    operations, supervisor, bridge, motion, geometry = make_operations(14)
+    assert operations.tighten_hole('hole_1').success
+    names = labels(motion)
+    assert names[:3] == [
+        'tighten_hole(hole_1):transfer',
+        'tighten_hole(hole_1):approach',
+        'tighten_hole(hole_1):contact',
+    ]
+    twist = motion.moves[names.index('tighten_hole(hole_1):twist:positive')][3]
+    contact = motion.moves[names.index('tighten_hole(hole_1):contact')][3]
+    assert twist.xyz == pytest.approx(contact.xyz)
+    relative = contact.inverse().compose_relaxed(twist)
+    assert abs(relative.rotation[2][2] - 1.0) < 1e-9
+    # The operation is a simulation only: no supervisor command changes state.
+    assert supervisor.commands == []
+    assert bridge.attached == []
+
+
+def test_screw_pick_reconfigures_to_home_when_work_is_blocked():
+    operations, supervisor, bridge, motion, geometry = make_operations(11)
+    motion.fail_labels.add('pick_screw(screw_1):transfer')
+    assert operations.pick_screw('screw_1').success
+    assert motion.named[-1][0] == 'home'
+    assert 'pick_screw(screw_1):home_retry:transfer' in labels(motion)
+    assert supervisor.commands[0][:2] == ('grab_screw', 'screw_1')
+
+
+def test_tighten_hole_reverses_the_twist_when_one_direction_is_blocked():
+    operations, supervisor, bridge, motion, geometry = make_operations(14)
+    motion.fail_labels.add('tighten_hole(hole_1):twist:positive')
+    assert operations.tighten_hole('hole_1').success
+    names = labels(motion)
+    assert 'tighten_hole(hole_1):twist:positive' in names
+    assert 'tighten_hole(hole_1):twist:negative' in names
+
+
 def test_failed_motion_stops_the_operation_and_emits_failure():
     operations, supervisor, bridge, motion, geometry = make_operations(1)
-    motion.fail_labels.add('take_tool(vacuum):contact')
+    motion.fail_labels.update({
+        'take_tool(vacuum):contact',
+        'take_tool(vacuum):home_retry:contact',
+    })
     with pytest.raises(OperationError):
         operations.take_tool('vacuum')
     assert operations.events[-1]['phase'] == 'failed'

@@ -88,21 +88,24 @@ def test_screw_experiments_have_installed_hatch_and_ten_screws():
         assert spec.cap_state == 'installed'
         assert spec.tray_pose is not None
         assert len(spec.screws) == 10
-        assert spec.tool_names == ('magnetic_tool',)
-        assert 'torque_tool' not in spec.tool_names
+        if experiment_id in (14, 15):
+            assert set(spec.tool_names) == {'magnetic_tool', 'torque_tool'}
+        else:
+            assert spec.tool_names == ('magnetic_tool',)
         assert len(spec.screw_holes) == {
             11: 1, 12: 2, 13: 3, 14: 4, 15: 4,
         }[experiment_id]
 
 
-def test_full_assembly_experiments_have_loose_hatch_tray_and_no_torque_tool():
+def test_full_assembly_experiments_have_loose_hatch_tray_and_all_tools():
     for experiment_id in range(16, 21):
         spec = scenario(experiment_id)
         assert spec.cap_state == 'free'
         assert spec.tray_pose is not None
         assert len(spec.screws) == 10
-        assert set(spec.tool_names) == {'vacuum', 'magnetic_tool', 'sealant_tool'}
-        assert 'torque_tool' not in spec.tool_names
+        assert set(spec.tool_names) == {
+            'vacuum', 'magnetic_tool', 'sealant_tool', 'torque_tool',
+        }
         assert len(spec.screw_holes) == {16: 1, 17: 2, 18: 4, 19: 4, 20: 4}[experiment_id]
 
 

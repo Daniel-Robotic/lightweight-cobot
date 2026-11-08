@@ -33,7 +33,9 @@ def _work(speed: float = 0.3) -> ReferenceStep:
 def _take(tool: str, *, first: bool = False) -> list[ReferenceStep]:
     steps: list[ReferenceStep] = []
     if not first:
-        steps.append(_home())
+        # 'work' is the neutral transfer pose: closer to the task area than
+        # 'home' and already used by the verified routes between operations.
+        steps.append(_work())
     steps.extend([
         ReferenceStep('take_tool', (tool,)),
         _work(),
@@ -47,6 +49,7 @@ def _cap_steps(
     grasp_failure: bool = False,
     verify_failure: bool = False,
     first_tool: bool = False,
+    finish_home: bool = True,
 ) -> list[ReferenceStep]:
     steps = _take('vacuum', first=first_tool)
     if grasp_failure:
@@ -77,8 +80,9 @@ def _cap_steps(
     steps.extend([
         _home(),
         ReferenceStep('dock_tool', ('vacuum',)),
-        _home(),
     ])
+    if finish_home:
+        steps.append(_home())
     return steps
 
 
@@ -119,6 +123,7 @@ def _screw_steps(
     *,
     failure_index: int | None = None,
     first_tool: bool = False,
+    finish_home: bool = True,
 ) -> list[ReferenceStep]:
     steps = _take('magnetic_tool', first=first_tool)
     # Prefer the closer tray cells.  The far +Y/+X corner can be outside the
@@ -126,8 +131,6 @@ def _screw_steps(
     available = ['screw_1', 'screw_2', 'screw_5', 'screw_6']
     selected = available[:len(spec.screw_holes)]
     for index, (screw, hole) in enumerate(zip(selected, spec.screw_holes)):
-        if index > 0:
-            steps.append(_home())
         if failure_index is not None and index == failure_index:
             steps.extend([
                 ReferenceStep('simulate_grasp_failure', ('screw', screw)),
@@ -139,11 +142,23 @@ def _screw_steps(
             ReferenceStep('handoff_screw', (screw, hole)),
             _work(),
         ])
-    steps.extend([
-        _home(),
-        ReferenceStep('dock_tool', ('magnetic_tool',)),
-        _home(),
-    ])
+    steps.append(_home())
+    steps.append(ReferenceStep('dock_tool', ('magnetic_tool',)))
+    if 'torque_tool' in spec.tool_names:
+        steps.extend([
+            _work(),
+            ReferenceStep('take_tool', ('torque_tool',)),
+            _work(),
+        ])
+        for hole in spec.screw_holes:
+            steps.extend([
+                ReferenceStep('tighten_hole', (hole,)),
+                _work(),
+            ])
+        steps.append(_home())
+        steps.append(ReferenceStep('dock_tool', ('torque_tool',)))
+    if finish_home:
+        steps.append(_home())
     return steps
 
 
@@ -183,6 +198,7 @@ def build_reference_sequence(spec: ScenarioSpec) -> tuple[ReferenceStep, ...]:
             spec,
             verify_failure=(experiment == 20),
             first_tool=False,
+            finish_home=False,
         ))
         steps.extend(_screw_steps(
             spec,

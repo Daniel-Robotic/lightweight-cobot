@@ -17,7 +17,7 @@ from scipy.spatial.transform import Rotation
 from .scenario import SCREW_HOLES, SEALANT_SIDES, ScenarioSpec, Tool
 
 
-TOOL_GEOMETRY_KEYS = ('vacuum', 'magnetic_tool', 'sealant_tool')
+TOOL_GEOMETRY_KEYS = ('vacuum', 'magnetic_tool', 'sealant_tool', 'torque_tool')
 _SEALANT_SIDES = SEALANT_SIDES
 
 

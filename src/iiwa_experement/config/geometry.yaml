@@ -36,11 +36,13 @@ tool_mounts:
   vacuum: {xyz: [0.0, 0.0, 0.0], rpy_deg: [0.0, 0.0, 0.0]}
   magnetic_tool: {xyz: [0.0, 0.0, 0.0], rpy_deg: [0.0, 0.0, 0.0]}
   sealant_tool: {xyz: [0.0, 0.0, 0.0], rpy_deg: [0.0, 0.0, 0.0]}
+  torque_tool: {xyz: [0.0, 0.0, 0.0], rpy_deg: [0.0, 0.0, 0.0]}
 
 tool_work_tips:
   vacuum: {xyz: [0.0, 0.0, 0.140], rpy_deg: [0.0, 0.0, 0.0]}
   magnetic_tool: {xyz: [0.0, 0.0, 0.140], rpy_deg: [0.0, 0.0, 0.0]}
   sealant_tool: {xyz: [0.0, 0.0, 0.140], rpy_deg: [0.0, 0.0, 0.0]}
+  torque_tool: {xyz: [0.0, 0.0, 0.140], rpy_deg: [0.0, 0.0, 0.0]}
 
 # Transform from tcp to the Webots node origin (bottom of the vertical OBJ).
 # The OBJ Y axis is imported as Webots Z, so the node is Rx(-90) relative to a
@@ -49,6 +51,7 @@ tool_tcp_to_nodes:
   vacuum: {xyz: [0.0, 0.0, 0.140], rpy_deg: [-90.0, 0.0, 0.0]}
   magnetic_tool: {xyz: [0.0, 0.0, 0.140], rpy_deg: [-90.0, 0.0, 0.0]}
   sealant_tool: {xyz: [0.0, 0.0, 0.140], rpy_deg: [-90.0, 0.0, 0.0]}
+  torque_tool: {xyz: [0.0, 0.0, 0.140], rpy_deg: [-90.0, 0.0, 0.0]}
 
 # Boxes expressed in the tcp frame, used for the attached collision object.
 tool_collisions:
@@ -57,6 +60,7 @@ tool_collisions:
   # collide with neighbouring 5.5 mm screws in the 20 mm tray grid.
   magnetic_tool: {size: [0.012, 0.012, 0.140], offset: [0.0, 0.0, 0.070]}
   sealant_tool: {size: [0.0561, 0.0561, 0.140], offset: [0.0, 0.0, 0.070]}
+  torque_tool: {size: [0.049, 0.049, 0.140], offset: [0.0, 0.0, 0.070]}
 
 # Hatch (cap.obj) is 0.1384 x 0.0984 x 0.00367.  Its node origin is the lower
 # face; the suction cup touches the highest point (local Y = 0.006).

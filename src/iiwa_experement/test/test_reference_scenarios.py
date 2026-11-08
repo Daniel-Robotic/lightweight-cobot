@@ -63,8 +63,27 @@ def test_sealant_experiments_use_only_the_sealant_tool():
 def test_full_assembly_tool_order_is_sealant_cap_screws():
     for experiment_id in range(16, 21):
         takes = [step.args[0] for step in route(experiment_id) if step.kind == 'take_tool']
-        assert takes == ['sealant_tool', 'vacuum', 'magnetic_tool']
-        assert 'torque_tool' not in takes
+        assert takes == ['sealant_tool', 'vacuum', 'magnetic_tool', 'torque_tool']
+
+
+def test_tightening_simulation_matches_the_delivered_holes():
+    assert not any(
+        step.kind == 'tighten_hole' for step in route(11)
+    )
+    for experiment_id in range(14, 21):
+        tighten = [
+            step for step in route(experiment_id) if step.kind == 'tighten_hole'
+        ]
+        handoffs = [
+            step for step in route(experiment_id) if step.kind == 'handoff_screw'
+        ]
+        assert [step.args[0] for step in tighten] == [
+            step.args[1] for step in handoffs
+        ]
+    for experiment_id in (12, 13):
+        assert not any(
+            step.kind == 'tighten_hole' for step in route(experiment_id)
+        )
 
 
 def test_screw_counts_and_holes_match_the_contract():
