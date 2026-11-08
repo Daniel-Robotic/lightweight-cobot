@@ -63,7 +63,7 @@ def _cap_steps(
                 shift = expected - spec.body.x
         steps.extend([
             ReferenceStep('place_cap_shifted', (), {'dx': shift}),
-            ReferenceStep('inspect_cap', (), {'expect': 'not_ok'}),
+            ReferenceStep('inspect_cap', (), {'expect': 'not_ok', 'tolerance': 0.002}),
             ReferenceStep('pick_cap'),
             _work(),
             ReferenceStep('place_cap'),
@@ -213,9 +213,10 @@ def execute_sequence(sequence: tuple[ReferenceStep, ...], context) -> RunResult:
                 if step.args and step.args[0] == 'home':
                     home_reached = True
             elif step.kind == 'inspect_cap':
-                result = operations.inspect_cap()
+                kwargs = dict(step.kwargs)
+                expect = kwargs.pop('expect', None)
+                result = operations.inspect_cap(**kwargs)
                 trace.event({'event': 'inspect_cap', 'result': result})
-                expect = step.kwargs.get('expect')
                 if expect == 'ok' and not result.get('ok'):
                     raise SequenceError(f'hatch verification failed: {result}')
                 if expect == 'not_ok' and result.get('ok'):

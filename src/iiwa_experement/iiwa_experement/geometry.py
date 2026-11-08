@@ -204,6 +204,7 @@ class GeometrySpec:
     speeds: dict[str, float]
     scene_collisions: dict[str, Box]
     safe_poses: dict[str, Transform]
+    named_joints: dict[str, tuple[float, ...]]
 
     @property
     def body_top_local(self) -> float:
@@ -311,6 +312,12 @@ def load_geometry(path: Path | str) -> GeometrySpec:
         if not 0.0 < value <= 1.0:
             raise GeometryError(f'speeds.{key} must be within (0, 1]')
 
+    joints_raw = _mapping(data.get('named_joints', {}), 'named_joints')
+    named_joints = {
+        name: _vector(values, f'named_joints.{name}', 7)
+        for name, values in joints_raw.items()
+    }
+
     safe_raw = _mapping(data.get('safe_poses', {}), 'safe_poses')
     safe_poses = {
         name: _load_transform(
@@ -396,6 +403,7 @@ def load_geometry(path: Path | str) -> GeometrySpec:
         speeds=speeds,
         scene_collisions=scene_collisions,
         safe_poses=safe_poses,
+        named_joints=named_joints,
     )
 
 

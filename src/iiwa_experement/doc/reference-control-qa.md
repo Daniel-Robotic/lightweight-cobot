@@ -61,7 +61,7 @@ ros2 launch iiwa_experement experiment.launch.py experiment_id:=1 \
 
 ## Результаты тестов
 
-Финальный прогон: `197 passed` (см. журнал сборки). Тесты покрывают контракт
+Финальный прогон: `colcon test` — 331 тест, 0 ошибок, 0 падений. Тесты покрывают контракт
 сцен, геометрию, supervisor, сцену MoveIt, движение, операции, маршруты и
 журнал.
 
@@ -69,26 +69,53 @@ ros2 launch iiwa_experement experiment.launch.py experiment_id:=1 \
 
 | № | Статус | Доставлено | Люк | Герметик | Инструмент возвращён | Дом |
 | ---: | --- | --- | --- | --- | --- | --- |
-| 1 | заполняется прогоном | | | | | |
-| 2 | | | | | | |
-| 3 | | | | | | |
-| 4 | | | | | | |
-| 5 | | | | | | |
-| 6 | | | | | | |
-| 7 | | | | | | |
-| 8 | | | | | | |
-| 9 | | | | | | |
-| 10 | | | | | | |
-| 11 | | | | | | |
-| 12 | | | | | | |
-| 13 | | | | | | |
-| 14 | | | | | | |
-| 15 | | | | | | |
-| 16 | | | | | | |
-| 17 | | | | | | |
-| 18 | | | | | | |
-| 19 | | | | | | |
-| 20 | | | | | | |
+| 1 | completed | — | ok | — | vacuum | да |
+| 2 | completed | — | ok | — | vacuum | да |
+| 3 | completed | — | ok | — | vacuum | да |
+| 4 | completed | — | ok | — | vacuum | да |
+| 5 | completed | — | ok | — | vacuum | да |
+| 6 | completed | — | — | ok | sealant_tool | да |
+| 7 | completed | — | — | ok | sealant_tool | да |
+| 8 | completed | — | — | ok | sealant_tool | да |
+| 9 | completed | — | — | ok | sealant_tool | да |
+| 10 | completed | — | ok | ok | sealant_tool, vacuum | да |
+| 11 | completed | screw_1→hole_1 | ok | — | magnetic_tool | да |
+| 12 | completed | screw_1→hole_1, screw_2→hole_3 | ok | — | magnetic_tool | да |
+| 13 | completed | screw_1→hole_1, screw_2→hole_2, screw_5→hole_3 | ok | — | magnetic_tool | да |
+| 14 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | — | magnetic_tool | да |
+| 15 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | — | magnetic_tool | да |
+| 16 | completed | screw_1→hole_1 | ok | ok | sealant_tool, vacuum, magnetic_tool | да |
+| 17 | completed | screw_1→hole_1, screw_2→hole_3 | ok | ok | sealant_tool, vacuum, magnetic_tool | да |
+| 18 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | ok | sealant_tool, vacuum, magnetic_tool | да |
+| 19 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | ok | sealant_tool, vacuum, magnetic_tool | да |
+| 20 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | ok | sealant_tool, vacuum, magnetic_tool | да |
+
+## Режим view
+
+Проверены опыты 1, 11, 16, 19, 20. После 10 секунд симуляции:
+
+| Опыт | Объектов | Винтов | Люк | TCP, смещение за 10 с | Захват |
+| ---: | ---: | ---: | --- | ---: | --- |
+| 1 | 5 | 0 | свободный | 0,11 мм (успокоение контроллера) | нет |
+| 11 | 16 | 10 | установлен | 0,001 мм | нет |
+| 16 | 18 | 10 | свободный | 0,0005 мм | нет |
+| 19 | 18 | 10 | свободный, смещён | 0,0003 мм | нет |
+| 20 | 18 | 10 | свободный | 0,0005 мм | нет |
+
+Позы объектов за 10 секунд не изменились. `mounted_tool=null`, `attached.tool=null`,
+`attached.payload=null`. Журналы: `/tmp/opencode/view_01.log`, `view_11.log`,
+`view_16.log`, `view_19.log`, `view_20.log`.
+
+## Журналы прогонов
+
+- JSONL: `/tmp/opencode/traces_all/experiment_<id>_<UTC>.jsonl`.
+- Логи запуска: `/tmp/opencode/logs_all/experiment_<id>.log`.
+- Сводка: `/tmp/opencode/summary.json`.
+- В каждом успешном журнале последняя строка `event=result` содержит
+  `status=completed`, пары винт-отверстие, `cap.ok=true` (где люк есть),
+  `sealant.ok=true` (где контур есть), `returned_tools` и `home_reached=true`.
+
+
 
 ## Ветви отказов
 

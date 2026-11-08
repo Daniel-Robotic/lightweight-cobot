@@ -236,30 +236,34 @@ class ReferenceOperations:
         *,
         allow_fallback: bool = True,
     ) -> MotionResult:
-        result = self.motion.move_pose(goal, planner=planner, speed=speed, label=label)
-        planning_failed = (
-            'Планирование' in result.message
-            or 'planning' in result.message.lower()
-            or 'недостижима' in result.message
-        )
-        if not result.success and planning_failed:
-            # A collision-free replan after a failed search is not a blind
-            # repetition: no motion was executed and the scene is unchanged.
-            self.motion.reset_stop()
-            retry = self.motion.move_pose(
-                goal, planner=planner, speed=speed, label=f'{label}:retry',
+        attempts = 3
+        result = None
+        planning_failed = False
+        for attempt in range(attempts):
+            result = self.motion.move_pose(
+                goal,
+                planner=planner,
+                speed=speed,
+                label=label if attempt == 0 else f'{label}:retry{attempt}',
             )
-            if retry.success:
-                self._emit('motion_retry', label=label, planner=planner,
-                           reason=result.message)
-                return retry
-            result = retry
-        if result.success:
-            return result
+            if result.success:
+                if attempt:
+                    self._emit('motion_retry', label=label, planner=planner,
+                               attempt=attempt, reason=result.message)
+                return result
+            planning_failed = (
+                'Планирование' in result.message
+                or 'planning' in result.message.lower()
+                or 'недостижима' in result.message
+            )
+            if not planning_failed:
+                break
+            if attempt + 1 < attempts:
+                # A failed search executed no motion; replan from the same
+                # measured, still-synchronized state.
+                self.motion.reset_stop()
+                continue
         if allow_fallback and planner != 'ompl' and planning_failed:
-            # A short LIN segment can be rejected because the arm chose a
-            # different IK branch.  A collision-checked OMPL retry is safe;
-            # execution or pose-verification failures are never retried.
             self.motion.reset_stop()
             fallback = self.motion.move_pose(
                 goal, planner='ompl', speed=speed, label=f'{label}:ompl',
@@ -267,11 +271,11 @@ class ReferenceOperations:
             if fallback.success:
                 self._emit(
                     'motion_fallback', label=label, original=planner,
-                    reason=result.message,
+                    reason=result.message if result is not None else '',
                 )
                 return fallback
             result = fallback
-        raise OperationError(f'{label}: {result.message}')
+        raise OperationError(f'{label}: {result.message if result is not None else "motion failed"}')
 
     def _above(self, goal: Transform, gap: float) -> Transform:
         return goal.compose_relaxed(_translation([0.0, 0.0, -gap]))
@@ -621,7 +625,11 @@ class ReferenceOperations:
             raise
 
     # ------------------------------------------------------------------ verifies
-    def inspect_cap(self, target_pose: Transform | None = None) -> dict[str, Any]:
+    def inspect_cap(
+        self,
+        target_pose: Transform | None = None,
+        tolerance: float | None = None,
+    ) -> dict[str, Any]:
         self.supervisor.command('inspect')
         target = target_pose or world_target(self.spec, self.geometry, 'cap_seat')
         state = self._expect_latest()
@@ -635,7 +643,10 @@ class ReferenceOperations:
         distance = float(
             (pose.position - target.position) @ (pose.position - target.position)
         ) ** 0.5
-        ok = distance <= self.geometry.position_tolerance
+        limit = (
+            self.geometry.position_tolerance if tolerance is None else float(tolerance)
+        )
+        ok = distance <= limit
         return {
             'ok': ok,
             'distance': distance,

@@ -122,6 +122,11 @@ speeds:
 
 # Calibrated safe Cartesian tcp poses (world frame).  They are used as an
 # OMPL fallback when a short PTP named motion is rejected.
+named_joints:
+  home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  work: [0.0, 0.0, 0.0, -1.57, 0.0, 1.57, 0.0]
+  transport: [0.0, 0.436, 0.0, 1.57, 0.0, 0.0, 0.0]
+
 safe_poses:
   work:
     xyz: [0.1496, 0.0, 1.3139]

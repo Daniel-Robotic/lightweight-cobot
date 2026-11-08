@@ -23,13 +23,14 @@ from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 import tf2_ros
 
-from iiwa_msgs.action import MoveToPose
+from iiwa_msgs.action import MoveToJoints, MoveToPose
 from iiwa_msgs.srv import MoveToNamedPose
 
 from .geometry import GeometrySpec, Transform
 
 
 MOVE_ACTION = '/cobot/move_to_pose'
+JOINTS_ACTION = '/cobot/move_to_joints'
 NAMED_SERVICE = '/cobot/move_to_named'
 STOP_SERVICE = '/cobot/stop'
 PLANNERS = ('ptp', 'lin', 'ompl')
@@ -97,6 +98,7 @@ class MotionAdapter:
         geometry: GeometrySpec,
         *,
         action_client: Any | None = None,
+        joints_client: Any | None = None,
         named_client: Any | None = None,
         stop_client: Any | None = None,
         tf_buffer: Any | None = None,
@@ -112,12 +114,16 @@ class MotionAdapter:
         stability_epsilon: float = 0.001,
         stability_angle: float = 0.01,
         pose_correction_attempts: int = 2,
+        joint_position_tolerance: float = 0.05,
     ) -> None:
         self.node = node
         self.geometry = geometry
         self.action_client = action_client or ActionClient(
             node, MoveToPose, MOVE_ACTION,
         )
+        self.joints_client = joints_client
+        if self.joints_client is None and node is not None:
+            self.joints_client = ActionClient(node, MoveToJoints, JOINTS_ACTION)
         self.named_client = named_client or node.create_client(
             MoveToNamedPose, NAMED_SERVICE,
         )
@@ -147,6 +153,8 @@ class MotionAdapter:
         self.stability_epsilon = float(stability_epsilon)
         self.stability_angle = float(stability_angle)
         self.pose_correction_attempts = max(1, int(pose_correction_attempts))
+        self.joint_position_tolerance = float(joint_position_tolerance)
+        self._joint_positions: tuple[float, ...] | None = None
         self.stopped = False
         self.stop_reason: str | None = None
         self._last_joint_time = None
@@ -155,8 +163,9 @@ class MotionAdapter:
 
     # ------------------------------------------------------------------ freshness
     def _on_joint_state(self, message: JointState) -> None:
-        del message
         self._last_joint_time = self.node.get_clock().now()
+        if len(message.position) == 7:
+            self._joint_positions = tuple(float(value) for value in message.position)
 
     def _default_freshness(self) -> tuple[bool, str]:
         if self._last_joint_time is None:
@@ -327,6 +336,84 @@ class MotionAdapter:
 
     def move_named(self, name: str, speed: float = 0.2, label: str = '') -> MotionResult:
         label = label or f'move_named({name})'
+        joints = self.geometry.named_joints.get(name)
+        if self.joints_client is not None and joints is not None:
+            result = self.move_joints(joints, speed, label)
+            if result.success:
+                return result
+            planning_failed = (
+                'Планирование' in result.message
+                or 'planning' in result.message.lower()
+                or 'недостижима' in result.message
+            )
+            if not planning_failed:
+                return result
+            # A joint-space plan can be rejected in an unusual scene; retry
+            # the named service once as the fallback path.
+            self.reset_stop()
+        return self._move_named_service(name, speed, label)
+
+    def move_joints(
+        self,
+        joints,
+        speed: float = 0.2,
+        label: str = '',
+    ) -> MotionResult:
+        label = label or 'move_joints'
+        values = tuple(float(value) for value in joints)
+        if len(values) != 7:
+            return MotionResult(False, 'joint goal must contain 7 values', label)
+        blocked = self._guard(label, speed, 'ptp')
+        if blocked is not None:
+            return blocked
+        if self.joints_client is None:
+            return MotionResult(False, f'{JOINTS_ACTION} is unavailable', label)
+        if not self.joints_client.wait_for_server(timeout_sec=5.0):
+            return MotionResult(False, f'{JOINTS_ACTION} is unavailable', label)
+
+        request = MoveToJoints.Goal()
+        request.joints = list(values)
+        request.speed = float(speed)
+        started = time.monotonic()
+        future = self.joints_client.send_goal_async(request)
+        if not self._spin_until(future, self.command_timeout_sec):
+            return self._fail(label, 'joint goal response timed out', None, started)
+        try:
+            goal_handle = future.result()
+        except Exception as error:
+            return self._fail(label, f'joint goal call failed: {error}', None, started)
+        if goal_handle is None or not goal_handle.accepted:
+            return self._fail(label, 'joint goal was rejected', None, started)
+        result_future = goal_handle.get_result_async()
+        if not self._spin_until(result_future, self.command_timeout_sec):
+            return self._fail(label, 'joint result timed out', None, started)
+        try:
+            result = result_future.result().result
+        except Exception as error:
+            return self._fail(label, f'joint result failed: {error}', None, started)
+        if not result.success:
+            return self._fail(
+                label, result.message or 'joint motion failed', None, started,
+            )
+        self._settle()
+        actual = self._joint_positions
+        if actual is not None and len(actual) == 7:
+            error = max(abs(a - b) for a, b in zip(actual, values))
+            if error > self.joint_position_tolerance:
+                return self._fail(
+                    label,
+                    f'joint positions are {error:.4f} rad from the joint goal',
+                    None,
+                    started,
+                )
+        return MotionResult(
+            True, 'joint motion completed', label, True, None, self.actual_tcp(),
+            time.monotonic() - started,
+        )
+
+    def _move_named_service(
+        self, name: str, speed: float, label: str,
+    ) -> MotionResult:
         blocked = self._guard(label, speed, 'ptp')
         if blocked is not None:
             return blocked

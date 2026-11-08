@@ -102,6 +102,7 @@ def goal():
 def make_adapter(
     *,
     action=None,
+    joints=None,
     named=None,
     stop=None,
     fresh=True,
@@ -117,6 +118,7 @@ def make_adapter(
         node=None,
         geometry=g,
         action_client=action,
+        joints_client=joints,
         named_client=named,
         stop_client=stop,
         tf_buffer=object(),
@@ -205,6 +207,16 @@ def test_actual_pose_out_of_tolerance_stops_the_robot():
     assert 'from the goal' in result.message
     assert adapter.stopped is True
     assert stop.calls == 1
+
+
+def test_named_motion_uses_the_joint_action_when_available():
+    joints = FakeActionClient()
+    adapter, action, _, _ = make_adapter(joints=joints)
+    result = adapter.move_named('home', speed=0.2)
+    assert result.success
+    assert len(joints.requests) == 1
+    assert list(joints.requests[0].joints) == [0.0] * 7
+    assert joints.requests[0].speed == pytest.approx(0.2)
 
 
 def test_named_motion_uses_the_existing_service():
