@@ -7,6 +7,12 @@ from ament_index_python.packages import get_package_share_directory
 PACKAGE = Path(__file__).resolve().parents[1]
 
 
+def test_package_installs_both_run_mode_executables():
+    text = (PACKAGE / 'setup.py').read_text(encoding='utf-8')
+    assert 'grant_supervisor = iiwa_experement.grant_supervisor:main' in text
+    assert 'reference_runner = iiwa_experement.reference_runner:main' in text
+
+
 def test_package_declares_its_ros_dependencies():
     manifest = (PACKAGE / 'package.xml').read_text(encoding='utf-8')
     for dependency in (
@@ -48,8 +54,11 @@ def test_expected_resources_are_installed():
         'doc/experements.md',
         'doc/experiment-scenes.md',
         'doc/README.md',
+        'doc/reference-control-qa.md',
         'worlds/grant/iiwa-grant.wbt',
         'config/scenes.yaml',
+        'config/geometry.yaml',
+        'config/moveit_cpp.yaml',
         'launch/experiment.launch.py',
     ):
         path = share / relative

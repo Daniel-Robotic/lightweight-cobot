@@ -143,3 +143,14 @@ def test_missing_proto_is_reported(tmp_path):
 def test_missing_base_setting_is_reported(tmp_path):
     with pytest.raises(FileNotFoundError, match='base settings'):
         prepare(tmp_path, base_setting=tmp_path / 'missing.yaml')
+
+
+def test_temporary_setting_uses_the_package_moveit_cpp(tmp_path):
+    moveit_cpp = PACKAGE / 'config' / 'moveit_cpp.yaml'
+    _, setting_path = prepare(tmp_path, moveit_cpp_path=moveit_cpp)
+    data = yaml.safe_load(setting_path.read_text(encoding='utf-8'))
+    configured = data['controller']['moveit']['moveit_cpp']
+    assert configured == str(moveit_cpp.resolve())
+    assert 'moveit_cpp/monitored_planning_scene' in moveit_cpp.read_text(
+        encoding='utf-8'
+    )

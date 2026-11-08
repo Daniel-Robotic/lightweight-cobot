@@ -203,6 +203,7 @@ class GeometrySpec:
     orientation_tolerance_rad: float
     speeds: dict[str, float]
     scene_collisions: dict[str, Box]
+    safe_poses: dict[str, Transform]
 
     @property
     def body_top_local(self) -> float:
@@ -310,6 +311,14 @@ def load_geometry(path: Path | str) -> GeometrySpec:
         if not 0.0 < value <= 1.0:
             raise GeometryError(f'speeds.{key} must be within (0, 1]')
 
+    safe_raw = _mapping(data.get('safe_poses', {}), 'safe_poses')
+    safe_poses = {
+        name: _load_transform(
+            entry, f'safe_poses.{name}', 'world', f'safe_{name}',
+        )
+        for name, entry in safe_raw.items()
+    }
+
     scene_raw = _mapping(data.get('scene_collisions'), 'scene_collisions')
     scene_collisions = {}
     for name, entry in scene_raw.items():
@@ -386,6 +395,7 @@ def load_geometry(path: Path | str) -> GeometrySpec:
         orientation_tolerance_rad=orientation_tolerance,
         speeds=speeds,
         scene_collisions=scene_collisions,
+        safe_poses=safe_poses,
     )
 
 
@@ -489,6 +499,11 @@ def world_target(spec: ScenarioSpec, geometry: GeometrySpec, name: str) -> Trans
             spec.body.yaw_deg,
             child=hole_name,
         )
+    if name.startswith('safe:'):
+        pose_name = name.split(':', 1)[1]
+        if pose_name not in geometry.safe_poses:
+            raise GeometryError(f'unknown safe pose {pose_name!r}')
+        return geometry.safe_poses[pose_name]
     if name.startswith('sealant:'):
         side_name = name.split(':', 1)[1]
         return sealant_point(geometry, spec, side_name, 0.0)

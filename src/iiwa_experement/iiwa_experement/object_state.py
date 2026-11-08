@@ -71,6 +71,7 @@ class ObjectState:
             if spec.cap_state != 'absent'
             else None
         )
+        self.cap_relative: Transform | None = None
         self.tools: dict[str, dict[str, Any]] = {}
         for tool in spec.tools:
             self.tools[tool.name] = {
@@ -216,11 +217,19 @@ class ObjectState:
         self._require_free_hand('grab_cap')
         if self.cap_state not in ('free', 'installed'):
             self._reject(f'hatch is not available (state={self.cap_state!r})')
-        self._require_close(
-            tcp,
-            self._expected_tcp(object_pose, self.geometry.cap_tcp_to_node),
-            'grab_cap',
-        )
+        # The suction cup is rotationally symmetric.  Require the correct
+        # position and a downward tcp, but allow any grasp yaw; the measured
+        # relative rotation is stored and reused for placement.
+        expected_position = object_pose.position + np.array([0.0, 0.0, 0.146])
+        distance = float(np.linalg.norm(tcp.position - expected_position))
+        if distance > self.geometry.position_tolerance:
+            self._reject(
+                f'grab_cap: tcp is {distance:.4f} m from the hatch '
+                f'(limit {self.geometry.position_tolerance:.4f} m)'
+            )
+        if tcp.matrix[2, 2] > -0.9:
+            self._reject('grab_cap: tcp does not point down at the hatch')
+        self.cap_relative = tcp.inverse().compose_relaxed(object_pose)
         self.cap_state = 'held'
         self.cap_pose = object_pose
         self.held_object = 'cap'
@@ -238,12 +247,13 @@ class ObjectState:
         self._require_instrument('vacuum', 'place_cap')
         if self.held_object != 'cap':
             self._reject('place_cap requires the hatch to be held')
+        relative = self.cap_relative or self.geometry.cap_tcp_to_node
         self._require_close(
             tcp,
-            self._expected_tcp(target, self.geometry.cap_tcp_to_node),
+            self._expected_tcp(target, relative),
             'place_cap',
         )
-        if _position_distance(object_pose, tcp.compose_relaxed(self.geometry.cap_tcp_to_node)) > (
+        if _position_distance(object_pose, tcp.compose_relaxed(relative)) > (
             self.geometry.position_tolerance
         ):
             self._reject('place_cap: hatch does not follow the suction cup')

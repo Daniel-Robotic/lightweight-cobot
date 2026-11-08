@@ -205,3 +205,23 @@ def test_rejected_command_preserves_version_and_snapshot():
     with pytest.raises(CommandError):
         state.attach_tool('vacuum', state.cap_pose, state.cap_pose)
     assert state.snapshot()['version'] == snapshot['version']
+
+
+def test_hatch_can_be_grasped_at_a_reachable_yaw_and_rotated_to_the_seat():
+    state = make_state(2)
+    cap_pose = state.cap_pose
+    goal = type(cap_pose).from_xyz_rpy(
+        [cap_pose.xyz[0], cap_pose.xyz[1], cap_pose.xyz[2] + 0.146],
+        [180.0, 0.0, 45.0],
+        parent='world',
+        child='tcp',
+    )
+    attach_tool(state, 'vacuum')
+    state.grab_cap(goal, cap_pose)
+    assert state.cap_relative is not None
+    target = world_target(state.spec, state.geometry, 'cap_seat')
+    place_tcp = tcp_goal(target, state.cap_relative)
+    place_object = place_tcp.compose_relaxed(state.cap_relative)
+    state.place_cap(target, place_tcp, place_object)
+    assert state.cap_state == 'installed'
+    assert state.cap_pose.position == pytest.approx(target.position, abs=1e-9)

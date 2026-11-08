@@ -160,10 +160,13 @@ def runtime_actions(
             executable='reference_runner',
             name='reference_runner',
             output='screen',
-            parameters=[runner_parameters(
-                experiment_id, scene_config, geometry_path,
-                start_delay_sec, trace_dir,
-            )],
+            parameters=[
+                runner_parameters(
+                    experiment_id, scene_config, geometry_path,
+                    start_delay_sec, trace_dir,
+                ),
+                {'use_sim_time': True},
+            ],
         ))
     if cleanup_dir is not None:
         actions.append(RegisterEventHandler(

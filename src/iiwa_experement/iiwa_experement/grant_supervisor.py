@@ -112,6 +112,8 @@ class GrantSupervisorNode(Node):
         self.state = ObjectState(self.spec, self.geometry, read_only=read_only)
         self.tool_held: str | None = None
         self.payload: tuple[str, str] | None = None
+        self.cap_relative: Transform | None = None
+        self.removed_defs: set[str] = set()
         self.last_command_result: dict[str, Any] | None = None
         self.rack_poses = {
             name: entry['pose'] for name, entry in self.state.tools.items()
@@ -162,6 +164,9 @@ class GrantSupervisorNode(Node):
         )
 
     def _find_node(self, name: str):
+        if name in self.removed_defs:
+            # Querying a DEF after Node.remove() can crash Webots.
+            return None
         try:
             return self.robot.getFromDef(name)
         except Exception:
@@ -231,7 +236,7 @@ class GrantSupervisorNode(Node):
             names.extend(f'grant_screw_{index:02d}' for index in range(1, 11))
         if self.spec.cap_state != 'absent':
             names.append('grant_cap')
-        return names
+        return [name for name in names if name not in self.removed_defs]
 
     def _tool_node(self):
         if self.tool_held is None:
@@ -253,7 +258,7 @@ class GrantSupervisorNode(Node):
             return None
         kind, _ = self.payload
         if kind == 'cap':
-            return self.geometry.cap_tcp_to_node
+            return self.cap_relative or self.geometry.cap_tcp_to_node
         if kind == 'screw':
             return self.geometry.screw_tcp_to_node
         return None
@@ -360,6 +365,7 @@ class GrantSupervisorNode(Node):
             if object_pose is None:
                 raise CommandError('hatch node is unavailable')
             self.state.grab_cap(tcp, object_pose, request_id=request_id)
+            self.cap_relative = self.state.cap_relative
             self.payload = ('cap', 'cap')
             return True, None
         if operation == 'place_cap':
@@ -394,11 +400,20 @@ class GrantSupervisorNode(Node):
             )
             self.payload = None
             if node is not None:
+                # Node.remove() during a live simulation crashes Webots in
+                # some R2025a builds.  Teleport the delivered screw far
+                # outside the arena; from the experiment's point of view it
+                # has disappeared, and the DEF is never queried again.
                 try:
-                    node.remove()
+                    node.getField('translation').setSFVec3f([100.0, 100.0, -100.0])
+                    rotation = node.getField('rotation')
+                    if rotation is not None:
+                        rotation.setSFRotation([0.0, 0.0, 1.0, 0.0])
                 except Exception:
                     pass
-            self.nodes.pop(screw_def_name(kind), None)
+            removed = screw_def_name(kind)
+            self.removed_defs.add(removed)
+            self.nodes.pop(removed, None)
             return True, None
         raise CommandError(f'unknown supervisor operation {operation!r}')
 

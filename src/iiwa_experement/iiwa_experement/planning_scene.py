@@ -628,6 +628,27 @@ class PlanningSceneBridge:
                 continue
             world, attached = scene_ids(scene)
             if expected_world <= world and expected_attached <= attached:
+                # Drop stale extras from move_group's maintained scene.  A
+                # removed tool must not be reintroduced by the relay.
+                scene.world.collision_objects = [
+                    obj for obj in scene.world.collision_objects
+                    if obj.id in expected_world
+                ]
+                scene.robot_state.attached_collision_objects = [
+                    entry for entry in scene.robot_state.attached_collision_objects
+                    if entry.object.id in expected_attached
+                ]
+                # Keep the SRDF-derived ACM.  move_group can report an
+                # empty matrix early in startup; relaying that would make
+                # MoveItPy treat adjacent robot links as collisions.
+                if self._acm_names:
+                    scene.allowed_collision_matrix.entry_names = list(self._acm_names)
+                    scene.allowed_collision_matrix.entry_values = [
+                        AllowedCollisionEntry(
+                            enabled=[bool(value) for value in row],
+                        )
+                        for row in self._acm_values
+                    ]
                 scene.is_diff = False
                 scene.robot_state.is_diff = True
                 self._publisher.publish(scene)

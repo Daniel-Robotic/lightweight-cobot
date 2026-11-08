@@ -80,6 +80,7 @@ def make_node(experiment_id=1):
     node.state = ObjectState(spec, geometry)
     node.tool_held = None
     node.payload = None
+    node.removed_defs = set()
     node.rack_poses = {
         name: entry['pose'] for name, entry in node.state.tools.items()
     }
@@ -206,8 +207,9 @@ def test_grab_and_handoff_remove_only_the_selected_screw():
         'h',
     )
     assert accepted, error
-    assert screw_node.removed is True
-    assert node.nodes['grant_screw_02'].removed is False
+    assert screw_node.translation.value == pytest.approx([100.0, 100.0, -100.0])
+    assert 'grant_screw_01' in node.removed_defs
+    assert 'grant_screw_02' not in node.removed_defs
     assert node.state.holes['hole_1']['state'] == 'empty'
 
 

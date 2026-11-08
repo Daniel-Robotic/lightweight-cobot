@@ -53,7 +53,9 @@ tool_tcp_to_nodes:
 # Boxes expressed in the tcp frame, used for the attached collision object.
 tool_collisions:
   vacuum: {size: [0.0821, 0.081, 0.140], offset: [0.0, 0.0, 0.070]}
-  magnetic_tool: {size: [0.036, 0.036, 0.140], offset: [0.0, 0.0, 0.070]}
+  # The magnet is a thin rod; the 36 mm collar is at the top and must not
+  # collide with neighbouring 5.5 mm screws in the 20 mm tray grid.
+  magnetic_tool: {size: [0.012, 0.012, 0.140], offset: [0.0, 0.0, 0.070]}
   sealant_tool: {size: [0.0561, 0.0561, 0.140], offset: [0.0, 0.0, 0.070]}
 
 # Hatch (cap.obj) is 0.1384 x 0.0984 x 0.00367.  Its node origin is the lower
@@ -117,6 +119,16 @@ speeds:
   approach: 0.18
   contact: 0.06
   contour: 0.09
+
+# Calibrated safe Cartesian tcp poses (world frame).  They are used as an
+# OMPL fallback when a short PTP named motion is rejected.
+safe_poses:
+  work:
+    xyz: [0.1496, 0.0, 1.3139]
+    rpy_deg: [180.0, 0.0, 180.0]
+  home:
+    xyz: [-0.25, 0.0, 2.139]
+    rpy_deg: [0.0, 0.0, 0.0]
 
 # Conservative collision models for the static scene.  They mirror the
 # Webots bounding objects so MoveIt and the simulator agree.

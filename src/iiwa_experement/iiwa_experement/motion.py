@@ -111,6 +111,7 @@ class MotionAdapter:
         stability_timeout_sec: float = 5.0,
         stability_epsilon: float = 0.001,
         stability_angle: float = 0.01,
+        pose_correction_attempts: int = 2,
     ) -> None:
         self.node = node
         self.geometry = geometry
@@ -145,6 +146,7 @@ class MotionAdapter:
         self.stability_timeout_sec = max(0.0, float(stability_timeout_sec))
         self.stability_epsilon = float(stability_epsilon)
         self.stability_angle = float(stability_angle)
+        self.pose_correction_attempts = max(1, int(pose_correction_attempts))
         self.stopped = False
         self.stop_reason: str | None = None
         self._last_joint_time = None
@@ -265,46 +267,63 @@ class MotionAdapter:
         request.frame_id = 'base_link'
 
         started = time.monotonic()
-        future = self.action_client.send_goal_async(request)
-        if not self._spin_until(future, self.command_timeout_sec):
-            return self._fail(label, 'goal response timed out', base_goal, started)
-        try:
-            goal_handle = future.result()
-        except Exception as error:
-            return self._fail(label, f'goal call failed: {error}', base_goal, started)
-        if goal_handle is None or not goal_handle.accepted:
-            return self._fail(label, 'motion goal was rejected', base_goal, started)
+        last_actual: Transform | None = None
+        for attempt in range(self.pose_correction_attempts):
+            future = self.action_client.send_goal_async(request)
+            if not self._spin_until(future, self.command_timeout_sec):
+                return self._fail(label, 'goal response timed out', base_goal, started)
+            try:
+                goal_handle = future.result()
+            except Exception as error:
+                return self._fail(label, f'goal call failed: {error}', base_goal, started)
+            if goal_handle is None or not goal_handle.accepted:
+                return self._fail(label, 'motion goal was rejected', base_goal, started)
 
-        result_future = goal_handle.get_result_async()
-        if not self._spin_until(result_future, self.command_timeout_sec):
-            return self._fail(label, 'motion result timed out', base_goal, started)
-        try:
-            wrapped = result_future.result()
-            result = wrapped.result
-        except Exception as error:
-            return self._fail(label, f'motion result failed: {error}', base_goal, started)
-        if not result.success:
-            return self._fail(
-                label, result.message or 'motion server reported failure',
-                base_goal, started,
-            )
+            result_future = goal_handle.get_result_async()
+            if not self._spin_until(result_future, self.command_timeout_sec):
+                return self._fail(label, 'motion result timed out', base_goal, started)
+            try:
+                wrapped = result_future.result()
+                result = wrapped.result
+            except Exception as error:
+                return self._fail(label, f'motion result failed: {error}', base_goal, started)
+            if not result.success:
+                return self._fail(
+                    label, result.message or 'motion server reported failure',
+                    base_goal, started,
+                )
 
-        actual = self._settle_and_measure()
-        if actual is None:
-            return self._fail(label, 'actual tcp pose is unavailable after motion', base_goal, started)
-        distance, angle = _pose_distance(actual, base_goal)
-        if distance > self.position_tolerance or angle > self.orientation_tolerance:
+            actual = self._settle_and_measure()
+            last_actual = actual
+            if actual is None:
+                return self._fail(
+                    label, 'actual tcp pose is unavailable after motion',
+                    base_goal, started,
+                )
+            distance, angle = _pose_distance(actual, base_goal)
+            if distance <= self.position_tolerance and angle <= self.orientation_tolerance:
+                return MotionResult(
+                    True, 'motion completed', label, True, base_goal, actual,
+                    time.monotonic() - started,
+                )
+            if attempt + 1 < self.pose_correction_attempts:
+                # The action succeeded but the controller stopped outside the
+                # pose tolerance.  Re-issue the same verified goal once; this
+                # is a measured correction, not a blind repeat.
+                if self.node is not None:
+                    self.node.get_logger().warning(
+                        f'{label}: correcting tcp pose '
+                        f'({distance:.4f} m, {angle:.4f} rad off goal)'
+                    )
+                continue
             return self._fail(
                 label,
                 f'actual tcp is {distance:.4f} m / {angle:.4f} rad from the goal',
                 base_goal,
                 started,
-                actual=actual,
+                actual=last_actual,
             )
-        return MotionResult(
-            True, 'motion completed', label, True, base_goal, actual,
-            time.monotonic() - started,
-        )
+        return self._fail(label, 'motion failed without a result', base_goal, started)
 
     def move_named(self, name: str, speed: float = 0.2, label: str = '') -> MotionResult:
         label = label or f'move_named({name})'
@@ -327,6 +346,26 @@ class MotionAdapter:
         except Exception as error:
             return self._fail(label, f'named motion failed: {error}', None, started)
         if not response.success:
+            planning_failed = (
+                'Планирование' in (response.message or '')
+                or 'planning' in (response.message or '').lower()
+                or 'недостижима' in (response.message or '')
+            )
+            pose = self.geometry.safe_poses.get(name)
+            if planning_failed and pose is not None:
+                # PTP can be rejected from some tool sockets.  Fall back to a
+                # calibrated safe Cartesian pose with a collision-checked
+                # OMPL plan; the final tcp pose is verified as usual.
+                self.reset_stop()
+                fallback = self.move_pose(
+                    pose, planner='ompl', speed=speed, label=f'{label}:safe',
+                )
+                if fallback.success:
+                    return MotionResult(
+                        True, fallback.message, label, True, fallback.goal,
+                        fallback.actual, time.monotonic() - started,
+                    )
+                return fallback
             return self._fail(
                 label, response.message or 'named motion failed', None, started,
             )

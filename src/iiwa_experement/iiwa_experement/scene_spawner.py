@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 from webots_ros2_msgs.srv import SpawnNodeFromString
 
@@ -19,7 +21,7 @@ from .webots_nodes import build_nodes
 SPAWN_SERVICE = '/Ros2Supervisor/spawn_node_from_string'
 READY_SERVICE = '/iiwa_experement/scene_ready'
 DEFAULT_SERVICE_TIMEOUT = 120.0
-DEFAULT_RESPONSE_TIMEOUT = 30.0
+DEFAULT_RESPONSE_TIMEOUT = 60.0
 
 _NAME_RE = re.compile(r'name "([^"]+)"')
 
@@ -148,6 +150,10 @@ class SceneSpawnerNode(Node):
         )
         self.declare_parameter('experiment_id', 0)
         self.declare_parameter('scene_config', default_config)
+        self.declare_parameter('service_timeout_sec', DEFAULT_SERVICE_TIMEOUT)
+        self.declare_parameter('response_timeout_sec', DEFAULT_RESPONSE_TIMEOUT)
+        self.declare_parameter('startup_delay_sec', 0.0)
+        self.declare_parameter('robot_timeout_sec', 120.0)
         self._readiness = Readiness()
         self.create_service(Trigger, READY_SERVICE, self._handle_ready)
 
@@ -155,6 +161,30 @@ class SceneSpawnerNode(Node):
         response.success = self._readiness.ready
         response.message = self._readiness.message
         return response
+
+    def _wait_for_robot(self) -> None:
+        """Wait until the URDF robot and its controller are publishing.
+
+        The Ros2Supervisor service has a single executor: starting object
+        spawns at the same moment as the URDF/controller spawn can deadlock
+        both requests.  Waiting for /joint_states serialises them.
+        """
+        ready = {'value': False}
+
+        def on_joint_state(message) -> None:
+            if len(message.position) > 0:
+                ready['value'] = True
+
+        self.create_subscription(JointState, '/joint_states', on_joint_state, 10)
+        timeout = max(0.0, float(self.get_parameter('robot_timeout_sec').value))
+        deadline = time.monotonic() + timeout
+        while not ready['value'] and time.monotonic() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.2)
+        if not ready['value']:
+            raise SpawnError(
+                f'/joint_states did not appear within {timeout:g} s; '
+                'robot/controller is not ready'
+            )
 
     def run(self) -> None:
         experiment_id = int(self.get_parameter('experiment_id').value)
@@ -171,7 +201,21 @@ class SceneSpawnerNode(Node):
         plan = build_plan(experiment_id, scene_config, asset_root)
         self._readiness = plan.readiness
         client = self.create_client(SpawnNodeFromString, SPAWN_SERVICE)
-        execute_plan(plan, client, self)
+        delay = max(0.0, float(self.get_parameter('startup_delay_sec').value))
+        if delay:
+            self.get_logger().info(f'Waiting {delay:g} s for Webots to settle')
+            time.sleep(delay)
+        execute_plan(
+            plan,
+            client,
+            self,
+            service_timeout_sec=float(
+                self.get_parameter('service_timeout_sec').value
+            ),
+            response_timeout_sec=float(
+                self.get_parameter('response_timeout_sec').value
+            ),
+        )
         self.get_logger().info(self._readiness.message)
 
 

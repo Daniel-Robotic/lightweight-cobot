@@ -214,6 +214,7 @@ class ReferenceOperations:
         self.events: list[dict[str, Any]] = []
         self.completed_sealant: set[str] = set()
         self.last_sealant_point: tuple[str, float] | None = None
+        self.cap_relative: Transform | None = None
 
     # ------------------------------------------------------------------ helpers
     def _emit(self, operation: str, **payload) -> None:
@@ -236,13 +237,25 @@ class ReferenceOperations:
         allow_fallback: bool = True,
     ) -> MotionResult:
         result = self.motion.move_pose(goal, planner=planner, speed=speed, label=label)
-        if result.success:
-            return result
         planning_failed = (
             'Планирование' in result.message
             or 'planning' in result.message.lower()
             or 'недостижима' in result.message
         )
+        if not result.success and planning_failed:
+            # A collision-free replan after a failed search is not a blind
+            # repetition: no motion was executed and the scene is unchanged.
+            self.motion.reset_stop()
+            retry = self.motion.move_pose(
+                goal, planner=planner, speed=speed, label=f'{label}:retry',
+            )
+            if retry.success:
+                self._emit('motion_retry', label=label, planner=planner,
+                           reason=result.message)
+                return retry
+            result = retry
+        if result.success:
+            return result
         if allow_fallback and planner != 'ompl' and planning_failed:
             # A short LIN segment can be rejected because the arm chose a
             # different IK branch.  A collision-checked OMPL retry is safe;
@@ -383,7 +396,15 @@ class ReferenceOperations:
         try:
             self._require_synchronized()
             cap_pose = self.supervisor.object_pose('grant_cap')
-            goal = tcp_goal(cap_pose, self.geometry.cap_tcp_to_node)
+            # Use a reachable wrist yaw; the suction cup is symmetric and the
+            # measured relative rotation is used when the hatch is placed.
+            goal = Transform.from_xyz_rpy(
+                [cap_pose.xyz[0], cap_pose.xyz[1], cap_pose.xyz[2] + 0.146],
+                [180.0, 0.0, 45.0],
+                parent='world',
+                child='tcp',
+            )
+            self.cap_relative = goal.inverse().compose_relaxed(cap_pose)
             self._contact(
                 goal, 'pick_cap', remove_before_contact='grant_cap',
             )
@@ -400,7 +421,8 @@ class ReferenceOperations:
         try:
             self._require_synchronized()
             target = target_pose or world_target(self.spec, self.geometry, 'cap_seat')
-            goal = tcp_goal(target, self.geometry.cap_tcp_to_node)
+            relative = self.cap_relative or self.geometry.cap_tcp_to_node
+            goal = tcp_goal(target, relative)
             self._contact(
                 goal, 'place_cap',
                 remove_before_contact='grant_cap',
@@ -534,6 +556,59 @@ class ReferenceOperations:
         except Exception as error:
             self._emit('handoff_screw', object=screw_id, target=hole_id,
                        phase='failed', error=str(error))
+            raise
+
+    # ------------------------------------------------------------------ recovery
+    # ------------------------------------------------------------------ recovery
+    def simulate_grasp_failure(self, kind: str, name: str = '') -> OperationResult:
+        """Move to a grasp pose, do not attach, and restore the object."""
+        label = f'grasp_failed({kind}{":" + name if name else ""})'
+        self._emit('grasp_failed', object=name or kind, phase='start')
+        try:
+            if kind == 'cap':
+                pose = self.supervisor.object_pose('grant_cap')
+                goal = tcp_goal(pose, self.geometry.cap_tcp_to_node)
+                self._contact(goal, label, remove_before_contact='grant_cap')
+                self._retreat(goal, label)
+                self.bridge.add_world(
+                    'grant_cap', self.geometry.cap_collision, pose,
+                )
+                self._require_synchronized()
+            elif kind == 'screw':
+                def_name = screw_object_id(name)
+                pose = self.supervisor.object_pose(def_name)
+                goal = tcp_goal(pose, self.geometry.screw_tcp_to_node)
+                self._contact(goal, label, remove_before_contact=def_name)
+                self._retreat(goal, label)
+                self.bridge.add_world(
+                    def_name, self.geometry.screw_collision, pose,
+                )
+                self._require_synchronized()
+            else:
+                raise OperationError(f'unknown grasp target {kind!r}')
+            self._emit('grasp_failed', object=name or kind, phase='done')
+            return OperationResult(True, 'grasp_failed', label, tuple(self.events))
+        except Exception as error:
+            self._emit('grasp_failed', object=name or kind,
+                       phase='failed', error=str(error))
+            raise
+
+    def place_cap_shifted(self, dx: float = 0.003) -> OperationResult:
+        target = world_target(self.spec, self.geometry, 'cap_seat')
+        shifted = Transform(
+            xyz=(target.xyz[0] + dx, target.xyz[1], target.xyz[2]),
+            rotation=target.rotation,
+            parent=target.parent,
+            child=target.child,
+        )
+        self._emit('place_cap_shifted', object='cap', phase='start', dx=dx)
+        try:
+            result = self.place_cap(shifted)
+            self._emit('place_cap_shifted', object='cap', phase='done', dx=dx)
+            return result
+        except Exception as error:
+            self._emit('place_cap_shifted', object='cap', phase='failed',
+                       dx=dx, error=str(error))
             raise
 
     # ------------------------------------------------------------------ verifies
