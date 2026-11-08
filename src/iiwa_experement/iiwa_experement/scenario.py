@@ -17,6 +17,8 @@ import yaml
 CAP_STATES = ('absent', 'free', 'installed')
 TOOL_NAMES = ('vacuum', 'magnetic_tool', 'sealant_tool', 'torque_tool')
 EXPERIMENT_IDS = tuple(range(1, 21))
+SEALANT_SIDES = ('side_1', 'side_2', 'side_3', 'side_4')
+SCREW_HOLES = ('hole_1', 'hole_2', 'hole_3', 'hole_4')
 
 # Bounds of lotok.obj after its local Y axis is mapped to Webots Z. They are
 # repeated here so validation does not need a Webots process or the mesh file.
@@ -24,15 +26,13 @@ TRAY_HALF_LENGTH = 0.060
 TRAY_HALF_WIDTH = 0.035
 SCREW_RADIUS = 0.00275
 
-# Failure metadata is consumed by a future skill executor. It never changes
-# the initial pose of an object.
+# Failure metadata is consumed by the reference executor. It never changes
+# the initial pose of an object. Screws are handed to the virtual operator:
+# there is deliberately no tightening or seating failure.
 _ALLOWED_FAILURES = {
     'grab': {'grasp_failed'},
     'verify': {'not_ok'},
     'dispense': {'interrupted'},
-    'tighten': {'torque_not_reached'},
-    'seat_screw': {'not_seated'},
-    'press': {'failed'},
 }
 
 
@@ -95,10 +95,17 @@ class ScenarioSpec:
     tray_pose: Pose | None
     screws: tuple[Screw, ...]
     failures: tuple[Failure, ...]
+    sealant_sides: tuple[str, ...] = ()
+    screw_holes: tuple[str, ...] = ()
 
     @property
     def tool_names(self) -> tuple[str, ...]:
         return tuple(tool.name for tool in self.tools)
+
+    @property
+    def delivered_screw_count(self) -> int:
+        """Number of screws handed to the operator in this experiment."""
+        return len(self.screw_holes)
 
 
 def _mapping(value: Any, label: str) -> Mapping[str, Any]:
@@ -270,6 +277,28 @@ def _screws(
     return tuple(result)
 
 
+def _named_list(
+    raw: Any,
+    label: str,
+    allowed: tuple[str, ...],
+    experiment_id: int,
+) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ScenarioError(f'{label} must be a list')
+    result: list[str] = []
+    for index, name in enumerate(raw):
+        if not isinstance(name, str) or name not in allowed:
+            raise ScenarioError(
+                f'{label}[{index}] must be one of {list(allowed)}'
+            )
+        if name in result:
+            raise ScenarioError(f'{label} contains duplicate {name!r}')
+        result.append(name)
+    return tuple(result)
+
+
 def _failures(raw: Any, experiment_id: int) -> tuple[Failure, ...]:
     if raw is None:
         return ()
@@ -392,6 +421,32 @@ def load_scenario(experiment_id: int, manifest_path: Path | str) -> ScenarioSpec
             raise ScenarioError(f'experiment {experiment_id}: tray_pose requires tray: true')
         tray_pose = None
 
+    sealant_sides = _named_list(
+        entry.get('sealant'), f'experiments.{experiment_id}.sealant',
+        SEALANT_SIDES, experiment_id,
+    )
+    if sealant_sides and 'sealant_tool' not in entry.get('tools', []):
+        raise ScenarioError(
+            f'experiment {experiment_id}: sealant sides require the sealant_tool'
+        )
+
+    screw_holes = _named_list(
+        entry.get('screw_holes'), f'experiments.{experiment_id}.screw_holes',
+        SCREW_HOLES, experiment_id,
+    )
+    if tray_pose is None and screw_holes:
+        raise ScenarioError(
+            f'experiment {experiment_id}: screw holes require a screw tray'
+        )
+    if tray_pose is not None and not screw_holes:
+        raise ScenarioError(
+            f'experiment {experiment_id}: a screw tray requires screw_holes'
+        )
+    if screw_holes and 'magnetic_tool' not in entry.get('tools', []):
+        raise ScenarioError(
+            f'experiment {experiment_id}: screw holes require the magnetic_tool'
+        )
+
     return ScenarioSpec(
         experiment_id=experiment_id,
         fixture=fixture,
@@ -403,4 +458,6 @@ def load_scenario(experiment_id: int, manifest_path: Path | str) -> ScenarioSpec
         tray_pose=tray_pose,
         screws=_screws(entry, data, experiment_id, tray_pose),
         failures=_failures(entry.get('failures'), experiment_id),
+        sealant_sides=sealant_sides,
+        screw_holes=screw_holes,
     )

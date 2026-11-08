@@ -113,66 +113,85 @@ experiments:
   "6":
     cap: absent
     tools: [sealant_tool]
+    sealant: [side_1]
   "7":
     cap: absent
     tools: [sealant_tool]
+    sealant: [side_1, side_2]
   "8":
     cap: absent
     tools: [sealant_tool]
+    sealant: [side_1, side_2, side_3, side_4]
   "9":
     cap: absent
     tools: [sealant_tool]
+    sealant: [side_1, side_2, side_3, side_4]
     failures:
       - {skill: dispense, outcome: interrupted, target: side_3, attempt: 1}
   "10":
     cap: free
     tools: [sealant_tool, vacuum]
+    sealant: [side_1, side_2, side_3, side_4]
   "11":
     cap: installed
     tray: true
     tools: [magnetic_tool]
+    screw_holes: [hole_1]
   "12":
     cap: installed
     tray: true
     tools: [magnetic_tool]
+    screw_holes: [hole_1, hole_3]
   "13":
     cap: installed
     tray: true
     tools: [magnetic_tool]
+    screw_holes: [hole_1, hole_2, hole_3]
   "14":
     cap: installed
     tray: true
-    tools: [magnetic_tool, torque_tool]
+    tools: [magnetic_tool]
+    screw_holes: [hole_1, hole_3, hole_2, hole_4]
   "15":
     cap: installed
     tray: true
-    tools: [magnetic_tool, torque_tool]
+    tools: [magnetic_tool]
+    screw_holes: [hole_1, hole_3, hole_2, hole_4]
     failures:
       - {skill: grab, outcome: grasp_failed, target: third_selected_screw, attempt: 1}
-      - {skill: tighten, outcome: torque_not_reached, target: hole_4, attempt: 1}
   "16":
     cap: free
     tray: true
-    tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
+    tools: [vacuum, magnetic_tool, sealant_tool]
+    sealant: [side_1]
+    screw_holes: [hole_1]
   "17":
     cap: free
     tray: true
-    tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
+    tools: [vacuum, magnetic_tool, sealant_tool]
+    sealant: [side_1, side_2, side_3, side_4]
+    screw_holes: [hole_1, hole_3]
   "18":
     cap: free
     tray: true
-    tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
+    tools: [vacuum, magnetic_tool, sealant_tool]
+    sealant: [side_1, side_2, side_3, side_4]
+    screw_holes: [hole_1, hole_3, hole_2, hole_4]
   "19":
     cap: free
     cap_pose: {x: 0.37, y: -0.20, z: 0.790667, yaw_deg: 60}
     tray: true
     tray_pose: {x: 0.18, y: 0.48, z: 0.793, yaw_deg: 0}
-    tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
+    tools: [vacuum, magnetic_tool, sealant_tool]
+    sealant: [side_1, side_2, side_3, side_4]
+    screw_holes: [hole_1, hole_3, hole_2, hole_4]
   "20":
     cap: free
     tray: true
-    tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
+    tools: [vacuum, magnetic_tool, sealant_tool]
+    sealant: [side_1, side_2, side_3, side_4]
+    screw_holes: [hole_1, hole_3, hole_2, hole_4]
     failures:
-      - {skill: dispense, outcome: interrupted, attempt: 1}
-      - {skill: grab, outcome: grasp_failed, attempt: 1}
+      - {skill: dispense, outcome: interrupted, target: side_3, attempt: 1}
+      - {skill: grab, outcome: grasp_failed, target: first_selected_screw, attempt: 1}
       - {skill: verify, outcome: not_ok, target: cap, attempt: 1}

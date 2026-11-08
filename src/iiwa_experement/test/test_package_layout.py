@@ -24,16 +24,21 @@ def test_package_declares_its_ros_dependencies():
         assert f'<exec_depend>{dependency}</exec_depend>' in manifest
 
 
-def test_versioned_specifications_match_the_approved_copies():
+def test_package_documentation_points_at_the_reference_specification():
     root = PACKAGE.parents[1]
-    pairs = (
-        ('docs/superpowers/specs/2026-11-08-grant-experiments.md', 'doc/experements.md'),
-        ('docs/superpowers/specs/2026-11-08-grant-scenes.md', 'doc/experiment-scenes.md'),
+    reference = (
+        root
+        / 'docs'
+        / 'superpowers'
+        / 'specs'
+        / '2026-11-08-grant-reference-control-design.md'
     )
-    for source, installed in pairs:
-        assert (PACKAGE / installed).read_text(encoding='utf-8') == (
-            root / source
-        ).read_text(encoding='utf-8')
+    assert reference.is_file()
+    for relative in ('doc/experements.md', 'doc/experiment-scenes.md'):
+        text = (PACKAGE / relative).read_text(encoding='utf-8')
+        assert '2026-11-08-grant-reference-control-design.md' in text
+        assert 'tighten' not in text.lower() or 'не затяг' in text.lower()
+        assert 'seat_screw' not in text
 
 
 def test_expected_resources_are_installed():

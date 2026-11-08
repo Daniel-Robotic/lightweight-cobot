@@ -88,18 +88,52 @@ def test_screw_experiments_have_installed_hatch_and_ten_screws():
         assert spec.cap_state == 'installed'
         assert spec.tray_pose is not None
         assert len(spec.screws) == 10
-        assert spec.tool_names[0] == 'magnetic_tool'
-    assert set(scenario(14).tool_names) == {'magnetic_tool', 'torque_tool'}
-    assert set(scenario(15).tool_names) == {'magnetic_tool', 'torque_tool'}
+        assert spec.tool_names == ('magnetic_tool',)
+        assert 'torque_tool' not in spec.tool_names
+        assert len(spec.screw_holes) == {
+            11: 1, 12: 2, 13: 3, 14: 4, 15: 4,
+        }[experiment_id]
 
 
-def test_full_assembly_experiments_have_loose_hatch_tray_and_all_tools():
+def test_full_assembly_experiments_have_loose_hatch_tray_and_no_torque_tool():
     for experiment_id in range(16, 21):
         spec = scenario(experiment_id)
         assert spec.cap_state == 'free'
         assert spec.tray_pose is not None
         assert len(spec.screws) == 10
-        assert set(spec.tool_names) == STANDARD_TOOLS
+        assert set(spec.tool_names) == {'vacuum', 'magnetic_tool', 'sealant_tool'}
+        assert 'torque_tool' not in spec.tool_names
+        assert len(spec.screw_holes) == {16: 1, 17: 2, 18: 4, 19: 4, 20: 4}[experiment_id]
+
+
+def test_sealant_coverage_matches_each_experiment():
+    assert scenario(6).sealant_sides == ('side_1',)
+    assert scenario(7).sealant_sides == ('side_1', 'side_2')
+    for experiment_id in (8, 9, 10, 17, 18, 19, 20):
+        assert scenario(experiment_id).sealant_sides == (
+            'side_1', 'side_2', 'side_3', 'side_4',
+        )
+    assert scenario(16).sealant_sides == ('side_1',)
+    for experiment_id in (1, 2, 3, 4, 5, 11, 12, 13, 14, 15):
+        assert scenario(experiment_id).sealant_sides == ()
+
+
+def test_screw_holes_are_unique_bounded_and_ordered():
+    for experiment_id in range(11, 21):
+        holes = scenario(experiment_id).screw_holes
+        assert len(holes) == len(set(holes))
+        assert set(holes) <= {'hole_1', 'hole_2', 'hole_3', 'hole_4'}
+    assert scenario(14).screw_holes == ('hole_1', 'hole_3', 'hole_2', 'hole_4')
+    assert scenario(15).screw_holes == ('hole_1', 'hole_3', 'hole_2', 'hole_4')
+
+
+def test_reference_experiments_never_request_tightening():
+    for experiment_id in range(1, 21):
+        spec = scenario(experiment_id)
+        assert all(
+            failure.skill not in ('tighten', 'seat_screw')
+            for failure in spec.failures
+        )
 
 
 def test_standard_screw_layout_matches_the_specification():
@@ -162,13 +196,12 @@ def test_failure_metadata_for_experiments_four_nine_fifteen_twenty():
     fifteen = [(f.skill, f.outcome, f.target) for f in scenario(15).failures]
     assert fifteen == [
         ('grab', 'grasp_failed', 'third_selected_screw'),
-        ('tighten', 'torque_not_reached', 'hole_4'),
     ]
-    twenty = [(f.skill, f.outcome) for f in scenario(20).failures]
+    twenty = [(f.skill, f.outcome, f.target) for f in scenario(20).failures]
     assert twenty == [
-        ('dispense', 'interrupted'),
-        ('grab', 'grasp_failed'),
-        ('verify', 'not_ok'),
+        ('dispense', 'interrupted', 'side_3'),
+        ('grab', 'grasp_failed', 'first_selected_screw'),
+        ('verify', 'not_ok', 'cap'),
     ]
 
 
@@ -211,6 +244,8 @@ def test_incorrect_screw_count_is_rejected(tmp_path, count):
 
     def mutate(data):
         data['experiments']['1']['tray'] = True
+        data['experiments']['1']['tools'] = ['magnetic_tool']
+        data['experiments']['1']['screw_holes'] = ['hole_1']
         data['experiments']['1']['screws'] = entries
 
     with pytest.raises(ScenarioError, match='exactly 10 screws'):
@@ -225,6 +260,8 @@ def test_duplicate_screw_name_is_rejected(tmp_path):
 
     def mutate(data):
         data['experiments']['1']['tray'] = True
+        data['experiments']['1']['tools'] = ['magnetic_tool']
+        data['experiments']['1']['screw_holes'] = ['hole_1']
         data['experiments']['1']['screws'] = entries
 
     with pytest.raises(ScenarioError, match='duplicate screw name'):
@@ -240,6 +277,8 @@ def test_screw_outside_the_tray_is_rejected(tmp_path):
 
     def mutate(data):
         data['experiments']['1']['tray'] = True
+        data['experiments']['1']['tools'] = ['magnetic_tool']
+        data['experiments']['1']['screw_holes'] = ['hole_1']
         data['experiments']['1']['screws'] = entries
 
     with pytest.raises(ScenarioError, match='outside the tray'):
@@ -279,3 +318,27 @@ def test_tray_without_screws_and_screws_without_tray_are_rejected(tmp_path):
 def test_missing_manifest_is_reported(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_scenario(1, tmp_path / 'missing.yaml')
+
+
+def test_invalid_sealant_side_is_rejected(tmp_path):
+    def mutate(data):
+        data['experiments']['6']['sealant'] = ['side_5']
+
+    with pytest.raises(ScenarioError, match='sealant'):
+        load_scenario(6, variant(tmp_path, mutate))
+
+
+def test_invalid_screw_hole_is_rejected(tmp_path):
+    def mutate(data):
+        data['experiments']['11']['screw_holes'] = ['hole_5']
+
+    with pytest.raises(ScenarioError, match='screw_holes'):
+        load_scenario(11, variant(tmp_path, mutate))
+
+
+def test_tray_without_screw_holes_is_rejected(tmp_path):
+    def mutate(data):
+        data['experiments']['11'].pop('screw_holes')
+
+    with pytest.raises(ScenarioError, match='requires screw_holes'):
+        load_scenario(11, variant(tmp_path, mutate))
