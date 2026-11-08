@@ -117,6 +117,7 @@ def _materialize_setting(
     base_setting: Path,
     world_path: Path,
     output_dir: Path,
+    moveit_cpp_path: Path | None = None,
 ) -> Path:
     if not base_setting.is_file():
         raise FileNotFoundError(f'base settings file does not exist: {base_setting}')
@@ -134,6 +135,11 @@ def _materialize_setting(
     tool = _mapping(data.setdefault('tool', {}), 'tool')
     tool['active'] = 'patron'
 
+    if moveit_cpp_path is not None:
+        controller = _mapping(data.setdefault('controller', {}), 'controller')
+        moveit = _mapping(controller.setdefault('moveit', {}), 'controller.moveit')
+        moveit['moveit_cpp'] = str(Path(moveit_cpp_path).resolve())
+
     setting_path = output_dir / 'setting.yaml'
     setting_path.write_text(
         yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
@@ -147,6 +153,7 @@ def prepare_runtime_files(
     world_template: Path | str,
     description_share: Path | str,
     output_dir: Path | str,
+    moveit_cpp_path: Path | str | None = None,
 ) -> tuple[Path, Path]:
     """Write an isolated world/settings pair and return ``(world, setting)``.
 
@@ -161,5 +168,10 @@ def prepare_runtime_files(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     world_path = _materialize_world(world_template, description_share, output_dir)
-    setting_path = _materialize_setting(base_setting, world_path, output_dir)
+    setting_path = _materialize_setting(
+        base_setting,
+        world_path,
+        output_dir,
+        None if moveit_cpp_path is None else Path(moveit_cpp_path),
+    )
     return world_path, setting_path

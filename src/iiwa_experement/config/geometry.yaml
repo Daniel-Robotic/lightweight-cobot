@@ -128,18 +128,28 @@ scene_collisions:
     type: box
     size: [1.28, 1.08, 0.045]
     offset_z: 0.7665
-  fixture:
+  # The fixture is a frame, not a solid block: a low base plate and two
+  # side rails.  A full box would cover the hatch seat and make placement
+  # impossible.
+  fixture_base:
     type: box
-    size: [0.350, 0.220, 0.041]
-    offset_z: 0.0105
+    size: [0.350, 0.220, 0.010]
+    offset_z: -0.005
+  fixture_rail:
+    type: box
+    size: [0.014, 0.156, 0.016]
+    offset_z: 0.008
+    offset_x: 0.104
   body:
     type: box
     size: [0.300, 0.170, 0.00915]
     offset_z: 0.000695
   rack:
+    # The magazine is represented by its base plate only.  Keep it just
+    # below the tool sockets so the vertical tool bodies do not overlap it.
     type: box
     size: [0.420, 0.140, 0.010]
-    offset_z: 0.005
+    offset_z: -0.015
   tray_base:
     type: box
     size: [0.120, 0.070, 0.0024]

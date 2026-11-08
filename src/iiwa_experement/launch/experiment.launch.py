@@ -226,6 +226,7 @@ def _setup(context, *args, **kwargs):
             world_template=world_template,
             description_share=description_share,
             output_dir=output_dir,
+            moveit_cpp_path=package_share / 'config' / 'moveit_cpp.yaml',
         )
     except Exception:
         shutil.rmtree(output_dir, ignore_errors=True)

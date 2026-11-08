@@ -107,7 +107,10 @@ class MotionAdapter:
         position_tolerance: float | None = None,
         orientation_tolerance: float | None = None,
         command_timeout_sec: float = 90.0,
-        settle_time_sec: float = 0.5,
+        settle_time_sec: float = 1.0,
+        stability_timeout_sec: float = 5.0,
+        stability_epsilon: float = 0.001,
+        stability_angle: float = 0.01,
     ) -> None:
         self.node = node
         self.geometry = geometry
@@ -139,6 +142,9 @@ class MotionAdapter:
         )
         self.command_timeout_sec = float(command_timeout_sec)
         self.settle_time_sec = max(0.0, float(settle_time_sec))
+        self.stability_timeout_sec = max(0.0, float(stability_timeout_sec))
+        self.stability_epsilon = float(stability_epsilon)
+        self.stability_angle = float(stability_angle)
         self.stopped = False
         self.stop_reason: str | None = None
         self._last_joint_time = None
@@ -283,8 +289,7 @@ class MotionAdapter:
                 base_goal, started,
             )
 
-        self._settle()
-        actual = self.actual_tcp()
+        actual = self._settle_and_measure()
         if actual is None:
             return self._fail(label, 'actual tcp pose is unavailable after motion', base_goal, started)
         distance, angle = _pose_distance(actual, base_goal)
@@ -342,6 +347,37 @@ class MotionAdapter:
                 self.node,
                 timeout_sec=min(0.05, max(0.0, end - time.monotonic())),
             )
+
+    def _settle_and_measure(self) -> Transform | None:
+        """Wait until the controller stops moving before verifying tcp.
+
+        The action result is delivered when the trajectory finishes, but the
+        joint trajectory controller can still be settling.  Treating the
+        first sample as final caused false out-of-tolerance stops.
+        """
+        self._settle()
+        import rclpy
+
+        deadline = time.monotonic() + self.stability_timeout_sec
+        last = self.actual_tcp()
+        stable_since = None
+        while time.monotonic() < deadline and self.node is not None:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+            current = self.actual_tcp()
+            if current is None:
+                last = None
+                stable_since = None
+                continue
+            if last is not None:
+                distance, angle = _pose_distance(current, last)
+                if distance <= self.stability_epsilon and angle <= self.stability_angle:
+                    stable_since = stable_since or time.monotonic()
+                    if time.monotonic() - stable_since >= 0.25:
+                        return current
+                else:
+                    stable_since = None
+            last = current
+        return last
 
     def _fail(
         self,

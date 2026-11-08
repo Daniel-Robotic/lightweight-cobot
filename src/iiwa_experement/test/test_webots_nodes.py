@@ -232,13 +232,11 @@ def test_loose_cap_touches_the_table_and_installed_cap_touches_the_body():
             assert cap_z + cap_min == pytest.approx(body_z + body_max, abs=1e-9)
 
 
-def test_free_cap_has_physics_and_installed_cap_is_locked():
-    free_cap = by_name(nodes(1))['grant_cap']
-    assert 'physics Physics {' in free_cap
-    assert 'locked TRUE' not in free_cap
-    installed_cap = by_name(nodes(11))['grant_cap']
-    assert 'locked TRUE' in installed_cap
-    assert 'physics Physics {' not in installed_cap
+def test_all_caps_are_locked_and_supervisor_controlled():
+    for experiment_id in (1, 11):
+        cap = by_name(nodes(experiment_id))['grant_cap']
+        assert 'locked TRUE' in cap
+        assert 'physics Physics {' not in cap
 
 
 def test_ten_screws_are_distinct_and_inside_the_tray():

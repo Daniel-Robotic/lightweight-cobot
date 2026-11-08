@@ -1,0 +1,61 @@
+# Package-local MoveItCpp settings for the reference executor.
+#
+# The stock iiwa_config copy publishes the MoveItPy maintained scene on
+# /monitored_planning_scene (the same topic move_group publishes) but listens
+# to /planning_scene.  The executor publishes its diffs to move_group, so the
+# MoveItPy monitor must instead listen to move_group's maintained scene.
+#
+# publish_planning_scene_topic is the topic this monitor subscribes to;
+# monitored_planning_scene_topic is where it republishes its own scene.
+planning_scene_monitor_options:
+  name: "planning_scene_monitor"
+  robot_description: "robot_description"
+  joint_state_topic: "/joint_states"
+  attached_collision_object_topic: "/moveit_cpp/planning_scene_monitor"
+  publish_planning_scene_topic: "/monitored_planning_scene"
+  monitored_planning_scene_topic: "/moveit_cpp/monitored_planning_scene"
+  wait_for_initial_state_timeout: 10.0
+
+planning_pipelines:
+  pipeline_names: ["ompl", "pilz_industrial_motion_planner", "chomp"]
+
+plan_request_params:
+  planning_attempts: 1
+  planning_pipeline: ompl
+  max_velocity_scaling_factor: 0.5
+  max_acceleration_scaling_factor: 1.0
+
+ompl_rrtc:
+  plan_request_params:
+    planning_attempts: 1
+    planning_pipeline: ompl
+    planner_id: "RRTConnectkConfigDefault"
+    max_velocity_scaling_factor: 1.0
+    max_acceleration_scaling_factor: 1.0
+    planning_time: 1.0
+
+pilz_ptp:
+  plan_request_params:
+    planning_attempts: 1
+    planning_pipeline: pilz_industrial_motion_planner
+    planner_id: "PTP"
+    max_velocity_scaling_factor: 1.0
+    max_acceleration_scaling_factor: 1.0
+    planning_time: 0.8
+
+pilz_lin:
+  plan_request_params:
+    planning_attempts: 1
+    planning_pipeline: pilz_industrial_motion_planner
+    planner_id: "LIN"
+    max_velocity_scaling_factor: 1.0
+    max_acceleration_scaling_factor: 1.0
+    planning_time: 0.8
+
+chomp_planner:
+  plan_request_params:
+    planning_attempts: 1
+    planning_pipeline: chomp
+    max_velocity_scaling_factor: 1.0
+    max_acceleration_scaling_factor: 1.0
+    planning_time: 1.5

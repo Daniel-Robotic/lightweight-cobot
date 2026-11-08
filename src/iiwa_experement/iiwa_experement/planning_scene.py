@@ -10,19 +10,24 @@ from __future__ import annotations
 import copy
 import math
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, Sequence
 
 import numpy as np
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import Pose
 from moveit_msgs.msg import (
+    AllowedCollisionEntry,
     AttachedCollisionObject,
     CollisionObject,
     PlanningScene,
 )
 from moveit_msgs.srv import GetPlanningScene
 from rclpy.node import Node
+from sensor_msgs.msg import JointState
 from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from shape_msgs.msg import SolidPrimitive
@@ -35,7 +40,55 @@ SCENE_TOPIC = '/planning_scene'
 MONITORED_TOPIC = '/monitored_planning_scene'
 GET_SCENE_SERVICE = '/get_planning_scene'
 SCENE_FRAME = 'base_link'
-TOUCH_LINKS = ('tcp', 'patron', 'camera_holder')
+TOUCH_LINKS = (
+    'tcp', 'patron', 'camera_holder', 'camera_corner',
+    'camera_hand', 'camera_optical_frame',
+)
+ROBOT_LINKS = (
+    'base_link', 'link1', 'link2', 'link3', 'link4', 'link5', 'link6',
+    'link7', 'patron', 'camera_holder', 'camera_corner', 'camera_hand',
+    'camera_optical_frame', 'tcp',
+)
+DEFAULT_SRDF = 'iiwa_config/config/moveit/iiwa7.srdf'
+
+
+def load_srdf_disabled_pairs(path) -> list[tuple[str, str]]:
+    root = ET.parse(str(path)).getroot()
+    pairs = []
+    for element in root.findall('disable_collisions'):
+        first = element.get('link1')
+        second = element.get('link2')
+        if first and second:
+            pairs.append((first, second))
+    return pairs
+
+
+def build_collision_matrix(
+    object_ids: Iterable[str],
+    *,
+    disabled_pairs: Iterable[tuple[str, str]] = (),
+    extra_allowed: Iterable[tuple[str, str]] = (),
+) -> tuple[list[str], list[list[bool]]]:
+    """Build a complete ACM: only explicitly disabled pairs are allowed.
+
+    This mirrors the SRDF and keeps every other robot/object and object/object
+    pair checked.  It replaces an empty ACM that would otherwise make the
+    planning scene treat adjacent robot links as collisions.
+    """
+    names = list(ROBOT_LINKS)
+    for name in object_ids:
+        if name not in names:
+            names.append(name)
+    matrix = [[False] * len(names) for _ in names]
+    for index in range(len(names)):
+        matrix[index][index] = True
+    for first, second in list(disabled_pairs) + list(extra_allowed):
+        if first in names and second in names:
+            row = names.index(first)
+            column = names.index(second)
+            matrix[row][column] = True
+            matrix[column][row] = True
+    return names, matrix
 
 
 class SceneSynchronizationError(RuntimeError):
@@ -59,6 +112,7 @@ class AttachedSpec:
     box: Box
     relative_pose: Transform
     touch_links: tuple[str, ...]
+    frame_id: str | None = None
 
 
 def _box_at(pose: Transform, box: Box) -> Box:
@@ -90,7 +144,7 @@ def build_world_objects(spec: ScenarioSpec, geometry: GeometrySpec) -> list[Scen
         'grant_table', table, _rotated_pose(0.0, 0.0, table.offset[2], 0.0),
     ))
 
-    fixture = geometry.scene_collisions['fixture']
+    fixture = geometry.scene_collisions['fixture_base']
     objects.append(SceneObject(
         'grant_fixture',
         fixture,
@@ -101,6 +155,20 @@ def build_world_objects(spec: ScenarioSpec, geometry: GeometrySpec) -> list[Scen
             spec.fixture.yaw_deg,
         ),
     ))
+    rail = geometry.scene_collisions['fixture_rail']
+    sine = math.sin(math.radians(spec.fixture.yaw_deg))
+    cosine = math.cos(math.radians(spec.fixture.yaw_deg))
+    for sign, suffix in ((-1.0, 'a'), (1.0, 'b')):
+        objects.append(SceneObject(
+            f'grant_fixture_rail_{suffix}',
+            rail,
+            _rotated_pose(
+                spec.fixture.x + sign * rail.offset[0] * cosine,
+                spec.fixture.y + sign * rail.offset[0] * sine,
+                spec.fixture.z + rail.offset[2],
+                spec.fixture.yaw_deg,
+            ),
+        ))
 
     body = geometry.scene_collisions['body']
     objects.append(SceneObject(
@@ -211,7 +279,10 @@ def attached_tool(name: str, geometry: GeometrySpec) -> AttachedSpec:
             offset=collision.offset,
         ),
         relative_pose=Transform.from_xyz_rpy(
-            collision.offset, [0.0, 0.0, 0.0], parent='tcp', child=f'grant_{name}',
+            [0.0, 0.0, collision.offset[2] + 0.0552],
+            [0.0, 0.0, 0.0],
+            parent='patron',
+            child=f'grant_{name}',
         ),
         touch_links=TOUCH_LINKS,
     )
@@ -222,9 +293,9 @@ def attached_cap(geometry: GeometrySpec) -> AttachedSpec:
         object_id='grant_cap',
         box=geometry.cap_collision,
         relative_pose=Transform.from_xyz_rpy(
-            geometry.cap_collision.offset,
+            [0.0, 0.0, geometry.cap_collision.offset[2] + 0.0552],
             [0.0, 0.0, 0.0],
-            parent='tcp',
+            parent='patron',
             child='grant_cap',
         ),
         touch_links=TOUCH_LINKS,
@@ -237,9 +308,9 @@ def attached_screw(screw_id: str, geometry: GeometrySpec) -> AttachedSpec:
         object_id=object_id,
         box=geometry.screw_collision,
         relative_pose=Transform.from_xyz_rpy(
-            geometry.screw_collision.offset,
+            [0.0, 0.0, geometry.screw_collision.offset[2] + 0.0552],
             [0.0, 0.0, 0.0],
-            parent='tcp',
+            parent='patron',
             child=object_id,
         ),
         touch_links=TOUCH_LINKS,
@@ -274,24 +345,31 @@ def collision_object(
     message.header.frame_id = SCENE_FRAME
     message.id = object_id
     message.operation = operation
+    message.pose = _pose_message(pose)
     primitive = SolidPrimitive()
     primitive.type = SolidPrimitive.BOX
     primitive.dimensions = [float(value) for value in box.size]
     message.primitives.append(primitive)
-    message.primitive_poses.append(_pose_message(pose))
+    identity = Pose()
+    identity.orientation.w = 1.0
+    message.primitive_poses.append(identity)
     return message
 
 
 def attached_object_message(
     spec: AttachedSpec,
     *,
-    link_name: str = 'tcp',
+    link_name: str | None = None,
     operation: int = CollisionObject.ADD,
 ) -> AttachedCollisionObject:
     message = AttachedCollisionObject()
-    message.link_name = link_name
+    message.link_name = link_name or spec.relative_pose.parent
     message.object = collision_object(
         spec.object_id, spec.box, spec.relative_pose, operation=operation,
+    )
+    # For attached objects the object pose is relative to the link.
+    message.object.header.frame_id = (
+        spec.frame_id if spec.frame_id is not None else message.link_name
     )
     message.touch_links = list(spec.touch_links)
     return message
@@ -334,6 +412,7 @@ class PlanningSceneBridge:
         *,
         node: Node | None = None,
         use_sim_time: bool = True,
+        srdf_path: str | None = None,
     ) -> None:
         self._owns_node = node is None
         if node is None:
@@ -366,8 +445,29 @@ class PlanningSceneBridge:
         self._attached: dict[str, AttachedSpec] = {}
         self._seen_world: set[str] = set()
         self._seen_attached: set[str] = set()
+        self._latest_joint_state = None
+        self._last_full_scene: PlanningScene | None = None
+        self._acm_names: list[str] = []
+        self._acm_values: list[list[bool]] = []
+        self._disabled_pairs = []
+        srdf = srdf_path or str(
+            Path(get_package_share_directory('iiwa_config'))
+            / 'config' / 'moveit' / 'iiwa7.srdf'
+        )
+        try:
+            self._disabled_pairs = load_srdf_disabled_pairs(srdf)
+        except Exception:
+            self._disabled_pairs = []
+        self._joint_subscription = self.node.create_subscription(
+            JointState, '/joint_states', self._on_joint_state, 10,
+        )
+
+    def _on_joint_state(self, message: JointState) -> None:
+        self._latest_joint_state = message
 
     def _on_scene(self, message: PlanningScene) -> None:
+        if not message.is_diff:
+            self._last_full_scene = copy.deepcopy(message)
         self._seen_world.update(
             obj.id for obj in message.world.collision_objects
         )
@@ -411,6 +511,137 @@ class PlanningSceneBridge:
         self._publisher.publish(scene)
         self._spin()
 
+    def _fetch_acm(self) -> None:
+        if getattr(self, '_get_scene', None) is None or self.node is None:
+            return
+        if not self._get_scene.service_is_ready():
+            if not self._get_scene.wait_for_service(timeout_sec=1.0):
+                return
+        request = GetPlanningScene.Request()
+        request.components.components = 128
+        future = self._get_scene.call_async(request)
+        end = time.monotonic() + 3.0
+        while time.monotonic() < end and not future.done():
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        if future.done():
+            try:
+                matrix = future.result().scene.allowed_collision_matrix
+                self._acm_names = list(matrix.entry_names)
+                self._acm_values = [
+                    list(row.enabled) for row in matrix.entry_values
+                ]
+            except Exception:
+                pass
+
+    def _rebuild_acm(self) -> None:
+        extra = []
+        for spec in self._attached.values():
+            extra.extend((spec.object_id, link) for link in spec.touch_links)
+        self._acm_names, self._acm_values = build_collision_matrix(
+            list(self._world_objects) + list(self._attached),
+            disabled_pairs=self._disabled_pairs,
+            extra_allowed=extra,
+        )
+
+    def _full_scene(self) -> PlanningScene:
+        scene = PlanningScene()
+        scene.is_diff = False
+        # Never overwrite the planner's current robot state from a planning
+        # scene update: the monitor receives /joint_states directly and a
+        # stale embedded sample makes the next trajectory start from an old
+        # pose.  ``is_diff`` leaves the state untouched.
+        scene.robot_state.is_diff = True
+        for obj in self._world_objects.values():
+            scene.world.collision_objects.append(collision_object(
+                obj.object_id, obj.box, self._base_pose(obj.pose),
+            ))
+        for spec in self._attached.values():
+            scene.robot_state.attached_collision_objects.append(
+                attached_object_message(spec)
+            )
+        if self._acm_names:
+            scene.allowed_collision_matrix.entry_names = list(self._acm_names)
+            scene.allowed_collision_matrix.entry_values = [
+                AllowedCollisionEntry(
+                    enabled=[bool(value) for value in row],
+                )
+                for row in self._acm_values
+            ]
+        return scene
+
+    def _refresh_joint_state(self) -> None:
+        """Wait for the next /joint_states sample before a full scene update.
+
+        A full PlanningScene carries a robot state.  Using a sample captured
+        before a preceding motion would make the MoveItPy planner start from
+        an old pose on the next trajectory.
+        """
+        if self.node is None:
+            return
+        previous = None
+        if self._latest_joint_state is not None:
+            previous = (
+                self._latest_joint_state.header.stamp.sec,
+                self._latest_joint_state.header.stamp.nanosec,
+            )
+        end = time.monotonic() + 0.5
+        while time.monotonic() < end:
+            rclpy.spin_once(self.node, timeout_sec=0.02)
+            current = self._latest_joint_state
+            if current is None:
+                continue
+            stamp = (
+                current.header.stamp.sec,
+                current.header.stamp.nanosec,
+            )
+            if previous is None or stamp != previous:
+                return
+
+    def _relay_full_scene(self) -> None:
+        """Give MoveItPy the exact move_group scene, including its ACM.
+
+        MoveItPy's monitor always listens on ``/planning_scene`` even when its
+        configured topics differ.  Fetching the maintained scene from
+        move_group and republishing it once keeps both planners identical
+        without a feedback loop.
+        """
+        if getattr(self, '_get_scene', None) is None or self.node is None:
+            return
+        if not self._get_scene.service_is_ready():
+            if not self._get_scene.wait_for_service(timeout_sec=1.0):
+                return
+        expected_world = set(self._world_objects)
+        expected_attached = set(self._attached)
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            request = GetPlanningScene.Request()
+            request.components.components = 2 | 4 | 8 | 16 | 128
+            future = self._get_scene.call_async(request)
+            end = time.monotonic() + 1.0
+            while time.monotonic() < end and not future.done():
+                rclpy.spin_once(self.node, timeout_sec=0.05)
+            if not future.done():
+                continue
+            try:
+                scene = future.result().scene
+            except Exception:
+                continue
+            world, attached = scene_ids(scene)
+            if expected_world <= world and expected_attached <= attached:
+                scene.is_diff = False
+                scene.robot_state.is_diff = True
+                self._publisher.publish(scene)
+                self._spin()
+                return
+        # Never relay a stale scene: that would wipe the objects from the
+        # MoveItPy monitor and make the next motion unverified.
+        return
+
+    def _publish_full(self) -> None:
+        self._refresh_joint_state()
+        self._publish(self._full_scene())
+        self._relay_full_scene()
+
     @staticmethod
     def _diff() -> PlanningScene:
         scene = PlanningScene()
@@ -440,33 +671,24 @@ class PlanningSceneBridge:
             obj.object_id: obj for obj in build_world_objects(spec, geometry)
         }
         self._attached.clear()
-        scene = self._diff()
-        for obj in self._world_objects.values():
-            scene.world.collision_objects.append(collision_object(
-                obj.object_id, obj.box, self._base_pose(obj.pose),
-            ))
-        self._publish(scene)
+        extra = []
+        for spec in self._attached.values():
+            extra.extend((spec.object_id, link) for link in spec.touch_links)
+        self._acm_names, self._acm_values = build_collision_matrix(
+            list(self._world_objects) + list(self._attached),
+            disabled_pairs=self._disabled_pairs,
+            extra_allowed=extra,
+        )
+        self._publish_full()
         self.assert_synchronized(
             self._world_objects, (), seen_world=set(self._world_objects),
         )
 
     def attach(self, spec: AttachedSpec) -> None:
-        if spec.object_id not in self._world_objects:
-            raise SceneSynchronizationError(
-                f'cannot attach {spec.object_id!r}: not a known world object'
-            )
-        scene = self._diff()
-        scene.world.collision_objects.append(collision_object(
-            spec.object_id, spec.box, Transform.from_xyz_rpy(
-                [0, 0, 0], [0, 0, 0], parent='world', child='removed',
-            ), operation=CollisionObject.REMOVE,
-        ))
-        scene.robot_state.attached_collision_objects.append(
-            attached_object_message(spec)
-        )
         self._world_objects.pop(spec.object_id, None)
         self._attached[spec.object_id] = spec
-        self._publish(scene)
+        self._rebuild_acm()
+        self._publish_full()
 
     def detach(self, object_id: str, world_pose: Transform) -> None:
         if object_id not in self._attached:
@@ -476,34 +698,20 @@ class PlanningSceneBridge:
         spec = self._attached.pop(object_id)
         object_spec = SceneObject(object_id, spec.box, world_pose)
         self._world_objects[object_id] = object_spec
-        scene = self._diff()
-        scene.robot_state.attached_collision_objects.append(
-            attached_object_message(
-                spec, operation=CollisionObject.REMOVE,
-            )
-        )
-        scene.world.collision_objects.append(collision_object(
-            object_id, spec.box, self._base_pose(world_pose),
-        ))
-        self._publish(scene)
+        self._rebuild_acm()
+        self._publish_full()
 
     def remove(self, object_id: str) -> None:
-        scene = self._diff()
-        if object_id in self._attached:
-            spec = self._attached.pop(object_id)
-            scene.robot_state.attached_collision_objects.append(
-                attached_object_message(
-                    spec, operation=CollisionObject.REMOVE,
-                )
-            )
-        if object_id in self._world_objects:
-            self._world_objects.pop(object_id)
-            scene.world.collision_objects.append(collision_object(
-                object_id, Box(size=(0.001, 0.001, 0.001)), Transform.from_xyz_rpy(
-                    [0, 0, 0], [0, 0, 0], parent='world', child='removed',
-                ), operation=CollisionObject.REMOVE,
-            ))
-        self._publish(scene)
+        self._attached.pop(object_id, None)
+        self._world_objects.pop(object_id, None)
+        self._rebuild_acm()
+        self._publish_full()
+
+    def add_world(self, object_id: str, box: Box, world_pose: Transform) -> None:
+        self._attached.pop(object_id, None)
+        self._world_objects[object_id] = SceneObject(object_id, box, world_pose)
+        self._rebuild_acm()
+        self._publish_full()
 
     def allow_contact(self, first: str, second: str, allowed: bool = True) -> None:
         """Change exactly one ACM pair; all other checks stay active."""
@@ -511,22 +719,21 @@ class PlanningSceneBridge:
             raise SceneSynchronizationError(
                 'cannot update contact permissions without a monitored scene'
             )
-        scene = self._diff()
-        names = list(self.last_scene.allowed_collision_matrix.entry_names)
-        values = [
-            list(row) for row in self.last_scene.allowed_collision_matrix.entry_values
-        ]
-        names, values = update_contact_entry(
-            names, values, first, second, allowed,
+        if not self._acm_names:
+            raise SceneSynchronizationError(
+                'cannot update contact permissions without an ACM'
+            )
+        self._acm_names, self._acm_values = update_contact_entry(
+            self._acm_names, self._acm_values, first, second, allowed,
         )
-        scene.allowed_collision_matrix.entry_names = names
-        scene.allowed_collision_matrix.entry_values = values
-        self._publish(scene)
+        self._publish_full()
 
     def expected_sets(self) -> tuple[set[str], set[str]]:
         return set(self._world_objects), set(self._attached)
 
     def _query_scene(self, timeout_sec: float) -> tuple[set[str], set[str]] | None:
+        if getattr(self, '_get_scene', None) is None or self.node is None:
+            return
         if not self._get_scene.service_is_ready():
             if not self._get_scene.wait_for_service(timeout_sec=1.0):
                 return None

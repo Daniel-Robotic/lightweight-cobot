@@ -110,7 +110,8 @@ class GrantSupervisorNode(Node):
         self.spec: ScenarioSpec = load_scenario(experiment_id, scene_config)
         self.geometry: GeometrySpec = load_geometry(geometry_path)
         self.state = ObjectState(self.spec, self.geometry, read_only=read_only)
-        self.attached: tuple[str, str] | None = None
+        self.tool_held: str | None = None
+        self.payload: tuple[str, str] | None = None
         self.last_command_result: dict[str, Any] | None = None
         self.rack_poses = {
             name: entry['pose'] for name, entry in self.state.tools.items()
@@ -174,6 +175,15 @@ class GrantSupervisorNode(Node):
                 field.setSFBool(True)
         except Exception:
             pass
+        # All managed objects are teleported by the supervisor.  Leaving a
+        # physics node attached lets Webots integrate huge velocities while
+        # the pose is overwritten every step.
+        try:
+            physics = node.getField('physics')
+            if physics is not None:
+                physics.remove()
+        except Exception:
+            pass
 
     def _pose_of(self, node) -> Transform | None:
         if node is None:
@@ -223,24 +233,25 @@ class GrantSupervisorNode(Node):
             names.append('grant_cap')
         return names
 
-    def _node_for_attachment(self) -> Any | None:
-        if self.attached is None:
+    def _tool_node(self):
+        if self.tool_held is None:
             return None
-        kind, name = self.attached
-        if kind == 'tool':
-            return self.nodes.get(f'grant_{name}')
+        return self.nodes.get(f'grant_{self.tool_held}')
+
+    def _payload_node(self):
+        if self.payload is None:
+            return None
+        kind, name = self.payload
         if kind == 'cap':
             return self.nodes.get('grant_cap')
         if kind == 'screw':
             return self.nodes.get(screw_def_name(name))
         return None
 
-    def _relative_transform(self) -> Transform | None:
-        if self.attached is None:
+    def _payload_relative(self) -> Transform | None:
+        if self.payload is None:
             return None
-        kind, name = self.attached
-        if kind == 'tool':
-            return self.geometry.tool_tcp_to_nodes[name]
+        kind, _ = self.payload
         if kind == 'cap':
             return self.geometry.cap_tcp_to_node
         if kind == 'screw':
@@ -248,22 +259,27 @@ class GrantSupervisorNode(Node):
         return None
 
     def follow(self) -> None:
-        if self.attached is None:
-            return
         tcp = self.tcp_pose()
-        node = self._node_for_attachment()
-        relative = self._relative_transform()
-        if tcp is None or node is None or relative is None:
+        if tcp is None:
             return
-        pose = tcp.compose_relaxed(relative)
-        self._set_pose(node, pose)
-        kind, name = self.attached
-        if kind == 'tool' and name in self.state.tools:
-            self.state.tools[name]['pose'] = pose
-        elif kind == 'cap':
-            self.state.cap_pose = pose
-        elif kind == 'screw' and name in self.state.screws:
-            self.state.screws[name]['pose'] = pose
+        if self.tool_held is not None:
+            node = self._tool_node()
+            relative = self.geometry.tool_tcp_to_nodes[self.tool_held]
+            if node is not None:
+                pose = tcp.compose_relaxed(relative)
+                self._set_pose(node, pose)
+                self.state.tools[self.tool_held]['pose'] = pose
+        if self.payload is not None:
+            node = self._payload_node()
+            relative = self._payload_relative()
+            if node is not None and relative is not None:
+                pose = tcp.compose_relaxed(relative)
+                self._set_pose(node, pose)
+                kind, name = self.payload
+                if kind == 'cap':
+                    self.state.cap_pose = pose
+                elif kind == 'screw' and name in self.state.screws:
+                    self.state.screws[name]['pose'] = pose
 
     # ------------------------------------------------------------------ state
     def _actual_pose(self, node) -> Transform | None:
@@ -309,6 +325,10 @@ class GrantSupervisorNode(Node):
     def _apply_impl(self, operation: str, command: dict[str, Any], request_id: str):
         if operation == 'inspect':
             return True, None
+        # A command can arrive before the per-step follow update.  Apply the
+        # current tcp to the held object first, otherwise the attachment
+        # appears one control step behind (about 11 mm at transfer speed).
+        self.follow()
         tcp = self.tcp_pose()
         if tcp is None:
             raise CommandError('actual tcp pose is unavailable')
@@ -319,7 +339,7 @@ class GrantSupervisorNode(Node):
             if object_pose is None:
                 raise CommandError(f'tool node grant_{kind} is unavailable')
             self.state.attach_tool(kind, tcp, object_pose, request_id=request_id)
-            self.attached = ('tool', kind)
+            self.tool_held = kind
             return True, None
         if operation == 'dock_tool':
             node = self.nodes.get(f'grant_{kind}')
@@ -330,7 +350,7 @@ class GrantSupervisorNode(Node):
             self.state.dock_tool(
                 kind, tcp, rack, object_pose, request_id=request_id,
             )
-            self.attached = None
+            self.tool_held = None
             self._set_pose(node, rack)
             self.state.tools[kind]['pose'] = rack
             return True, None
@@ -340,7 +360,7 @@ class GrantSupervisorNode(Node):
             if object_pose is None:
                 raise CommandError('hatch node is unavailable')
             self.state.grab_cap(tcp, object_pose, request_id=request_id)
-            self.attached = ('cap', 'cap')
+            self.payload = ('cap', 'cap')
             return True, None
         if operation == 'place_cap':
             target = self._command_pose(command)
@@ -349,7 +369,7 @@ class GrantSupervisorNode(Node):
             if object_pose is None:
                 raise CommandError('hatch node is unavailable')
             self.state.place_cap(target, tcp, object_pose, request_id=request_id)
-            self.attached = None
+            self.payload = None
             self._set_pose(node, target)
             self._freeze(node)
             self.state.cap_pose = target
@@ -360,7 +380,7 @@ class GrantSupervisorNode(Node):
             if object_pose is None:
                 raise CommandError(f'screw node for {kind} is unavailable')
             self.state.grab_screw(kind, tcp, object_pose, request_id=request_id)
-            self.attached = ('screw', kind)
+            self.payload = ('screw', kind)
             return True, None
         if operation == 'handoff_screw':
             hole = str(command.get('target_name') or '')
@@ -372,7 +392,7 @@ class GrantSupervisorNode(Node):
             self.state.handoff_screw(
                 kind, hole, target, tcp, object_pose, request_id=request_id,
             )
-            self.attached = None
+            self.payload = None
             if node is not None:
                 try:
                     node.remove()
@@ -394,9 +414,10 @@ class GrantSupervisorNode(Node):
         payload['ready'] = self.patron_node is not None and all(
             name in self.nodes for name in self._required_defs()
         )
-        payload['attached'] = (
-            None if self.attached is None else list(self.attached)
-        )
+        payload['attached'] = {
+            'tool': self.tool_held,
+            'payload': None if self.payload is None else list(self.payload),
+        }
         tcp = self.tcp_pose()
         payload['tcp'] = transform_json(tcp)
         payload['last_command_result'] = self.last_command_result

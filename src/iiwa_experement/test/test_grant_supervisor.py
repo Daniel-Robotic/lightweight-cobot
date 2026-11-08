@@ -78,7 +78,8 @@ def make_node(experiment_id=1):
     node.spec = spec
     node.geometry = geometry
     node.state = ObjectState(spec, geometry)
-    node.attached = None
+    node.tool_held = None
+    node.payload = None
     node.rack_poses = {
         name: entry['pose'] for name, entry in node.state.tools.items()
     }
@@ -144,7 +145,7 @@ def test_attach_requires_tcp_at_the_socket_and_rejects_far_pose():
     accepted, error = node._apply('attach_tool', {'object': 'vacuum'}, 'r1')
     assert accepted is True
     assert error is None
-    assert node.attached == ('tool', 'vacuum')
+    assert node.tool_held == 'vacuum'
 
     other = make_node(1)
     set_tcp(other, good.compose_relaxed(
@@ -155,7 +156,7 @@ def test_attach_requires_tcp_at_the_socket_and_rejects_far_pose():
     accepted, error = other._apply('attach_tool', {'object': 'vacuum'}, 'r2')
     assert accepted is False
     assert 'tcp is' in error
-    assert other.attached is None
+    assert other.tool_held is None
     assert other.state.version == 0
 
 
@@ -170,7 +171,7 @@ def test_follow_moves_the_attached_tool_and_dock_returns_it_to_the_rack():
     assert moved == pytest.approx(rack_pose.position, abs=1e-9)
     accepted, _ = node._apply('dock_tool', {'object': 'vacuum'}, 'dock')
     assert accepted
-    assert node.attached is None
+    assert node.tool_held is None
     assert node.state.mounted_tool is None
     assert node.nodes['grant_vacuum'].getPosition() == pytest.approx(
         rack_pose.position, abs=1e-9,
@@ -213,8 +214,29 @@ def test_grab_and_handoff_remove_only_the_selected_screw():
 def test_follow_refuses_when_tcp_is_unknown():
     node = make_node(1)
     node.patron_node = None
-    node.attached = ('tool', 'vacuum')
+    node.tool_held = 'vacuum'
     node.follow()
     assert node.nodes['grant_vacuum'].getPosition() == pytest.approx(
         node.state.tools['vacuum']['pose'].position, abs=1e-9,
+    )
+
+
+def test_mounted_tool_and_payload_follow_together():
+    node = make_node(1)
+    tool_pose = node.state.tools['vacuum']['pose']
+    tcp = tcp_goal(tool_pose, node.geometry.tool_tcp_to_nodes['vacuum'])
+    set_tcp(node, tcp)
+    assert node._apply('attach_tool', {'object': 'vacuum'}, 't')[0]
+    cap_pose = node.state.cap_pose
+    cap_tcp = tcp_goal(cap_pose, node.geometry.cap_tcp_to_node)
+    set_tcp(node, cap_tcp)
+    assert node._apply('grab_cap', {'object': 'cap'}, 'c')[0]
+    node.follow()
+    expected_tool = cap_tcp.compose_relaxed(node.geometry.tool_tcp_to_nodes['vacuum'])
+    expected_cap = cap_tcp.compose_relaxed(node.geometry.cap_tcp_to_node)
+    assert node.nodes['grant_vacuum'].getPosition() == pytest.approx(
+        expected_tool.position, abs=1e-9,
+    )
+    assert node.nodes['grant_cap'].getPosition() == pytest.approx(
+        expected_cap.position, abs=1e-9,
     )

@@ -309,15 +309,16 @@ def _cap_node(spec: ScenarioSpec, asset: Path) -> str:
   translation 0 0.004165 0
   children [ Box { size 0.1384 0.00367 0.0984 } ]
 }'''
-    installed = spec.cap_state == 'installed'
+    # All managed objects are positioned by the attachment supervisor.
+    # A free cap with physics can be launched by the supervisor's per-step
+    # teleport, so it is locked just like an installed cap.
     return _solid(
         name='grant_cap',
         translation=(pose.x, pose.y, pose.z),
         rotation=rotation_axis_angle(pose.yaw_deg),
         children=_mesh_shape(asset, '0.78 0.82 0.86'),
         bounding=bounding,
-        locked=installed,
-        physics_mass=None if installed else 0.1,
+        locked=True,
     )
 
 

@@ -10,6 +10,8 @@ from iiwa_experement.planning_scene import (
     PlanningSceneBridge,
     SceneObject,
     attached_cap,
+    build_collision_matrix,
+    load_srdf_disabled_pairs,
     attached_screw,
     attached_tool,
     build_world_objects,
@@ -40,6 +42,11 @@ class FakeBridge(PlanningSceneBridge):
             obj.object_id: obj for obj in build_world_objects(scenario, geometry)
         }
         self._attached = {}
+        self._disabled_pairs = []
+        self._acm_names = []
+        self._acm_values = []
+        self._latest_joint_state = None
+        self.node = None
         self.last_scene = PlanningScene()
         self.published = []
 
@@ -53,13 +60,14 @@ class FakeBridge(PlanningSceneBridge):
 def test_initial_scene_contains_every_experiment_object():
     objects = build_world_objects(spec(11), load_geometry(GEOMETRY))
     ids = {obj.object_id for obj in objects}
-    assert {'grant_table', 'grant_fixture', 'grant_body', 'grant_rack',
+    assert {'grant_table', 'grant_fixture', 'grant_fixture_rail_a',
+            'grant_fixture_rail_b', 'grant_body', 'grant_rack',
             'grant_tray', 'grant_cap', 'grant_magnetic_tool'} <= ids
     assert {f'grant_screw_{index:02d}' for index in range(1, 11)} <= ids
     assert 'grant_vacuum' not in ids
-    # table, fixture, body, rack, tray base, four tray walls, ten screws,
-    # installed hatch and one magnetic tool.
-    assert len(ids) == 4 + 1 + 4 + 10 + 1 + 1
+    # table, fixture base, two fixture rails, body, rack, tray base, four
+    # tray walls, ten screws, installed hatch and one magnetic tool.
+    assert len(ids) == 23
 
 
 def test_experiment_nineteen_moves_tray_and_screws():
@@ -99,11 +107,11 @@ def test_attach_removes_the_world_object_and_adds_one_attachment():
     assert tool.object_id not in bridge._world_objects
     assert bridge._attached[tool.object_id] is tool
     scene = bridge.published[-1]
-    assert scene.is_diff is True
-    assert [obj.id for obj in scene.world.collision_objects] == [tool.object_id]
-    assert scene.world.collision_objects[0].operation == CollisionObject.REMOVE
+    assert scene.is_diff is False
+    assert tool.object_id not in [obj.id for obj in scene.world.collision_objects]
     assert len(scene.robot_state.attached_collision_objects) == 1
-    assert scene.robot_state.attached_collision_objects[0].link_name == 'tcp'
+    assert scene.robot_state.attached_collision_objects[0].object.id == tool.object_id
+    assert scene.robot_state.attached_collision_objects[0].link_name == 'patron'
     assert 'tcp' in scene.robot_state.attached_collision_objects[0].touch_links
 
 
@@ -117,10 +125,8 @@ def test_detach_reverses_the_attachment():
     assert tool.object_id in bridge._world_objects
     assert tool.object_id not in bridge._attached
     scene = bridge.published[-1]
-    assert scene.robot_state.attached_collision_objects[0].object.operation == (
-        CollisionObject.REMOVE
-    )
-    assert scene.world.collision_objects[0].operation == CollisionObject.ADD
+    assert not scene.robot_state.attached_collision_objects
+    assert tool.object_id in [obj.id for obj in scene.world.collision_objects]
 
 
 def test_handoff_removes_only_the_delivered_screw():
@@ -138,9 +144,9 @@ def test_cap_and_screw_attachment_geometry_uses_tcp_offsets():
     geometry = load_geometry(GEOMETRY)
     cap = attached_cap(geometry)
     screw = attached_screw('screw_3', geometry)
-    assert cap.relative_pose.xyz == pytest.approx((0.0, 0.0, 0.141835))
+    assert cap.relative_pose.xyz == pytest.approx((0.0, 0.0, 0.141835 + 0.0552))
     assert cap.box.size == pytest.approx((0.1384, 0.0984, 0.00367))
-    assert screw.relative_pose.xyz == pytest.approx((0.0, 0.0, 0.1445))
+    assert screw.relative_pose.xyz == pytest.approx((0.0, 0.0, 0.1445 + 0.0552))
 
 
 def test_contact_permission_changes_exactly_one_pair():
@@ -151,6 +157,24 @@ def test_contact_permission_changes_exactly_one_pair():
     assert matrix[2][1] is True and matrix[1][2] is True
     assert matrix[2][0] is False and matrix[0][2] is False
     assert matrix[0][1] is False
+
+
+def test_srdf_collision_matrix_allows_only_disabled_pairs():
+    root = Path(__file__).resolve().parents[2]
+    srdf = root / 'iiwa_config' / 'config' / 'moveit' / 'iiwa7.srdf'
+    pairs = load_srdf_disabled_pairs(srdf)
+    assert ('link1', 'link2') in pairs
+    names, matrix = build_collision_matrix(
+        ['grant_body', 'grant_tool'], disabled_pairs=pairs,
+    )
+    assert 'base_link' in names and 'grant_body' in names
+    def allowed(first, second):
+        return matrix[names.index(first)][names.index(second)]
+    assert allowed('link1', 'link2') is True
+    assert allowed('base_link', 'link1') is True
+    assert allowed('link1', 'grant_body') is False
+    assert allowed('grant_body', 'grant_tool') is False
+    assert allowed('grant_body', 'grant_body') is True
 
 
 def test_scene_ids_reports_world_and_attached_sets():
