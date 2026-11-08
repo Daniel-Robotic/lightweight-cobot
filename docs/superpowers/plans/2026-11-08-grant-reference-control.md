@@ -1,183 +1,183 @@
-# Grant Reference Control Implementation Plan
+# План реализации эталонного управления Grant
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Для агента-разработчика:** выполняйте задачи по порядку. Используйте навык superpowers:subagent-driven-development либо superpowers:executing-plans. Отмечайте выполненные шаги в чекбоксах.
 
-**Goal:** Add reproducible reference robot motion for all 20 Grant experiments, with `view` and `execute` modes in the existing ROS 2 launch command.
+**Цель:** обеспечить воспроизводимое эталонное движение робота во всех 20 экспериментах Grant и добавить к существующей команде запуска режимы `view` и `execute`.
 
-**Architecture:** Keep the current deterministic scene spawner. A package-owned Webots supervisor controls attachment and object poses; a ROS 2 reference runner coordinates it with MoveIt's planning scene and the existing `cobot/move_to_pose`/`cobot/move_to_named` motion server. The runner uses measured tool and task frames, short contact motions, explicit state transitions and a machine-readable event trace.
+**Архитектура:** существующий спавнер создаёт начальную сцену. Отдельный supervisor пакета `iiwa_experement` управляет захватом и позами объектов в Webots. Эталонный исполнитель синхронизирует его с геометрией MoveIt, вызывает существующий сервер движения `cobot/move_to_pose`/`cobot/move_to_named` и записывает действия в машинно-читаемый журнал.
 
-**Tech Stack:** Ubuntu 24.04, ROS 2 Jazzy, `rclpy`, MoveIt 2/`moveit_msgs`, Webots R2025a Python Supervisor, `webots_ros2_driver`, PyYAML, pytest.
+**Стек:** Ubuntu 24.04, ROS 2 Jazzy, `rclpy`, MoveIt 2/`moveit_msgs`, Webots R2025a, Python Supervisor, `webots_ros2_driver`, PyYAML, pytest.
 
-**Spec:** [2026-11-08-grant-reference-control-design.md](../specs/2026-11-08-grant-reference-control-design.md)
+**Спецификация:** [Описание согласованной архитектуры](../specs/2026-11-08-grant-reference-control-design.md).
 
-## Global Constraints
+## Общие ограничения
 
-- Work on the existing `experement` branch. Do not reset or overwrite the already modified `src/iiwa_experement/worlds/grant/iiwa-grant.wbt` or its untracked Webots sidecar files; inspect the worktree before editing.
-- New runtime code, config, launch, tests and package docs live only in `src/iiwa_experement/`. Reuse OBJ/MTL from `src/iiwa_description/objects/grant/`; keep `patron` permanently installed from `src/iiwa_description/urdf/tools/patron.xacro`.
-- `mode:=view` is the default and does not start robot motion. `mode:=execute` moves only after `scene_ready`, controller/MoveIt/supervisor readiness, fresh robot state, then 3.0 seconds of simulation time by default.
-- The experiment is simulation-only. Reject a launch if active settings request physical FRI; preserve `simulate:=true` in the included bringup.
-- Never insert or tighten screws. Release each screw at a validated handoff pose over a hole, record delivery to a virtual human, remove it from the world and leave the hole empty. The torque tool and `seat_screw`/`tighten` are absent from the reference routes.
-- All free-space, approach, insertion of a *tool into patron*, hatch placement, sealant paths, and screw transport are actual robot trajectories. Only ownership changes and virtual human handoff change object state without robot motion.
-- Use metres, radians and explicit `world`, `base_link`, `patron`, `tcp`, tool mount and tool work-tip transforms. Confirm the active transform at runtime; do not rely on hard-coded world-to-base coordinates from prose.
-- Before every trajectory, the MoveIt scene contains every relevant obstacle and attached item. Verify planning-scene update acknowledgement before starting the next motion. Contact exceptions are specific to the active object and phase.
-- Stop and report if scene geometry, collision, robot state, attachment state or action result is uncertain. No blind retries, no motion based only on startup coordinates when `detect`/current state is available.
+- Работать в существующей ветке `experement`. Перед правками проверить `git status`. В файле `src/iiwa_experement/worlds/grant/iiwa-grant.wbt` уже есть чужие незакоммиченные изменения и побочные файлы Webots: сохранить их, не сбрасывать и не перезаписывать целиком.
+- Весь новый исполняемый код, конфигурация, launch, тесты и документация пакета размещаются в `src/iiwa_experement/`. OBJ/MTL использовать из `src/iiwa_description/objects/grant/`. Постоянный `patron` остаётся на роботе.
+- `mode:=view` — режим по умолчанию; робот не движется. `mode:=execute` начинает движение только после `scene_ready`, готовности контроллера, MoveIt и supervisor, появления свежего состояния робота и задержки 3,0 секунды симуляционного времени.
+- Запуск только в Webots: в включаемом bringup остаётся `simulate:=true`. Не отправлять эталонные траектории на физический робот через FRI.
+- Винты не вставляются и не затягиваются. Робот подносит винт к конкретному отверстию, отпускает его виртуальному оператору, после чего винт удаляется из сцены, а отверстие остаётся пустым. В эталонных маршрутах нет `seat_screw`, `tighten` и затяжного инструмента.
+- Перемещения к инструментам, извлечение инструмента, перенос люка и винтов, посадка люка, проход соплом вдоль контура и подход к отверстиям выполняются реальными траекториями робота. Без движения меняются только состояние захвата и состояние передачи винта оператору.
+- Единицы: метры и радианы. Явно задавать преобразования `world`, `base_link`, `patron`, `tcp`, точки крепления и рабочего кончика инструмента. Использовать активный TF/настройки, а не координаты основания, переписанные из текста.
+- Перед каждым движением в MoveIt должны быть все препятствия и прикреплённые объекты; обновление сцены подтверждается до планирования. Контакт допускается только для нужного инструмента и цели на нужном этапе.
+- При неопределённой геометрии, столкновении, устаревшем состоянии, неудачном захвате или ошибке движения остановиться и записать причину. Не повторять движение вслепую.
 
-## Read Before Editing
+## Что прочитать перед правками
 
-1. `src/iiwa_experement/config/scenes.yaml`, `iiwa_experement/{scenario.py,scene_spawner.py,webots_nodes.py,runtime_config.py}`, `launch/experiment.launch.py`, `doc/{experements.md,experiment-scenes.md,README.md}`.
-2. `src/iiwa_description/urdf/tools/patron.xacro`, `src/iiwa_description/worlds/iiwa.wbt`, `src/iiwa_description/resource/protos/CollaborativeRobotTable.proto`, `src/iiwa_description/objects/grant/`, `output/reference_photo/grant/`.
-3. `src/iiwa_planning/scripts/move_to_pose_server.py`, `src/iiwa_msgs/action/MoveToPose.action`, `src/iiwa_msgs/srv/MoveToNamedPose.srv`, `src/iiwa_config/config/moveit/iiwa7.srdf`, `src/iiwa_bringup/launch/supported/{moveit_nodes.py,webots_spawn.launch.py}`.
-4. Existing experiment intent: `docs/superpowers/specs/2026-11-08-grant-experiments.md` and scene geometry: `docs/superpowers/specs/2026-11-08-grant-scenes.md`. The package copies take precedence after Task 1 updates screw semantics.
+1. `src/iiwa_experement/config/scenes.yaml`; `src/iiwa_experement/iiwa_experement/{scenario.py,scene_spawner.py,webots_nodes.py,runtime_config.py}`; `src/iiwa_experement/launch/experiment.launch.py`; `src/iiwa_experement/doc/{experements.md,experiment-scenes.md,README.md}`.
+2. `src/iiwa_description/urdf/tools/patron.xacro`; `src/iiwa_description/worlds/iiwa.wbt`; `src/iiwa_description/resource/protos/CollaborativeRobotTable.proto`; модели `src/iiwa_description/objects/grant/` и изображения `output/reference_photo/grant/`.
+3. `src/iiwa_planning/scripts/move_to_pose_server.py`; `src/iiwa_msgs/action/MoveToPose.action`; `src/iiwa_msgs/srv/MoveToNamedPose.srv`; `src/iiwa_config/config/moveit/iiwa7.srdf`; `src/iiwa_bringup/launch/supported/{moveit_nodes.py,webots_spawn.launch.py}`.
+4. Исходные описания экспериментов: `docs/superpowers/specs/2026-11-08-grant-experiments.md` и сцен: `docs/superpowers/specs/2026-11-08-grant-scenes.md`. После задачи 1 актуальной версией новых правил про винты будут файлы `src/iiwa_experement/doc/`.
 
-## File Map
+## Назначение файлов
 
-| File | Responsibility |
+| Файлы | Назначение |
 | --- | --- |
-| `config/scenes.yaml`, `iiwa_experement/scenario.py`, `doc/experements.md`, `doc/experiment-scenes.md` | Revised 20 tasks, tool sets and failure metadata; no screw seating/tightening |
-| `config/geometry.yaml`, `iiwa_experement/geometry.py` | Tool mount/work tips, hatch grip and seat, contour, hole and handoff frames, measured clearances |
-| `worlds/grant/iiwa-grant.wbt`, `iiwa_experement/webots_nodes.py` | Package-owned supervisor Robot and deterministic DEF/name for managed Solids |
-| `iiwa_experement/grant_supervisor.py`, `iiwa_experement/object_state.py` | Webots pose following and command/state protocol, attachment state machine |
-| `iiwa_experement/planning_scene.py` | World collision objects and MoveIt attach/detach updates |
-| `iiwa_experement/motion.py` | Calls existing ROS motion actions/services, checks actual pose, errors and timeouts |
-| `iiwa_experement/operations.py` | Reusable dock, grab, transfer, sealant, hatch and handoff operations |
-| `iiwa_experement/reference_scenarios.py` | Exact task sequence and bounded recovery for IDs 1–20 |
-| `iiwa_experement/reference_runner.py`, `iiwa_experement/trace.py` | Startup gate, execution, stop, JSONL events and final result |
-| `iiwa_experement/runtime_config.py`, `launch/experiment.launch.py`, `setup.py`, `package.xml`, `doc/README.md` | CLI modes, package dependencies, executable wiring and instructions |
-| `test/test_*.py` | Contract, geometry, launch, state, collision-scene and sequence tests |
+| `config/scenes.yaml`, `iiwa_experement/scenario.py`, `doc/experements.md`, `doc/experiment-scenes.md` | Обновлённые 20 заданий, состав инструментов и сбои; без установки и затяжки винтов |
+| `config/geometry.yaml`, `iiwa_experement/geometry.py` | Крепление и рабочие кончики инструментов, захват/посадка люка, контур, отверстия, точки передачи, измеренные зазоры |
+| `worlds/grant/iiwa-grant.wbt`, `iiwa_experement/webots_nodes.py` | Отдельный supervisor и устойчивые имена управляемых объектов |
+| `iiwa_experement/grant_supervisor.py`, `iiwa_experement/object_state.py` | Следование захваченных объектов за роботом, команды и автомат состояний |
+| `iiwa_experement/planning_scene.py` | Препятствия и прикреплённые объекты MoveIt |
+| `iiwa_experement/motion.py` | Вызовы существующего сервера движения, проверка фактической позы и остановка |
+| `iiwa_experement/operations.py` | Захват, возврат инструмента, перенос, герметик, люк, передача винтов |
+| `iiwa_experement/reference_scenarios.py` | Маршруты 1–20 и ограниченное восстановление после сбоев |
+| `iiwa_experement/reference_runner.py`, `iiwa_experement/trace.py` | Ожидание готовности, выполнение, остановка, журнал JSONL и итог |
+| `iiwa_experement/runtime_config.py`, `launch/experiment.launch.py`, `setup.py`, `package.xml`, `doc/README.md` | Режимы запуска, зависимости, исполняемые файлы и инструкция |
+| `test/test_*.py` | Проверки контрактов, геометрии, запуска, состояний, сцены MoveIt и маршрутов |
 
-## Review Focus
+## Особое внимание при проверке
 
-1. A launch with `mode:=view` must not create a motion client or send a trajectory; verify in Task 9.
-2. `scene_ready=true` without a fresh `/joint_states` or MoveIt scene acknowledgement must not start the 3-second delay or motion; verify in Tasks 4 and 9.
-3. Failed object attachment or failed MoveIt update must leave the runner stopped with no subsequent motion; verify in Tasks 3 and 4.
-4. A second grab after a planned `grasp_failed` must use the current object pose and never duplicate or consume a screw; verify in Tasks 5 and 8.
-5. A handoff must only succeed at the requested hole with a screw currently on the magnetic tool; no hole becomes occupied in MoveIt or Webots; verify in Tasks 3, 7 and 8.
+1. В `view` не создаётся клиент движения и не отправляется траектория; проверка в задаче 9.
+2. `scene_ready=true` без свежих `/joint_states` и подтверждённой сцены MoveIt не запускает задержку и движение; задачи 4 и 9.
+3. Ошибка крепления в Webots или обновления MoveIt останавливает маршрут до следующего движения; задачи 3 и 4.
+4. Повторный захват после `grasp_failed` использует текущую позу объекта и не расходует винт дважды; задачи 5 и 8.
+5. Передача происходит только у указанного отверстия и только с винтом на магнитном инструменте; отверстие остаётся пустым; задачи 3, 7 и 8.
 
 ---
 
-### Task 1: Reconcile the experiment contract
+### Задача 1. Исправить контракт 20 экспериментов
 
-**Files:** Modify `src/iiwa_experement/config/scenes.yaml`, `src/iiwa_experement/iiwa_experement/scenario.py`, `src/iiwa_experement/doc/experements.md`, `src/iiwa_experement/doc/experiment-scenes.md`; update affected `test/test_scenario.py`, `test/test_webots_nodes.py`, `test/test_package_layout.py`. Do not rewrite the original historical spec copies silently; add a link to this design from the package docs.
+**Файлы:** изменить `src/iiwa_experement/config/scenes.yaml`, `src/iiwa_experement/iiwa_experement/scenario.py`, `src/iiwa_experement/doc/experements.md`, `src/iiwa_experement/doc/experiment-scenes.md` и затронутые `test/test_scenario.py`, `test/test_webots_nodes.py`, `test/test_package_layout.py`. Исторические копии спецификаций не переписывать молча; из документации пакета дать ссылку на новую спецификацию.
 
-**Interfaces:** `load_scenario(experiment_id, manifest_path) -> ScenarioSpec` remains the sole source of initial poses; failure metadata remains declarative.
+**Интерфейс:** `load_scenario(experiment_id, manifest_path) -> ScenarioSpec` остаётся единственным источником начальных поз; сбои описываются в YAML.
 
-- [ ] **Step 1: Update failing tests.** For IDs 14–15 and 16–20 assert tool sets omit `torque_tool`; for IDs 11–20 assert exactly ten initial screws. Assert no failure entry has skill `tighten` or `seat_screw`, and that exp. 15 retains third selected screw `grab:grasp_failed`. Keep existing shifted tray/cap cases 3 and 19.
-- [ ] **Step 2: Run the focused tests and observe failure.** `source /opt/ros/jazzy/setup.bash && source install/setup.bash && pytest -q src/iiwa_experement/test/test_scenario.py src/iiwa_experement/test/test_webots_nodes.py`.
-- [ ] **Step 3: Revise the manifest and prose.** 11 = one handoff at `hole_1`; 12 = two diagonal; 13 = three distinct holes; 14 = four in `hole_1→hole_3→hole_2→hole_4`; 15 = four in that order with one failed third pickup and one bounded retry. 16 = one sealant segment + hatch + one handoff; 17 = full contour + hatch + two diagonal handoffs; 18 = full contour + hatch + four handoffs; 19 = same with shifted hatch/tray; 20 = same with interrupted sealant, first hatch placement `not_ok`, one failed screw pickup. Remove all tightening and moment requirements, including exp. 15's torque failure. Update `TOOL_NAMES` only if no other scene code relies on it; an unused asset may remain in `ASSETS`, but must not spawn in these routes.
-- [ ] **Step 4: Run tests.** All updated scene tests pass and no package document describes a screw as installed/tightened.
-- [ ] **Step 5: Commit this coherent contract change.**
+- [ ] **Шаг 1. Написать проверки, которые пока не проходят.** В 14–15 и 16–20 нет `torque_tool`; в 11–20 ровно десять винтов. Нет сбоев `tighten` и `seat_screw`. В 15 сохранён `grab:grasp_failed` для третьего выбранного винта. Смещения сцены 3 и 19 сохранены.
+- [ ] **Шаг 2. Убедиться, что проверки падают.** `source /opt/ros/jazzy/setup.bash && source install/setup.bash && pytest -q src/iiwa_experement/test/test_scenario.py src/iiwa_experement/test/test_webots_nodes.py`.
+- [ ] **Шаг 3. Обновить YAML и описания.** 11 — передать один винт у `hole_1`; 12 — два по диагонали; 13 — три разных отверстия; 14 — четыре в порядке `hole_1→hole_3→hole_2→hole_4`; 15 — те же четыре, отказ третьего захвата и одна повторная попытка. 16 — участок герметика, люк, одна передача; 17 — полный контур, люк, две диагональные передачи; 18 — полный контур, люк, четыре передачи; 19 — то же со смещёнными люком и лотком; 20 — то же с прерыванием герметика, ошибкой первой посадки люка и неудачным захватом винта. Удалить затяжку и ошибку момента из 15. Каталог `TOOL_NAMES` менять только после проверки зависимостей; неиспользуемая модель может остаться в `ASSETS`, но не должна появляться в этих опытах.
+- [ ] **Шаг 4. Повторить тесты.** Все тесты сцен проходят; документация пакета не называет переданный винт установленным.
+- [ ] **Шаг 5. Зафиксировать изменение контракта отдельным коммитом.**
 
-### Task 2: Measure and encode the working geometry
+### Задача 2. Измерить и описать рабочую геометрию
 
-**Files:** Create `config/geometry.yaml`, `iiwa_experement/geometry.py`, `test/test_geometry.py`; update `setup.py` if the new config glob does not already install it.
+**Файлы:** создать `config/geometry.yaml`, `iiwa_experement/geometry.py`, `test/test_geometry.py`; при необходимости обновить `setup.py`.
 
-**Interfaces:** `load_geometry(path) -> GeometrySpec`; `world_target(spec: ScenarioSpec, geometry: GeometrySpec, name: str) -> Transform`; `tcp_goal(target: Transform, tcp_to_work_tip: Transform) -> Transform`. `GeometrySpec` exposes `tool_mounts`, `tool_work_tips`, `cap_grip`, `cap_seat`, `sealant_segments`, `holes`, `handoff_clearance`, `approach_clearance`, `transit_clearance`, position/angle tolerances and guarded speed scales. All coordinates use metres and radians in named frames.
+**Интерфейсы:** `load_geometry(path) -> GeometrySpec`; `world_target(spec: ScenarioSpec, geometry: GeometrySpec, name: str) -> Transform`; `tcp_goal(target: Transform, tcp_to_work_tip: Transform) -> Transform`. В `GeometrySpec` хранить `tool_mounts`, `tool_work_tips`, `cap_grip`, `cap_seat`, `sealant_segments`, `holes`, зазоры подхода/передачи/переноса, допуски позы и ограниченные скорости. Единицы и исходный фрейм обязательны для каждого преобразования.
 
-- [ ] **Step 1: Write failing geometry tests.** Assert tool OBJ Y bounds become 0–0.14 m after Webots scale (sealant OBJ 0–0.014 m ×10), `tcp` in `patron.xacro` is 0.0552 m from `patron`, ten screws are distinct, holes follow body/cap shift in exp. 3, and tray/screws follow exp. 19 shift. Test a round trip `T_world_tcp · T_tcp_mount = T_world_tool_mount`.
-- [ ] **Step 2: Run the test and observe failure.** `pytest -q src/iiwa_experement/test/test_geometry.py`.
-- [ ] **Step 3: Measure the geometry.** Inspect OBJ vertices and reference images; use actual Webots scene tree to identify the tool's coupling end, work end, hatch grasp plane, cap seating height, sealant start/end/corners, hole axes and contact height. Store numeric transforms and conservative collision envelopes in `geometry.yaml`; retain the already documented hole XY values as cross-checks: `(0.2243,0.1052)`, `(0.2852,0.0443)`, `(0.3757,0.1348)`, `(0.3148,0.1957)` for the standard body. Do not invent unknown Z values: measure and commit them with the verification record.
-- [ ] **Step 4: Implement strict loading and transform composition.** Reject missing transforms, non-finite values and nonpositive clearances. Derive shifted targets from `ScenarioSpec`, never from copied absolute coordinates.
-- [ ] **Step 5: Run tests and visually check each tool aligned at `tcp`.** Save Webots screenshots/measurements or a concise QA record in `doc/README.md`.
-- [ ] **Step 6: Commit geometry and measurements.**
+- [ ] **Шаг 1. Написать проверки геометрии.** После масштаба Webots длина инструментов по вертикали 0–0,14 м; у герметика OBJ 0–0,014 м и масштаб ×10. `tcp` расположен на 0,0552 м от `patron`. Десять винтов имеют разные ID. Отверстия смещаются с корпусом в опыте 3, винты с лотком в 19. Проверить равенство `T_world_tcp · T_tcp_mount = T_world_tool_mount`.
+- [ ] **Шаг 2. Убедиться, что тест падает.** `pytest -q src/iiwa_experement/test/test_geometry.py`.
+- [ ] **Шаг 3. Измерить точки в OBJ и Webots.** Найти конец инструмента, входящий в `patron`, рабочий кончик, плоскость захвата люка, высоту посадки, начало/конец и углы контура, оси и высоты отверстий. Записать численные преобразования и консервативные габариты столкновений в `geometry.yaml`. Сверить XY отверстий стандартного корпуса с `(0.2243,0.1052)`, `(0.2852,0.0443)`, `(0.3757,0.1348)`, `(0.3148,0.1957)`. Не придумывать неизвестную высоту Z: измерить и занести её вместе с результатом проверки.
+- [ ] **Шаг 4. Реализовать загрузку и композицию преобразований.** Отвергать отсутствующие фреймы, нечисловые значения и неположительные зазоры. Позы смещённых целей вычислять из `ScenarioSpec`.
+- [ ] **Шаг 5. Прогнать тесты и визуально проверить все инструменты на конце `tcp`.** Результат измерений записать в документацию пакета.
+- [ ] **Шаг 6. Зафиксировать геометрию отдельным коммитом.**
 
-### Task 3: Add the package-owned Webots attachment supervisor
+### Задача 3. Добавить supervisor для захвата и перемещения объектов
 
-**Files:** Modify `worlds/grant/iiwa-grant.wbt`, `iiwa_experement/webots_nodes.py`, `test/test_world.py`, `test/test_webots_nodes.py`; create `iiwa_experement/grant_supervisor.py`, `iiwa_experement/object_state.py`, `test/test_object_state.py`, `test/test_grant_supervisor.py`; update `setup.py` and `package.xml` for `std_msgs`, `webots_ros2_msgs`, `geometry_msgs`, `tf2_ros` as actually used.
+**Файлы:** изменить `worlds/grant/iiwa-grant.wbt`, `iiwa_experement/webots_nodes.py`, `test/test_world.py`, `test/test_webots_nodes.py`; создать `iiwa_experement/grant_supervisor.py`, `iiwa_experement/object_state.py`, `test/test_object_state.py`, `test/test_grant_supervisor.py`; обновить `setup.py` и зависимости в `package.xml`.
 
-**Interfaces:** A second Webots `Robot { name "GrantAttachmentSupervisor" supervisor TRUE controller "<extern>" }` in the package world; built-in `/Ros2Supervisor` remains the initial spawner. `/iiwa_experement/object_command` uses installed `webots_ros2_msgs/srv/SetString` with a JSON `value` containing `request_id`, `op`, `object`, `target`, `expected_state`; `/iiwa_experement/object_state` publishes JSON on `std_msgs/msg/String` with a monotonically increasing sequence, actual pose, holder, state and `last_request_id`. Commands: `attach_tool`, `dock_tool`, `grab_cap`, `place_cap`, `grab_screw`, `handoff_screw`, `inspect`.
+**Интерфейс:** добавить в мир второй `Robot { name "GrantAttachmentSupervisor" supervisor TRUE controller "<extern>" }`. Встроенный `/Ros2Supervisor` продолжает создавать объекты. Сервис `/iiwa_experement/object_command` использует `webots_ros2_msgs/srv/SetString`: в JSON-поле `value` передаются `request_id`, `op`, `object`, `target`, `expected_state`. Топик `/iiwa_experement/object_state` типа `std_msgs/msg/String` публикует JSON с возрастающим номером версии, фактической позой, владельцем объекта и `last_request_id`. Команды: `attach_tool`, `dock_tool`, `grab_cap`, `place_cap`, `grab_screw`, `handoff_screw`, `inspect`.
 
-- [ ] **Step 1: Write failing state tests.** Start `tool=none`, `cap=free|installed|absent`, screw set of 10; reject grab without the correct tool, second tool, second held object, wrong hole and duplicate handoff. Assert a successful handoff consumes one screw but leaves hole `empty`. Assert a failed command does not increment state sequence.
-- [ ] **Step 2: Run tests and observe failure.** `pytest -q src/iiwa_experement/test/test_object_state.py src/iiwa_experement/test/test_grant_supervisor.py`.
-- [ ] **Step 3: Make objects addressable.** Give every spawned managed `Solid` a stable `DEF` and preserve its current `name`. Add the invisible external supervisor Robot without replacing the table, robot or built-in `Ros2Supervisor`. Update tests that formerly asserted no `Robot {` in the template to assert exactly this one package supervisor and no preplaced iiwa or experiment object.
-- [ ] **Step 4: Implement the external controller.** Follow the existing `Ros2SupervisorLauncher` environment pattern (`WEBOTS_CONTROLLER_URL` and `WEBOTS_HOME`) using a distinct robot name. Resolve named nodes after `scene_ready`, read actual `patron`/`tcp` pose from the Webots robot or a validated TF chain, and set held object pose at every Webots step using the calibrated transform. When attaching/detaching, change `locked`/physics only as needed; keep motion continuous and never teleport a held object to the task destination. Report state only after Webots confirms the change. If an object or TCP cannot be resolved, refuse the command.
-- [ ] **Step 5: Run tests and a one-tool/one-cap Webots smoke test.** Check tool follows the tip and remains aligned while the arm moves; a cap follows the vacuum; docking returns the tool to the original socket. Keep 10 untouched screws stationary.
-- [ ] **Step 6: Commit supervisor and state protocol.**
+- [ ] **Шаг 1. Написать проверки автомата состояний.** Начальные состояния `tool=none`, `cap=free|installed|absent`, 10 доступных винтов. Запрещены захват без нужного инструмента, второй инструмент, второй переносимый объект, неверное отверстие и повторная передача. Переданный винт расходуется, отверстие остаётся `empty`. Отклонённая команда не меняет версию состояния.
+- [ ] **Шаг 2. Убедиться, что тесты падают.** `pytest -q src/iiwa_experement/test/test_object_state.py src/iiwa_experement/test/test_grant_supervisor.py`.
+- [ ] **Шаг 3. Сделать объекты адресуемыми.** У каждого управляемого `Solid` должен быть устойчивый `DEF` и прежнее поле `name`. Добавить невидимый внешний supervisor, сохранив стол, основного робота и встроенный `Ros2Supervisor`. Обновить тест мира: в шаблоне есть только один новый supervisor Robot, а iiwa и детали по-прежнему не предустановлены.
+- [ ] **Шаг 4. Реализовать внешний контроллер.** Использовать отдельное имя Robot и шаблон окружения `Ros2SupervisorLauncher` (`WEBOTS_CONTROLLER_URL`, `WEBOTS_HOME`). После `scene_ready` найти объекты, получить фактическую позу `patron`/`tcp` из Webots либо проверенной TF-цепи. На каждом шаге Webots пересчитывать позу удерживаемого объекта по калиброванному преобразованию. Менять `locked`/физику только там, где это нужно. Во время переноса объект следует за роботом и не переносится скачком к цели. Публиковать новое состояние после подтверждения Webots; при недоступной позе или объекте отказывать.
+- [ ] **Шаг 5. Проверить модуль и выполнить пробу Webots с одним инструментом и люком.** Инструмент совпадает с концом `patron` при движении; люк следует за присоской; при возврате инструмент попадает в исходное гнездо; остальные винты неподвижны.
+- [ ] **Шаг 6. Зафиксировать supervisor и автомат состояний.**
 
-### Task 4: Mirror the Webots scene into MoveIt
+### Задача 4. Отразить мир Webots в сцене MoveIt
 
-**Files:** Create `iiwa_experement/planning_scene.py`, `test/test_planning_scene.py`; update `package.xml` with `moveit_msgs` and needed geometry dependencies.
+**Файлы:** создать `iiwa_experement/planning_scene.py`, `test/test_planning_scene.py`; добавить нужные зависимости `moveit_msgs` и геометрических сообщений в `package.xml`.
 
-**Interfaces:** `PlanningSceneBridge.initialize(spec, geometry)`, `attach(object_id, link_name, relative_pose, touch_links)`, `detach(object_id, world_pose)`, `remove(object_id)`, `assert_synchronized(expected_ids)`. Use `/apply_planning_scene` and `/get_planning_scene` (verify actual names in the running MoveIt configuration) or installed MoveItPy equivalent; use `moveit_msgs/msg/CollisionObject` and `AttachedCollisionObject`. The planning component in `move_to_pose_server.py` must receive and confirm the same scene before motion.
+**Интерфейс:** `PlanningSceneBridge.initialize(spec, geometry)`, `attach(object_id, link_name, relative_pose, touch_links)`, `detach(object_id, world_pose)`, `remove(object_id)`, `assert_synchronized(expected_ids)`. Использовать `/apply_planning_scene`, `/get_planning_scene` или подтверждённый в установленном Jazzy эквивалент MoveItPy. Траектория допускается только после синхронизации сцены с сервером движения.
 
-- [ ] **Step 1: Write failing scene-diff tests.** Assert fixed obstacles include table, fixture, body, rack, tray, cap, every tool in rack and all ten screws when present. Assert `attach` removes the world object and adds exactly one attached object on `tcp`/appropriate parent; `detach` reverses it; `handoff` removes only that screw. Assert allowed contact links are narrow and do not disable whole-arm/world checks.
-- [ ] **Step 2: Run the focused test and observe failure.** `pytest -q src/iiwa_experement/test/test_planning_scene.py`.
-- [ ] **Step 3: Implement scene updates and acknowledgement.** Derive collision primitives from `webots_nodes.py` bounds and calibrated geometry, including table top at `Z=0.793` and obstacle extents; include a safety margin in config. Apply each world/attachment diff, query it back and verify that the **separate MoveItPy planning-scene monitor in `move_to_pose_server.py`** receives it before the next motion. Inspect the active topics: the repository's `moveit_cpp.yaml` currently names `/moveit_cpp/monitored_planning_scene`, which may differ from `move_group`'s published `/monitored_planning_scene`. If they do not connect, materialize a corrected `moveit_cpp.yaml` in the package's temporary runtime directory and point the temporary `setting.yaml` at it; do not edit `iiwa_config` globally. If either Webots or MoveIt update fails, keep the runner stopped and emit a reconciliation error; never plan with mismatched scene state.
-- [ ] **Step 4: Validate in RViz/Webots.** All initial objects have matching poses; attached tool and carried cap/screw move with robot in the planning scene; remaining screws stay obstacles.
-- [ ] **Step 5: Commit planning-scene bridge.**
+- [ ] **Шаг 1. Написать проверки изменений сцены.** В мире MoveIt есть стол, стапель, корпус, стойка, лоток, люк, инструменты и все десять винтов, если они присутствуют в Webots. `attach` удаляет объект из мира и создаёт один прикреплённый к `tcp`/нужному звену объект. `detach` выполняет обратное действие; передача удаляет только выбранный винт. Разрешения на контакт не отключают проверки для всего робота.
+- [ ] **Шаг 2. Убедиться, что тест падает.** `pytest -q src/iiwa_experement/test/test_planning_scene.py`.
+- [ ] **Шаг 3. Реализовать обновление и подтверждение.** Габариты брать из `webots_nodes.py` и измерений задачи 2; учесть стол с верхом `Z=0.793` и запас безопасности. Отправлять изменения и читать сцену обратно. Проверить, что **отдельный монитор MoveItPy в `move_to_pose_server.py`** получил те же объекты до движения. В текущем `moveit_cpp.yaml` указан `/moveit_cpp/monitored_planning_scene`; он может не совпадать с топиком `move_group`. Если связь отсутствует, создать исправленную временную копию `moveit_cpp.yaml` в пакете и указать её во временном `setting.yaml`; глобальный `iiwa_config` не менять. Если Webots и MoveIt расходятся — остановиться и сообщить ошибку синхронизации.
+- [ ] **Шаг 4. Сверить RViz и Webots.** Начальные объекты совпадают по позам; прикреплённые инструмент/люк/винт движутся с роботом; оставшиеся винты остаются препятствиями.
+- [ ] **Шаг 5. Зафиксировать мост к MoveIt.**
 
-### Task 5: Build a guarded motion adapter
+### Задача 5. Сделать адаптер безопасных перемещений
 
-**Files:** Create `iiwa_experement/motion.py`, `test/test_motion.py`; update `package.xml` to depend on `iiwa_msgs`, `control_msgs`, `sensor_msgs`, `tf2_ros` as used.
+**Файлы:** создать `iiwa_experement/motion.py`, `test/test_motion.py`; добавить в `package.xml` зависимости `iiwa_msgs`, `sensor_msgs`, `tf2_ros` и другие фактически используемые.
 
-**Interfaces:** `MotionAdapter.move_pose(goal: Transform, planner: Literal['ptp','lin'], speed: float, label: str) -> MotionResult`; `move_named('home', speed) -> MotionResult`; `stop(reason)`. Send to `cobot/move_to_pose`, `cobot/move_to_named`, `cobot/stop`. Goals are `tcp` poses converted to `base_link` with active TF, then to KUKA ABC (`ZYX` radians) expected by `MoveToPose.action`.
+**Интерфейс:** `MotionAdapter.move_pose(goal: Transform, planner: Literal['ptp','lin'], speed: float, label: str) -> MotionResult`; `move_named('home', speed) -> MotionResult`; `stop(reason)`. Вызывать `cobot/move_to_pose`, `cobot/move_to_named`, `cobot/stop`. Целевую позу `tcp` переводить через активный TF в `base_link`, затем в углы KUKA ABC (`ZYX`, радианы) из `MoveToPose.action`.
 
-- [ ] **Step 1: Write failing fake-client tests.** No goal is sent if joint state or TF is stale, scene revision unconfirmed, `speed` outside bounds, or the robot is already stopped. A rejected/aborted/timed-out action invokes stop and prevents the next segment. A successful action checks actual TCP position/orientation within configured tolerances.
-- [ ] **Step 2: Run tests and observe failure.** `pytest -q src/iiwa_experement/test/test_motion.py`.
-- [ ] **Step 3: Implement the adapter.** Use `ptp`/OMPL only for free-space transit with full collision scene, `lin` for short axial approach/retreat and contour segments; bound planning and execution timeouts, check fresh `/joint_states`, actual `tcp` TF and controller readiness. Do not use `iiwa_planning/direct_trajectory.py` or TCP gizmo for the baseline; disable the gizmo in the per-launch settings during `execute` so there is one command source.
-- [ ] **Step 4: Execute a motion-only Webots smoke test.** From home, go to a measured clearance pose over the empty work zone and return home with no contact; confirm actual path and joint limits.
-- [ ] **Step 5: Commit motion adapter.**
+- [ ] **Шаг 1. Написать тесты с поддельными клиентами.** Цель не отправляется при устаревших `joint_states`/TF, неподтверждённой сцене, недопустимой скорости или уже остановленном роботе. Отказ, отмена и тайм-аут вызывают `stop` и блокируют следующий участок. После успеха проверяются фактические положение и ориентация TCP.
+- [ ] **Шаг 2. Убедиться, что тест падает.** `pytest -q src/iiwa_experement/test/test_motion.py`.
+- [ ] **Шаг 3. Реализовать адаптер.** Свободный перенос — через `ptp`/OMPL с полной сценой столкновений; короткий осевой подход/отход и стороны контура — через `lin`. Ограничить время планирования/выполнения, проверять свежесть обратной связи и готовность контроллера. Не применять `iiwa_planning/direct_trajectory.py` и TCP gizmo для эталона. При `execute` выключать gizmo во временной конфигурации запуска, чтобы робот имел один источник команд.
+- [ ] **Шаг 4. Проверить движение в Webots без захвата.** Из дома пройти в измеренную свободную точку над рабочей зоной и вернуться. Сверить путь и пределы суставов.
+- [ ] **Шаг 5. Зафиксировать адаптер движения.**
 
-### Task 6: Implement reusable tool, hatch and sealant operations
+### Задача 6. Реализовать операции с инструментами, люком и герметиком
 
-**Files:** Create `iiwa_experement/operations.py`, `test/test_operations.py`.
+**Файлы:** создать `iiwa_experement/operations.py`, `test/test_operations.py`.
 
-**Interfaces:** `take_tool(tool_name)`, `dock_tool(tool_name)`, `pick_cap()`, `place_cap(target_pose)`, `dispense(segment_name, start_fraction=0.0)`, `inspect_cap()`, `inspect_sealant()`. `take_tool` inserts a tool into `patron`; `dock_tool` returns it to its socket. Each returns a typed outcome and emits trace events; the supervisor/object-state bridge and MoveIt scene bridge are the only state writers.
+**Интерфейс:** `take_tool(tool_name)`, `dock_tool(tool_name)`, `pick_cap()`, `place_cap(target_pose)`, `dispense(segment_name, start_fraction=0.0)`, `inspect_cap()`, `inspect_sealant()`. `take_tool` вставляет инструмент в `patron`; `dock_tool` возвращает его в гнездо. Каждая операция возвращает исход и пишет события. Владельцы состояния — только supervisor и мост MoveIt.
 
-- [ ] **Step 1: Write failing operation-sequence tests.** Assert `home/clearance→tool preapproach→axial insertion to mount→attach→axial extraction` for `take_tool`; reverse for `dock_tool`. Assert cap route `pregrasp→lower→grab→lift→clearance transfer→align→lower to seat→place/release→retreat`; verify cap motion tracks TCP and no direct cap teleport. Assert `dispense` moves the nozzle along the actual four 3D sides, preserves working height through adjacent corners and changes a side to complete only after the full motion succeeds.
-- [ ] **Step 2: Run tests and observe failure.** `pytest -q src/iiwa_experement/test/test_operations.py`.
-- [ ] **Step 3: Implement operations with calibrated transforms.** Compute each TCP target from the named work-tip target. Use local target axes for approach/retreat; compute transfer clearance from the carried envelope and obstacles, not one global magic Z. Before grab or release, require measured proximity and expected object state. For exp. 5 support one deliberately offset placement followed by pickup and correction. For exp. 9/20 record last completed sealant fraction and resume from there.
-- [ ] **Step 4: Run unit tests and Webots smoke tests for experiments 1, 6, 9 and 10.** Observe real robot motion with tool, cap and nozzle; no object jumps directly to a target.
-- [ ] **Step 5: Commit tool/hatch/sealant operations.**
+- [ ] **Шаг 1. Написать тесты последовательностей.** Взятие инструмента: `дом/безопасная высота→точка над гнездом→осевое опускание→крепление→осевое извлечение`; возврат — обратный маршрут. Люк: `над люком→опускание→захват→подъём→перенос над корпусом→совмещение→опускание до посадки→отпускание→отход`. Люк должен двигаться вместе с TCP, без скачка к корпусу. Сопло проходит реальные 3D-участки четырёх сторон и смежные углы на рабочей высоте; сторона считается выполненной только после успешного движения.
+- [ ] **Шаг 2. Убедиться, что тест падает.** `pytest -q src/iiwa_experement/test/test_operations.py`.
+- [ ] **Шаг 3. Реализовать операции через калиброванные фреймы.** Позы TCP вычислять по целевой позе рабочего кончика. Подходить и отходить вдоль локальной оси цели; безопасную высоту переноса вычислять по габаритам переносимого объекта и препятствий. Перед захватом/отпусканием проверять фактическую близость и состояние. В 5 выполнить первую смещённую посадку и одну корректировку. В 9/20 хранить последнюю подтверждённую точку герметика и продолжать от неё.
+- [ ] **Шаг 4. Проверить модули и выполнить пробы Webots для 1, 6, 9, 10.** Убедиться, что движутся робот, инструмент, люк и сопло, а объект не скачет к цели.
+- [ ] **Шаг 5. Зафиксировать операции.**
 
-### Task 7: Implement magnetic pickup and virtual handoff
+### Задача 7. Реализовать магнитный захват и передачу винта
 
-**Files:** Extend `iiwa_experement/operations.py`, `iiwa_experement/object_state.py`, `test/test_operations.py`, `test/test_object_state.py`.
+**Файлы:** дополнить `iiwa_experement/operations.py`, `iiwa_experement/object_state.py`, `test/test_operations.py`, `test/test_object_state.py`.
 
-**Interfaces:** `pick_screw(screw_id)`, `handoff_screw(screw_id, hole_id)`. The final event is `delivered(screw_id,hole_id)`, never `seated` or `tightened`.
+**Интерфейс:** `pick_screw(screw_id)`, `handoff_screw(screw_id, hole_id)`. Итоговое событие — `delivered(screw_id,hole_id)`; состояний `seated` и `tightened` нет.
 
-- [ ] **Step 1: Write failing tests.** A screw can be selected from any of ten available IDs; held screw follows magnetic work tip; approach the selected hole on its axis; `handoff_screw` fails unless the actual robot TCP is within the measured handoff pose tolerance and the screw is held. Successful handoff removes that single screw from Webots and MoveIt, leaves the hole empty, and leaves nine/then fewer untouched screws in the tray.
-- [ ] **Step 2: Run tests and observe failure.** `pytest -q src/iiwa_experement/test/test_operations.py src/iiwa_experement/test/test_object_state.py`.
-- [ ] **Step 3: Implement actual path.** `pregrasp over selected screw→axial lower→grab→axial lift→clearance transfer→pre-handoff above hole→axis alignment→short lower to handoff pose→release to virtual human→axial retreat`. Do not command screw penetration into cap/body. Between holes, move through the verified clearance corridor, never laterally across the cap at contact height.
-- [ ] **Step 4: Run Webots smoke tests for 11, 12, 14.** Verify each tool/screw visibly travels with robot; all ten are initially present and only delivered screws disappear.
-- [ ] **Step 5: Commit handoff operation.**
+- [ ] **Шаг 1. Написать тесты.** Можно выбрать любой из десяти доступных винтов. Взятый винт следует за рабочим концом магнита. Подход к отверстию выполняется по его оси. Передача запрещена, если винт не удерживается или фактическая поза TCP вне допуска у нужного отверстия. Успешная передача удаляет только один винт из Webots и MoveIt, оставляет отверстие пустым, другие винты — в лотке.
+- [ ] **Шаг 2. Убедиться, что тесты падают.** `pytest -q src/iiwa_experement/test/test_operations.py src/iiwa_experement/test/test_object_state.py`.
+- [ ] **Шаг 3. Реализовать маршрут робота.** `над выбранным винтом→осевое опускание→захват→осевой подъём→перенос на безопасной высоте→над отверстием→совмещение осей→короткое опускание до точки передачи→отпускание оператору→осевой отход`. Не опускать винт внутрь люка или корпуса. Между отверстиями проходить через проверенную безопасную область, не перемещаться поперёк люка на контактной высоте.
+- [ ] **Шаг 4. Проверить Webots для 11, 12, 14.** Робот и винт движутся вместе; сначала видны десять винтов, исчезают только переданные.
+- [ ] **Шаг 5. Зафиксировать передачу винтов.**
 
-### Task 8: Define the 20 reference sequences and bounded recovery
+### Задача 8. Описать 20 эталонных маршрутов и восстановление
 
-**Files:** Create `iiwa_experement/reference_scenarios.py`, `test/test_reference_scenarios.py`; extend `iiwa_experement/operations.py` for `inspect_state` recovery as needed.
+**Файлы:** создать `iiwa_experement/reference_scenarios.py`, `test/test_reference_scenarios.py`; при необходимости дополнить `operations.py` проверкой `inspect_state`.
 
-**Interfaces:** `build_reference_sequence(spec: ScenarioSpec) -> tuple[Operation, ...]`; `execute_sequence(sequence, context) -> RunResult`. Sequence names/targets correspond to the package `doc/experements.md`; every successful sequence ends by returning the current tool and moving to `home`.
+**Интерфейс:** `build_reference_sequence(spec: ScenarioSpec) -> tuple[Operation, ...]`; `execute_sequence(sequence, context) -> RunResult`. Имена целей соответствуют `doc/experements.md`. Успешный маршрут заканчивается возвратом инструмента и переходом в `home`.
 
-- [ ] **Step 1: Write failing table-driven tests for IDs 1–20.** Assert exact operation order by category from Task 1, `dock_tool` before every switch, unique selected screws and required hole count. For 3/19 use actual shifted poses. For 4/15/20 verify one `grasp_failed` triggers `stop→inspect_state→redetect→one retry`; for 5 verify one `not_ok` triggers cap correction; for 9/20 verify resume at the missing sealant fraction. A second failure or unknown state ends `stopped` with no later motion. No trace contains `seat_screw` or `tighten`.
-- [ ] **Step 2: Run tests and observe failure.** `pytest -q src/iiwa_experement/test/test_reference_scenarios.py`.
-- [ ] **Step 3: Implement sequence selection and fault injection.** Consume `ScenarioSpec.failures` deterministically by matching skill, target and attempt; do not mutate the initial scene in `view`. Recovery reads actual simulator state before deciding whether to retry, skip an already completed transfer or stop.
-- [ ] **Step 4: Run focused tests and manually inspect expected sequence listing for all 20 IDs.** Distinguish three screw handoffs in exp. 13 from four in 14/15; exp. 19 must use shifted cap/tray.
-- [ ] **Step 5: Commit scenario runner.**
+- [ ] **Шаг 1. Написать табличные тесты для всех 20 ID.** Проверить порядок операций из задачи 1, возврат инструмента перед сменой, разные винты и нужное число отверстий. Для 3/19 брать смещённые реальные позы. Для 4/15/20: `grasp_failed→stop→inspect_state→повторное обнаружение→одна попытка`; для 5: `not_ok→одна корректировка люка`; для 9/20: продолжение с точки разрыва герметика. Повторный отказ и неизвестное состояние дают `stopped` без последующих движений. В журнале нет `seat_screw` и `tighten`.
+- [ ] **Шаг 2. Убедиться, что тесты падают.** `pytest -q src/iiwa_experement/test/test_reference_scenarios.py`.
+- [ ] **Шаг 3. Реализовать выбор маршрута и управляемые сбои.** Применять `ScenarioSpec.failures` по навыку, цели и номеру попытки. В `view` сбои не меняют сцену. Перед повтором читать фактическое состояние Webots и решать, повторить действие, пропустить уже выполненную передачу или остановиться.
+- [ ] **Шаг 4. Проверить тесты и список операций для всех ID.** В 13 три передачи, в 14/15 четыре; в 19 используются смещённые люк и лоток.
+- [ ] **Шаг 5. Зафиксировать маршруты.**
 
-### Task 9: Wire `view` and `execute` into the existing command
+### Задача 9. Добавить `view` и `execute` в существующий launch
 
-**Files:** Modify `iiwa_experement/runtime_config.py`, `launch/experiment.launch.py`, `setup.py`, `package.xml`, `test/test_launch.py`, `test/test_runtime_config.py`; create `iiwa_experement/reference_runner.py`, `iiwa_experement/trace.py`, `test/test_reference_runner.py`.
+**Файлы:** изменить `iiwa_experement/runtime_config.py`, `launch/experiment.launch.py`, `setup.py`, `package.xml`, `test/test_launch.py`, `test/test_runtime_config.py`; создать `iiwa_experement/reference_runner.py`, `iiwa_experement/trace.py`, `test/test_reference_runner.py`.
 
-**Interfaces:** CLI `ros2 launch iiwa_experement experiment.launch.py experiment_id:=N mode:=view|execute start_delay_sec:=3.0 trace_dir:=~/.ros/iiwa_experement/runs`; default `mode=view`, default trace directory as shown. `reference_runner` executable only in `execute`; `grant_supervisor` executable in both modes if needed for state inspection, but it must never change objects in `view`. `RunResult` and JSONL trace expose experiment ID, simulation timestamp, operation, object, target, start/end pose, outcome and state transition.
+**Интерфейс команды:** `ros2 launch iiwa_experement experiment.launch.py experiment_id:=N mode:=view|execute start_delay_sec:=3.0 trace_dir:=~/.ros/iiwa_experement/runs`. По умолчанию `mode=view` и указанный каталог журнала. В `execute` запускаются `grant_supervisor` и `reference_runner`; в `view` runner отсутствует, supervisor может работать только в режиме чтения. Журнал JSONL и `RunResult` содержат ID опыта, время симуляции, операцию, объект, цель, позы до/после, исход и изменение состояния.
 
-- [ ] **Step 1: Write failing launch/startup tests.** Check strict mode validation and finite nonnegative delay before Webots starts; `view` produces only bringup + scene spawner (+ inert supervisor) and zero motion clients; `execute` adds supervisor and runner. Check `scene_ready=false`, absent MoveIt/controller, stale joint states or paused `/clock` cannot start motion. Once all ready, the first motion starts no earlier than `scene_ready` time + `start_delay_sec` simulation seconds. On readiness timeout, exit nonzero with no robot goal.
-- [ ] **Step 2: Run tests and observe failure.** `pytest -q src/iiwa_experement/test/test_launch.py src/iiwa_experement/test/test_reference_runner.py`.
-- [ ] **Step 3: Implement startup and trace.** Wait for `scene_ready`, supervisor, MoveIt, relevant action/service servers and fresh TF/joint states, then start sim-time delay. Publish a concise progress topic and write JSONL to `trace_dir/experiment_<id>_<wall-clock-UTC>.jsonl`, expanding `~` in the default `~/.ros/iiwa_experement/runs`; flush after every operation so stopped runs retain evidence. On success or failure publish final `RunResult`; do not automatically quit Webots so the user can inspect the final scene.
-- [ ] **Step 4: Run launch tests and manual mode checks.** `view` shows the unchanged scene indefinitely. `execute` waits three sim seconds after readiness, then visibly moves. Check `start_delay_sec:=0` and a longer delay (e.g. 10) as boundary cases.
-- [ ] **Step 5: Commit launch and tracing.**
+- [ ] **Шаг 1. Написать тесты запуска.** Неверный режим и отрицательная/нечисловая задержка отклоняются до Webots. В `view` нет клиента движения и целей. В `execute` отсутствие `scene_ready`, MoveIt/контроллера, свежих `joint_states` или остановленные часы симуляции не допускают старт. Первое движение — не раньше `scene_ready + start_delay_sec` по времени симуляции. Тайм-аут готовности завершает runner с ошибкой без движения.
+- [ ] **Шаг 2. Убедиться, что тесты падают.** `pytest -q src/iiwa_experement/test/test_launch.py src/iiwa_experement/test/test_reference_runner.py`.
+- [ ] **Шаг 3. Реализовать ожидание и журнал.** Ждать `scene_ready`, supervisor, MoveIt, сервисы/действия движения, свежие TF и `joint_states`; затем выдержать задержку по `/clock`. Публиковать краткий прогресс. Писать JSONL в `trace_dir/experiment_<id>_<UTC-время>.jsonl`, раскрывая `~`, и сбрасывать данные после каждой операции. При успехе или остановке записать итог; Webots оставлять открытым для осмотра финальной сцены.
+- [ ] **Шаг 4. Проверить режимы вручную.** `view` показывает неизменную сцену сколько угодно; `execute` ждёт три секунды симуляции и начинает видимое движение. Проверить также `start_delay_sec:=0` и `start_delay_sec:=10`.
+- [ ] **Шаг 5. Зафиксировать launch и журнал.**
 
-### Task 10: Validate safety, the 20 runs and handoff documentation
+### Задача 10. Проверить безопасность и все 20 прогонов
 
-**Files:** Modify `src/iiwa_experement/doc/README.md`; add `src/iiwa_experement/doc/reference-control-qa.md` with measured transforms, collision checks and per-experiment results. Update tests only to cover concrete issues found during simulation.
+**Файлы:** обновить `src/iiwa_experement/doc/README.md`; создать `src/iiwa_experement/doc/reference-control-qa.md` с измерениями, результатами проверки столкновений и таблицей 20 опытов. Тесты дополнять по найденным конкретным ошибкам.
 
-**Interfaces:** The public command and trace format from Task 9 are the handoff contract for the user's LLM plan comparison.
+**Интерфейс:** команда запуска и формат журнала из задачи 9 — контракт для последующего сравнения эталона с планами LLM.
 
-- [ ] **Step 1: Build and run package tests.** `source /opt/ros/jazzy/setup.bash && colcon build --base-paths src --packages-up-to iiwa_experement --symlink-install`; then `source install/setup.bash && colcon test --base-paths src --packages-select iiwa_experement && colcon test-result --verbose`. Fix failures before claiming completion.
-- [ ] **Step 2: Run `view` for representative IDs 1, 11, 16, 19 and 20.** Check object counts, 10 tray screws, one permanent `patron`, no arm movement and no object change after at least 10 sim seconds.
-- [ ] **Step 3: Run `execute` for IDs 1–20 individually.** Capture for each: actual motion visible, TCP/tool alignment, operation trace, no forbidden collisions/penetrations, final cap pose, correct sealant segments, expected distinct handoffs, returned tool and home. If a measured pose is unreachable or unsafe, correct geometry/scene representation and repeat that ID plus affected neighbours; never bypass the collision check.
-- [ ] **Step 4: Exercise fault routes 4, 5, 9, 15, 20.** Verify exactly one recovery attempt at the intended component and stop on repeated or unknown failure. Verify the screw is never inserted, the hole remains empty after handoff, and no torque tool motion occurs.
-- [ ] **Step 5: Document exact launch examples, parameters, trace schema, numerical calibration, test results, unresolved limits and simulation-only status.** Include `ros2 launch iiwa_experement experiment.launch.py experiment_id:=1 mode:=view` and `... mode:=execute start_delay_sec:=3.0`.
-- [ ] **Step 6: Commit documentation and final verified changes.** Review `git diff` and preserve unrelated changes already in the worktree.
+- [ ] **Шаг 1. Собрать пакет и запустить тесты.** `source /opt/ros/jazzy/setup.bash && colcon build --base-paths src --packages-up-to iiwa_experement --symlink-install`; затем `source install/setup.bash && colcon test --base-paths src --packages-select iiwa_experement && colcon test-result --verbose`. Исправить ошибки до заявления о готовности.
+- [ ] **Шаг 2. Проверить `view` для 1, 11, 16, 19, 20.** Сверить состав объектов, десять винтов, постоянный `patron`, отсутствие движения робота и изменений объектов после 10 секунд симуляции.
+- [ ] **Шаг 3. Запустить `execute` для каждого ID 1–20.** Для каждого записать: видимые движения, точность крепления инструмента к TCP, журнал, отсутствие запрещённых столкновений и проникновений, итоговую позу люка, участки герметика, пары переданных винтов, возврат инструмента и `home`. Если поза недостижима или опасна, исправить геометрию/сцену и повторить опыт и соседние затронутые варианты. Не обходить проверку столкновений.
+- [ ] **Шаг 4. Проверить ветви отказов 4, 5, 9, 15, 20.** Ровно одна разрешённая попытка восстановления; повторный отказ или неизвестное состояние останавливает робот. Винт не вставляется, отверстие пустое, затяжной инструмент не движется.
+- [ ] **Шаг 5. Описать команды запуска, параметры, формат журнала, численные калибровки, результаты тестов, ограничения и режим только симуляции.** Примеры: `ros2 launch iiwa_experement experiment.launch.py experiment_id:=1 mode:=view` и `ros2 launch iiwa_experement experiment.launch.py experiment_id:=1 mode:=execute start_delay_sec:=3.0`.
+- [ ] **Шаг 6. Зафиксировать документацию и проверенные исправления.** Просмотреть `git diff`; не включать посторонние изменения рабочего дерева.
 
-## Completion Criteria
+## Критерии готовности
 
-The work is complete only when `view` remains stationary, `execute` moves the robot through all intended operations in all 20 scenarios, the tool is visibly attached at the patron tip, the hatch moves with the robot and ends on the body, sealant follows named paths, each screw physically travels to a hole and is released to the virtual human without seating or tightening, and build/tests plus recorded Webots smoke checks pass. A failed or unsafe scenario is reported as incomplete rather than silently marked successful.
+В `view` сцена остаётся неподвижной. В `execute` робот выполняет все нужные движения для всех 20 сценариев; инструмент виден на кончике `patron`, люк перемещается вместе с роботом и оказывается на корпусе, сопло идёт по заданным участкам, каждый винт реально переносится к отверстию и передаётся виртуальному оператору без установки и затяжки. Сборка, тесты и документированные прогоны Webots успешны. Небезопасный или неудачный опыт остаётся незавершённым с явной причиной.
