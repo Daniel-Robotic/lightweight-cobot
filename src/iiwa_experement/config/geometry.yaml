@@ -1,0 +1,153 @@
+# Calibrated working geometry for the grant reference executor.
+#
+# All lengths are metres, all angles are degrees unless a key says rad.
+# Every transform below names its parent and child frame.  The numeric values
+# were measured from the meshes in iiwa_description/objects/grant, from
+# patron.xacro and from the actual Webots scene.  They are deliberately kept
+# in one file so the executor never hard-codes a working pose.
+schema_version: 1
+units: m
+angle_units: deg
+
+frames:
+  world: {parent: null}
+  base_link: {parent: world}
+  patron: {parent: base_link}
+  tcp: {parent: patron}
+
+# Webots spawns the robot at this fixed world pose (setting.yaml transform).
+world_to_base:
+  xyz: [-0.25, 0.0, 0.79]
+  rpy_deg: [0.0, 0.0, 0.0]
+  parent: world
+  child: base_link
+
+# patron.xacro: patron_tcp origin is 55.2 mm along patron Z, rotated -90 deg.
+patron_to_tcp:
+  xyz: [0.0, 0.0, 0.0552]
+  rpy_deg: [0.0, 0.0, -90.0]
+  parent: patron
+  child: tcp
+
+# The mount (top of a working tool) sits exactly at tcp.  The working tip is
+# 0.140 m further along tcp +Z, which points towards the work piece when the
+# arm is in a working pose.
+tool_mounts:
+  vacuum: {xyz: [0.0, 0.0, 0.0], rpy_deg: [0.0, 0.0, 0.0]}
+  magnetic_tool: {xyz: [0.0, 0.0, 0.0], rpy_deg: [0.0, 0.0, 0.0]}
+  sealant_tool: {xyz: [0.0, 0.0, 0.0], rpy_deg: [0.0, 0.0, 0.0]}
+
+tool_work_tips:
+  vacuum: {xyz: [0.0, 0.0, 0.140], rpy_deg: [0.0, 0.0, 0.0]}
+  magnetic_tool: {xyz: [0.0, 0.0, 0.140], rpy_deg: [0.0, 0.0, 0.0]}
+  sealant_tool: {xyz: [0.0, 0.0, 0.140], rpy_deg: [0.0, 0.0, 0.0]}
+
+# Transform from tcp to the Webots node origin (bottom of the vertical OBJ).
+# The OBJ Y axis is imported as Webots Z, so the node is Rx(-90) relative to a
+# tcp that points down.
+tool_tcp_to_nodes:
+  vacuum: {xyz: [0.0, 0.0, 0.140], rpy_deg: [-90.0, 0.0, 0.0]}
+  magnetic_tool: {xyz: [0.0, 0.0, 0.140], rpy_deg: [-90.0, 0.0, 0.0]}
+  sealant_tool: {xyz: [0.0, 0.0, 0.140], rpy_deg: [-90.0, 0.0, 0.0]}
+
+# Boxes expressed in the tcp frame, used for the attached collision object.
+tool_collisions:
+  vacuum: {size: [0.0821, 0.081, 0.140], offset: [0.0, 0.0, 0.070]}
+  magnetic_tool: {size: [0.036, 0.036, 0.140], offset: [0.0, 0.0, 0.070]}
+  sealant_tool: {size: [0.0561, 0.0561, 0.140], offset: [0.0, 0.0, 0.070]}
+
+# Hatch (cap.obj) is 0.1384 x 0.0984 x 0.00367.  Its node origin is the lower
+# face; the suction cup touches the highest point (local Y = 0.006).
+cap_tcp_to_node:
+  xyz: [0.0, 0.0, 0.146]
+  rpy_deg: [-90.0, 0.0, 0.0]
+cap_collision:
+  # Expressed in tcp: the plate is horizontal, 3.67 mm thick.
+  size: [0.1384, 0.0984, 0.00367]
+  offset: [0.0, 0.0, 0.141835]
+# Installed hatch pose relative to the body node (body local Y is world Z).
+body_to_installed_cap:
+  xyz: [0.0, 0.00294, 0.0]
+  rpy_deg: [0.0, 0.0, 0.0]
+
+# Screws stand with their head up.  The magnet touches the head, 9 mm above
+# the node origin; the screw node is therefore 149 mm below tcp.
+screw_tcp_to_node:
+  xyz: [0.0, 0.0, 0.149]
+  rpy_deg: [-90.0, 0.0, 0.0]
+screw_collision:
+  size: [0.0055, 0.0055, 0.009]
+  offset: [0.0, 0.0, 0.1445]
+
+# Hole centres are measured in the world frame of the standard, unshifted
+# body at 45 deg.  They rotate with the body.  The values agree with
+# doc/experiment-scenes.md.
+hole_reference_yaw_deg: 45.0
+hole_z_above_body_origin: 0.00894
+handoff_gap: 0.002
+holes:
+  hole_1: {dx: -0.0757, dy: -0.0148}
+  hole_2: {dx: -0.0148, dy: -0.0757}
+  hole_3: {dx: 0.0757, dy: 0.0148}
+  hole_4: {dx: 0.0148, dy: 0.0757}
+
+# Sealant ring: a closed rectangle just inside the hatch rim.  Half sizes are
+# in the hatch body plane; the ring is traversed counter-clockwise starting at
+# the hole_1 side.  Segment endpoints are derived from these measured values.
+sealant_reference_yaw_deg: 45.0
+sealant_rect:
+  half_x: 0.058
+  half_z: 0.037
+sealant_z_above_body_top: 0.0015
+sealant_sides:
+  side_1: {start: [-0.06718, -0.01485], end: [-0.01485, -0.06718]}
+  side_2: {start: [-0.01485, -0.06718], end: [0.06718, 0.01485]}
+  side_3: {start: [0.06718, 0.01485], end: [0.01485, 0.06718]}
+  side_4: {start: [0.01485, 0.06718], end: [-0.06718, -0.01485]}
+
+# Approach / transfer clearances and limits.
+approach_gap: 0.060
+contact_gap: 0.003
+transfer_gap: 0.080
+seat_gap: 0.002
+position_tolerance: 0.006
+orientation_tolerance_rad: 0.08
+speeds:
+  transfer: 0.35
+  approach: 0.18
+  contact: 0.06
+  contour: 0.09
+
+# Conservative collision models for the static scene.  They mirror the
+# Webots bounding objects so MoveIt and the simulator agree.
+scene_collisions:
+  table:
+    type: box
+    size: [1.28, 1.08, 0.045]
+    center_z: 0.7705
+  fixture:
+    type: box
+    size: [0.350, 0.220, 0.041]
+    offset_z: 0.0105
+  body:
+    type: box
+    size: [0.300, 0.170, 0.00915]
+    offset_z: 0.000695
+  rack:
+    type: box
+    size: [0.420, 0.140, 0.010]
+    offset_z: 0.005
+  tray_base:
+    type: box
+    size: [0.120, 0.070, 0.0024]
+    offset_z: 0.0012
+  tray_wall_x:
+    type: box
+    size: [0.002, 0.070, 0.010]
+    offset_z: 0.005
+    offset_x: 0.059
+  tray_wall_y:
+    type: box
+    size: [0.120, 0.002, 0.010]
+    offset_z: 0.005
+    offset_y: 0.034
