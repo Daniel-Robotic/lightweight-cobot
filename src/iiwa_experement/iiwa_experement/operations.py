@@ -135,14 +135,16 @@ class SupervisorClient:
         accepted = bool(future.result().success)
         # The detailed result is published atomically after the transition.
         state = self.latest
-        if state is None or state.get('last_command_result', {}).get('request_id') != request_id:
+        last = (state or {}).get('last_command_result') or {}
+        if last.get('request_id') != request_id:
             end = time.monotonic() + 2.0
             while time.monotonic() < end:
                 rclpy.spin_once(self.node, timeout_sec=0.02)
                 state = self.latest
-                if state and state.get('last_command_result', {}).get('request_id') == request_id:
+                last = (state or {}).get('last_command_result') or {}
+                if last.get('request_id') == request_id:
                     break
-        result = (state or {}).get('last_command_result', {})
+        result = last
         if not accepted or not result.get('accepted', False):
             reason = result.get('error') or 'supervisor rejected the command'
             raise OperationError(f'{op}({object_id or "-"}) rejected: {reason}')
@@ -402,10 +404,20 @@ class ReferenceOperations:
             # runs into the wrist limit; the lateral exit is what actually
             # keeps the tool body out of the rack textures.
             transfer = self._above(goal, self.geometry.transfer_gap)
-            self._move(
-                transfer, 'lin', self.geometry.speeds['approach'],
-                f'take_tool({tool_name}):lift',
-            )
+            try:
+                self._move(
+                    transfer, 'lin', self.geometry.speeds['approach'],
+                    f'take_tool({tool_name}):lift',
+                )
+            except OperationError as error:
+                # The tool is attached.  Continue with the lateral exit (or
+                # let the route's 'work' move recover) rather than aborting
+                # with the tool in the rack.
+                if 'Планирование' not in str(error):
+                    raise
+                self._emit('lift_skipped', label=f'take_tool({tool_name})',
+                           reason=str(error))
+                self.motion.reset_stop()
             for offset in (0.10, 0.06, 0.03):
                 exit_pose = Transform.from_xyz_rpy(
                     [0.0, offset, 0.0], [0.0, 0.0, 0.0],
@@ -635,7 +647,18 @@ class ReferenceOperations:
                 prepare=restore_screw,
             )
             self.supervisor.command('grab_screw', screw_id)
-            self._retreat(goal, f'pick_screw({screw_id})')
+            try:
+                self._retreat(goal, f'pick_screw({screw_id})')
+            except OperationError as error:
+                # The screw is already attached.  A rejected axial lift at a
+                # far tray cell can be recovered by the route's next 'work'
+                # move instead of aborting with the screw in hand.
+                if 'Планирование' not in str(error):
+                    raise
+                self._emit('retreat_skipped',
+                           label=f'pick_screw({screw_id})',
+                           reason=str(error))
+                self.motion.reset_stop()
             self._emit('pick_screw', object=screw_id, phase='done')
             return OperationResult(True, 'pick_screw', f'{screw_id} grasped', tuple(self.events))
         except Exception as error:
