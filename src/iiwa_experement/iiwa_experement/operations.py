@@ -451,29 +451,44 @@ class ReferenceOperations:
                 rack_pose,
             )
             self._require_synchronized()
-            self._retreat(goal, f'dock_tool({tool_name})')
+            try:
+                self._retreat(goal, f'dock_tool({tool_name})')
+            except OperationError as error:
+                # The axial retreat can be rejected from the socket branch.
+                # The tool is already docked, so stepping out is still safe.
+                if 'Планирование' not in str(error):
+                    raise
+                self.motion.reset_stop()
             # Step out of the rack along +Y before any joint-space move; the
-            # axial retreat alone can leave the wrist against its limit.
-            transfer = self._above(goal, self.geometry.transfer_gap)
-            for offset in (0.10, 0.06, 0.03):
-                exit_pose = Transform.from_xyz_rpy(
-                    [0.0, offset, 0.0], [0.0, 0.0, 0.0],
-                    parent='world', child='rack_exit_offset',
-                ).compose_relaxed(transfer)
-                label = (
-                    f'dock_tool({tool_name}):exit' if offset == 0.10
-                    else f'dock_tool({tool_name}):exit:{offset:.2f}'
-                )
-                try:
-                    self._move(
-                        exit_pose, 'lin', self.geometry.speeds['transfer'],
-                        label,
+            # axial retreat alone can leave the wrist against its limit.  Use a
+            # lower height if the full retreat was rejected.
+            for gap in (
+                self.geometry.transfer_gap, 0.05, 0.02,
+            ):
+                base = self._above(goal, gap)
+                reached = False
+                for offset in (0.10, 0.06, 0.03):
+                    exit_pose = Transform.from_xyz_rpy(
+                        [0.0, offset, 0.0], [0.0, 0.0, 0.0],
+                        parent='world', child='rack_exit_offset',
+                    ).compose_relaxed(base)
+                    label = (
+                        f'dock_tool({tool_name}):exit' if offset == 0.10
+                        else f'dock_tool({tool_name}):exit:{offset:.2f}'
                     )
+                    try:
+                        self._move(
+                            exit_pose, 'lin',
+                            self.geometry.speeds['transfer'], label,
+                        )
+                        reached = True
+                        break
+                    except OperationError as error:
+                        if 'Планирование' not in str(error):
+                            raise
+                        self.motion.reset_stop()
+                if reached:
                     break
-                except OperationError as error:
-                    if 'Планирование' not in str(error):
-                        raise
-                    self.motion.reset_stop()
             self._emit('dock_tool', object=tool_name, phase='done')
             return OperationResult(True, 'dock_tool', f'{tool_name} docked', tuple(self.events))
         except Exception as error:
