@@ -42,6 +42,7 @@ def test_expected_resources_are_installed():
         'package.xml',
         'doc/experements.md',
         'doc/experiment-scenes.md',
+        'worlds/grant/iiwa-grant.wbt',
     ):
         path = share / relative
         assert path.is_file(), path
