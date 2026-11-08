@@ -42,8 +42,10 @@ def test_expected_resources_are_installed():
         'package.xml',
         'doc/experements.md',
         'doc/experiment-scenes.md',
+        'doc/README.md',
         'worlds/grant/iiwa-grant.wbt',
         'config/scenes.yaml',
+        'launch/experiment.launch.py',
     ):
         path = share / relative
         assert path.is_file(), path

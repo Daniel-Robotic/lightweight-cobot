@@ -1,0 +1,130 @@
+"""Create the per-launch world and settings copies.
+
+The installed world template keeps the two local PROTO references for source
+tree use.  Webots must open a copy whose local EXTERNPROTO paths are absolute,
+because the temporary world lives outside the installed package.  The same
+launch also needs a settings copy that points at that world and disables the
+legacy random object spawner.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+EXPERIMENT_IDS = tuple(range(1, 21))
+LOCAL_PROTOS = (
+    'CollaborativeRobotTable.proto',
+    'WorkspaceLimiter.proto',
+)
+_EXTERNPROTO_RE = re.compile(r'(EXTERNPROTO\s+")([^"]+)(")')
+
+
+def validate_experiment_id(raw: str) -> int:
+    """Accept only a decimal experiment number in 1..20."""
+    text = str(raw).strip()
+    if not text.isdigit():
+        raise ValueError(f'experiment_id must be an integer in 1..20, got {raw!r}')
+    value = int(text)
+    if text != str(value):
+        raise ValueError(f'experiment_id must be a decimal integer, got {raw!r}')
+    if value not in EXPERIMENT_IDS:
+        raise ValueError(f'experiment_id {value} is outside 1..20')
+    return value
+
+
+def _absolute_proto(source: str, description_share: Path) -> str:
+    if source.startswith(('http://', 'https://')):
+        return source
+    proto_dir = description_share / 'resource' / 'protos'
+    candidate = proto_dir / Path(source).name
+    if not candidate.is_file():
+        raise FileNotFoundError(
+            f'EXTERNPROTO {source!r} was not found in {proto_dir}'
+        )
+    return str(candidate.resolve())
+
+
+def _materialize_world(
+    world_template: Path,
+    description_share: Path,
+    output_dir: Path,
+) -> Path:
+    if not world_template.is_file():
+        raise FileNotFoundError(f'world template does not exist: {world_template}')
+    text = world_template.read_text(encoding='utf-8')
+
+    def replace(match: re.Match[str]) -> str:
+        return match.group(1) + _absolute_proto(match.group(2), description_share) + match.group(3)
+
+    resolved = _EXTERNPROTO_RE.sub(replace, text)
+    for name in LOCAL_PROTOS:
+        expected = description_share / 'resource' / 'protos' / name
+        if str(expected.resolve()) not in resolved:
+            raise FileNotFoundError(
+                f'world template does not reference the installed {name}'
+            )
+    world_path = output_dir / world_template.name
+    world_path.write_text(resolved, encoding='utf-8')
+    return world_path
+
+
+def _mapping(value: Any, label: str) -> dict:
+    if not isinstance(value, dict):
+        raise ValueError(f'{label} must be a mapping')
+    return value
+
+
+def _materialize_setting(
+    base_setting: Path,
+    world_path: Path,
+    output_dir: Path,
+) -> Path:
+    if not base_setting.is_file():
+        raise FileNotFoundError(f'base settings file does not exist: {base_setting}')
+    data = _mapping(
+        yaml.safe_load(base_setting.read_text(encoding='utf-8')) or {},
+        'settings',
+    )
+    digital_twin = _mapping(data.get('digital_twin'), 'digital_twin')
+    webots = _mapping(digital_twin.get('webots'), 'digital_twin.webots')
+    objects = _mapping(webots.setdefault('objects', {}), 'digital_twin.webots.objects')
+    objects['enabled'] = False
+    objects['count'] = 0
+    webots['world'] = str(world_path.resolve())
+
+    tool = _mapping(data.setdefault('tool', {}), 'tool')
+    tool['active'] = 'patron'
+
+    setting_path = output_dir / 'setting.yaml'
+    setting_path.write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+        encoding='utf-8',
+    )
+    return setting_path
+
+
+def prepare_runtime_files(
+    base_setting: Path | str,
+    world_template: Path | str,
+    description_share: Path | str,
+    output_dir: Path | str,
+) -> tuple[Path, Path]:
+    """Write an isolated world/settings pair and return ``(world, setting)``.
+
+    Both local PROTO references are resolved against the installed
+    ``iiwa_description`` share.  External https PROTO references are preserved
+    verbatim.  The base settings keep their cameras, robot transform and
+    controller paths; only the world path and the legacy object spawner change.
+    """
+    base_setting = Path(base_setting)
+    world_template = Path(world_template)
+    description_share = Path(description_share)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    world_path = _materialize_world(world_template, description_share, output_dir)
+    setting_path = _materialize_setting(base_setting, world_path, output_dir)
+    return world_path, setting_path
