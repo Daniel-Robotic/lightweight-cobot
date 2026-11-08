@@ -479,7 +479,10 @@ def world_target(spec: ScenarioSpec, geometry: GeometrySpec, name: str) -> Trans
         dx, dy = _rotate_xy(
             hole.dx, hole.dy, spec.body.yaw_deg - geometry.hole_reference_yaw_deg,
         )
-        return _down_transform(
+        # The target is the screw node at the handoff point: upright, its
+        # lower point just above the hole.  tcp_goal() turns it into a
+        # downward-facing tcp with the magnet above the screw head.
+        return object_pose_transform(
             spec.body.x + dx,
             spec.body.y + dy,
             spec.body.z + geometry.hole_z_above_body_origin + geometry.handoff_gap,

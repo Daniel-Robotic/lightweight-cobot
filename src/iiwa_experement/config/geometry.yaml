@@ -122,9 +122,12 @@ speeds:
 # Webots bounding objects so MoveIt and the simulator agree.
 scene_collisions:
   table:
+    # Top at Z = 0.789, deliberately 1 mm below the robot base (Z = 0.790)
+    # and 4 mm below the work surface (Z = 0.793), so the base is not in
+    # collision while downward motion is still blocked.
     type: box
     size: [1.28, 1.08, 0.045]
-    center_z: 0.7705
+    offset_z: 0.7665
   fixture:
     type: box
     size: [0.350, 0.220, 0.041]
