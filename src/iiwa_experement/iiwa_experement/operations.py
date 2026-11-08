@@ -304,6 +304,7 @@ class ReferenceOperations:
             # false contact with the target itself.
             self.bridge.remove(remove_before_contact)
             self._require_synchronized()
+        self.motion.wait_stationary()
         transfer = self._above(goal, transfer_gap)
         approach = self._above(goal, approach_gap)
         self._move(transfer, 'ompl', self.geometry.speeds['transfer'], f'{label}:transfer')
@@ -333,7 +334,9 @@ class ReferenceOperations:
         self._move(approach, 'lin', self.geometry.speeds['approach'], f'{label}:retreat')
         self._move(transfer, 'ompl', self.geometry.speeds['transfer'], f'{label}:clear')
 
-    def _contact_with_home_retry(self, goal: Transform, label: str, **kwargs) -> None:
+    def _contact_with_home_retry(
+        self, goal: Transform, label: str, *, prepare=None, **kwargs,
+    ) -> None:
         """Contact a target, reconfiguring through home only if planning fails.
 
         The routes use the closer 'work' pose between tasks.  A few tray and
@@ -348,6 +351,8 @@ class ReferenceOperations:
                 raise
             self._emit('reconfigure', label=label, target='home',
                        reason=str(error))
+            if prepare is not None:
+                prepare()
             self.motion.reset_stop()
             named = self.motion.move_named('home', 0.3)
             if not getattr(named, 'success', False):
@@ -392,30 +397,34 @@ class ReferenceOperations:
                 remove_before_contact=f'grant_{tool_name}',
             )
             self.supervisor.command('attach_tool', tool_name)
-            # Lift straight up, clear of the magazine, before any lateral or
-            # joint-space move.  Without this the tool body sweeps through the
-            # rack obstacles while the arm travels to 'work'.  The sockets sit
-            # at slightly different reachable heights, so accept the highest
-            # clearance that plans.
-            lift_error = None
-            for gap in (0.16, 0.14, 0.12):
+            # Lift a little, then translate along +Y away from the magazine
+            # before any large joint-space move.  A full-height vertical lift
+            # runs into the wrist limit; the lateral exit is what actually
+            # keeps the tool body out of the rack textures.
+            transfer = self._above(goal, self.geometry.transfer_gap)
+            self._move(
+                transfer, 'lin', self.geometry.speeds['approach'],
+                f'take_tool({tool_name}):lift',
+            )
+            for offset in (0.10, 0.06, 0.03):
+                exit_pose = Transform.from_xyz_rpy(
+                    [0.0, offset, 0.0], [0.0, 0.0, 0.0],
+                    parent='world', child='rack_exit_offset',
+                ).compose_relaxed(transfer)
                 label = (
-                    f'take_tool({tool_name}):lift' if gap == 0.16
-                    else f'take_tool({tool_name}):lift:{gap:.2f}'
+                    f'take_tool({tool_name}):exit' if offset == 0.10
+                    else f'take_tool({tool_name}):exit:{offset:.2f}'
                 )
                 try:
                     self._move(
-                        self._above(goal, gap), 'lin',
-                        self.geometry.speeds['approach'], label,
+                        exit_pose, 'lin', self.geometry.speeds['transfer'],
+                        label,
                     )
                     break
                 except OperationError as error:
                     if 'Планирование' not in str(error):
                         raise
                     self.motion.reset_stop()
-                    lift_error = error
-            else:
-                raise lift_error
             self._emit('take_tool', object=tool_name, phase='done',
                        tool=tool_name, tcp=goal.xyz)
             return OperationResult(True, 'take_tool', f'{tool_name} mounted', tuple(self.events))
@@ -443,6 +452,28 @@ class ReferenceOperations:
             )
             self._require_synchronized()
             self._retreat(goal, f'dock_tool({tool_name})')
+            # Step out of the rack along +Y before any joint-space move; the
+            # axial retreat alone can leave the wrist against its limit.
+            transfer = self._above(goal, self.geometry.transfer_gap)
+            for offset in (0.10, 0.06, 0.03):
+                exit_pose = Transform.from_xyz_rpy(
+                    [0.0, offset, 0.0], [0.0, 0.0, 0.0],
+                    parent='world', child='rack_exit_offset',
+                ).compose_relaxed(transfer)
+                label = (
+                    f'dock_tool({tool_name}):exit' if offset == 0.10
+                    else f'dock_tool({tool_name}):exit:{offset:.2f}'
+                )
+                try:
+                    self._move(
+                        exit_pose, 'lin', self.geometry.speeds['transfer'],
+                        label,
+                    )
+                    break
+                except OperationError as error:
+                    if 'Планирование' not in str(error):
+                        raise
+                    self.motion.reset_stop()
             self._emit('dock_tool', object=tool_name, phase='done')
             return OperationResult(True, 'dock_tool', f'{tool_name} docked', tuple(self.events))
         except Exception as error:
@@ -575,9 +606,18 @@ class ReferenceOperations:
             self._require_synchronized()
             screw_pose = self.supervisor.object_pose(def_name)
             goal = tcp_goal(screw_pose, self.geometry.screw_tcp_to_node)
+            def restore_screw() -> None:
+                # The first attempt removed the screw from the planning scene
+                # before its transfer was rejected.  Restore it for the retry.
+                self.bridge.add_world(
+                    def_name, self.geometry.screw_collision, screw_pose,
+                )
+                self._require_synchronized()
+
             self._contact_with_home_retry(
                 goal, f'pick_screw({screw_id})',
                 remove_before_contact=def_name,
+                prepare=restore_screw,
             )
             self.supervisor.command('grab_screw', screw_id)
             self._retreat(goal, f'pick_screw({screw_id})')
@@ -618,7 +658,7 @@ class ReferenceOperations:
             raise
 
     # ------------------------------------------------------------------ tightening
-    def tighten_hole(self, hole_id: str, twist_deg: float = 60.0) -> OperationResult:
+    def tighten_hole(self, hole_id: str, twist_deg: float = 45.0) -> OperationResult:
         """Simulate tightening at an empty hole with the torque tool.
 
         The screw has already been handed to the virtual operator and removed
@@ -641,35 +681,64 @@ class ReferenceOperations:
             goal = tcp_goal(target, tip)
             self._contact(goal, f'tighten_hole({hole_id})')
             twist_error = None
-            for suffix, offset in (
-                ('twist:positive', twist_deg),
-                ('twist:negative', -twist_deg),
-            ):
-                twisted = goal.compose_relaxed(Transform.from_xyz_rpy(
-                    [0.0, 0.0, 0.0], [0.0, 0.0, offset],
-                    parent='tcp', child='tighten_twist',
-                ))
-                try:
-                    self._move(
-                        twisted, 'lin', self.geometry.speeds['contour'],
-                        f'tighten_hole({hole_id}):{suffix}',
+            twisted = goal
+            twist_done = False
+            # Prefer a pure flange rotation: it twists the tool about its own
+            # axis without moving the arm to another IK branch.  A Cartesian
+            # twist can push joint 6 into its limit, after which 'work' is no
+            # longer reachable.
+            joints = None
+            provider = getattr(self.motion, 'joint_positions', None)
+            if provider is not None:
+                joints = provider()
+            if joints is not None and len(joints) == 7:
+                for sign in (1.0, -1.0):
+                    target_joints = list(joints)
+                    target_joints[6] += math.radians(sign * twist_deg)
+                    self.motion.wait_stationary()
+                    result = self.motion.move_joints(
+                        target_joints, self.geometry.speeds['contour'],
+                        f'tighten_hole({hole_id}):joint_twist',
                     )
-                    break
-                except OperationError as error:
-                    # Holes on the far side of the body can sit against the
-                    # wrist limit in one direction.  A failed plan executes no
-                    # motion, so the opposite twist is safe to try.
-                    if 'Планирование' not in str(error):
-                        raise
-                    self.motion.reset_stop()
-                    twist_error = error
-            else:
-                raise twist_error
-            self._move(
-                goal, 'lin', self.geometry.speeds['contour'],
-                f'tighten_hole({hole_id}):return',
-            )
-            self._retreat(goal, f'tighten_hole({hole_id})')
+                    if getattr(result, 'success', False):
+                        twist_done = True
+                        self._emit('tighten_twist', object=hole_id,
+                                   joint=7, delta_deg=sign * twist_deg)
+                        break
+                    reset = getattr(self.motion, 'reset_stop', None)
+                    if reset is not None:
+                        reset()
+            if not twist_done:
+                for suffix, offset in (
+                    ('twist:positive', twist_deg),
+                    ('twist:negative', -twist_deg),
+                ):
+                    candidate = goal.compose_relaxed(Transform.from_xyz_rpy(
+                        [0.0, 0.0, 0.0], [0.0, 0.0, offset],
+                        parent='tcp', child='tighten_twist',
+                    ))
+                    self.motion.wait_stationary()
+                    try:
+                        self._move(
+                            candidate, 'lin', self.geometry.speeds['contour'],
+                            f'tighten_hole({hole_id}):{suffix}',
+                        )
+                        twisted = candidate
+                        twist_done = True
+                        break
+                    except OperationError as error:
+                        # Holes on the far side of the body can sit against
+                        # the wrist limit in one direction.  A failed plan
+                        # executes no motion, so the opposite twist is safe.
+                        if 'Планирование' not in str(error):
+                            raise
+                        self.motion.reset_stop()
+                        twist_error = error
+                if not twist_done:
+                    raise twist_error
+            # The caller's following 'work' move is the verified clearance
+            # move, as after a screw handoff.  A separate Cartesian retreat
+            # from the twisted pose can be rejected by the wrist limits.
             self._emit('tighten_simulated', object=hole_id, phase='done',
                        twist_deg=twist_deg)
             return OperationResult(

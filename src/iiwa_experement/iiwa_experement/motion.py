@@ -157,6 +157,7 @@ class MotionAdapter:
         self.joint_correction_attempts = max(1, int(joint_correction_attempts))
         self.joint_position_tolerance = float(joint_position_tolerance)
         self._joint_positions: tuple[float, ...] | None = None
+        self._joint_velocities: tuple[float, ...] | None = None
         self.stopped = False
         self.stop_reason: str | None = None
         self._last_joint_time = None
@@ -168,6 +169,45 @@ class MotionAdapter:
         self._last_joint_time = self.node.get_clock().now()
         if len(message.position) == 7:
             self._joint_positions = tuple(float(value) for value in message.position)
+        if len(message.velocity) == 7:
+            self._joint_velocities = tuple(
+                float(value) for value in message.velocity
+            )
+
+    def joint_positions(self) -> tuple[float, ...] | None:
+        return self._joint_positions
+
+    def wait_stationary(
+        self, timeout_sec: float = 3.0, tolerance: float = 0.01,
+    ) -> bool:
+        """Wait for fresh, near-zero joint velocities before planning.
+
+        The planning pipeline rejects a motion whose recorded start state still
+        carries velocity.  The controller action can finish before the next
+        zero-velocity sample reaches the planning server, so gate the next
+        plan on a short stable window.
+        """
+        if self.node is None or self._freshness_check is not None:
+            return True
+        import rclpy
+
+        deadline = time.monotonic() + max(0.0, float(timeout_sec))
+        stable_since = None
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.02)
+            velocities = self._joint_velocities
+            if velocities is None or len(velocities) != 7 or any(
+                abs(value) > tolerance for value in velocities
+            ):
+                stable_since = None
+                continue
+            stable_since = stable_since or time.monotonic()
+            if time.monotonic() - stable_since >= 0.20:
+                return True
+        self.node.get_logger().warning(
+            'joint_states did not settle before planning'
+        )
+        return False
 
     def _default_freshness(self) -> tuple[bool, str]:
         if self._last_joint_time is None:
@@ -338,6 +378,7 @@ class MotionAdapter:
 
     def move_named(self, name: str, speed: float = 0.2, label: str = '') -> MotionResult:
         label = label or f'move_named({name})'
+        self.wait_stationary()
         joints = self.geometry.named_joints.get(name)
         if self.joints_client is not None and joints is not None:
             result = self.move_joints(joints, speed, label)
@@ -353,7 +394,23 @@ class MotionAdapter:
             # A joint-space plan can be rejected in an unusual scene; retry
             # the named service once as the fallback path.
             self.reset_stop()
-        return self._move_named_service(name, speed, label)
+        result = self._move_named_service(name, speed, label)
+        if result.success or name != 'work':
+            return result
+        # The tool rack can leave the arm in a branch from which the close
+        # 'work' pose is unreachable.  Fall back to the globally safe home
+        # configuration rather than aborting the route.
+        home = self.geometry.named_joints.get('home')
+        if home is not None:
+            self.reset_stop()
+            fallback = self.move_joints(home, speed, f'{label}:home')
+            if fallback.success:
+                if self.node is not None:
+                    self.node.get_logger().warning(
+                        f'{label}: work unreachable; reconfigured to home'
+                    )
+                return fallback
+        return result
 
     def move_joints(
         self,

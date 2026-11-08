@@ -81,8 +81,9 @@ def _cap_steps(
         _home(),
         ReferenceStep('dock_tool', ('vacuum',)),
     ])
-    if finish_home:
-        steps.append(_home())
+    # Always leave the rack through home: the dock retreat can sit against a
+    # wrist limit from which 'work' is not reachable.
+    steps.append(_home())
     return steps
 
 
@@ -113,8 +114,7 @@ def _sealant_steps(
         _home(),
         ReferenceStep('dock_tool', ('sealant_tool',)),
     ])
-    if finish_home:
-        steps.append(_home())
+    steps.append(_home())
     return steps
 
 
@@ -144,9 +144,9 @@ def _screw_steps(
         ])
     steps.append(_home())
     steps.append(ReferenceStep('dock_tool', ('magnetic_tool',)))
+    steps.append(_home())
     if 'torque_tool' in spec.tool_names:
         steps.extend([
-            _work(),
             ReferenceStep('take_tool', ('torque_tool',)),
             _work(),
         ])
@@ -157,7 +157,6 @@ def _screw_steps(
             ])
         steps.append(_home())
         steps.append(ReferenceStep('dock_tool', ('torque_tool',)))
-    if finish_home:
         steps.append(_home())
     return steps
 
