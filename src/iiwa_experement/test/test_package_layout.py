@@ -43,6 +43,7 @@ def test_expected_resources_are_installed():
         'doc/experements.md',
         'doc/experiment-scenes.md',
         'worlds/grant/iiwa-grant.wbt',
+        'config/scenes.yaml',
     ):
         path = share / relative
         assert path.is_file(), path

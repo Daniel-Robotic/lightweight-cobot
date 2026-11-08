@@ -1,0 +1,176 @@
+# Machine-readable source for the twenty grant experiments.
+#
+# Units are metres and degrees in the Webots world frame. The robot is spawned
+# by iiwa_bringup at (-0.25, 0, 0.79). The tabletop is at Z = 0.793.
+#
+# The shared poses below are copied from doc/experiment-scenes.md. Experiments
+# only list the objects they add and the poses that differ. No value is chosen
+# at run time. `patron` is part of the robot URDF in every experiment and is
+# therefore not listed as a scene object.
+
+schema_version: 1
+
+poses:
+  fixture:
+    x: 0.30
+    y: 0.12
+    z: 0.803
+    yaw_deg: 45
+  body:
+    x: 0.30
+    y: 0.12
+    z: 0.823
+    yaw_deg: 45
+  rack:
+    x: 0.12
+    y: -0.42
+    z: 0.793
+    yaw_deg: 0
+  tray:
+    x: -0.08
+    y: 0.34
+    z: 0.793
+    yaw_deg: 0
+  cap_free:
+    x: 0.35
+    y: -0.22
+    z: 0.790667
+    yaw_deg: 45
+  cap_installed:
+    x: 0.30
+    y: 0.12
+    z: 0.82594
+    yaw_deg: 45
+  tools:
+    vacuum:
+      x: 0.255
+      y: -0.42
+      z: 0.803
+      yaw_deg: 0
+    magnetic_tool:
+      x: 0.165
+      y: -0.42
+      z: 0.803
+      yaw_deg: 0
+    sealant_tool:
+      x: 0.075
+      y: -0.42
+      z: 0.803
+      yaw_deg: 0
+    torque_tool:
+      x: -0.015
+      y: -0.42
+      z: 0.803
+      yaw_deg: 0
+
+# Screw offsets are relative to the tray centre. The order is the screw_1 ...
+# screw_10 order from doc/experiment-scenes.md; only the first four are at the
+# grid corners. All screws rest with their lower point at Z = 0.7954.
+screws:
+  z: 0.7954
+  layout:
+    - {name: screw_1, dx: -0.040, dy: -0.015}
+    - {name: screw_2, dx: 0.040, dy: -0.015}
+    - {name: screw_3, dx: -0.040, dy: 0.015}
+    - {name: screw_4, dx: 0.040, dy: 0.015}
+    - {name: screw_5, dx: -0.020, dy: -0.015}
+    - {name: screw_6, dx: 0.000, dy: -0.015}
+    - {name: screw_7, dx: 0.020, dy: -0.015}
+    - {name: screw_8, dx: -0.020, dy: 0.015}
+    - {name: screw_9, dx: 0.000, dy: 0.015}
+    - {name: screw_10, dx: 0.020, dy: 0.015}
+
+experiments:
+  "1":
+    cap: free
+    tools: [vacuum]
+  "2":
+    cap: free
+    cap_pose: {x: 0.35, y: -0.22, z: 0.790667, yaw_deg: 135}
+    tools: [vacuum]
+  "3":
+    fixture: {x: 0.29, y: 0.14, z: 0.803, yaw_deg: 45}
+    body: {x: 0.29, y: 0.14, z: 0.823, yaw_deg: 45}
+    cap: free
+    cap_pose: {x: 0.33, y: -0.22, z: 0.790667, yaw_deg: 45}
+    tools: [vacuum]
+  "4":
+    cap: free
+    tools: [vacuum]
+    failures:
+      - {skill: grab, outcome: grasp_failed, attempt: 1}
+  "5":
+    cap: free
+    tools: [vacuum]
+    failures:
+      - skill: verify
+        outcome: not_ok
+        target: cap
+        attempt: 1
+        details: {after_first_install_x: 0.303}
+  "6":
+    cap: absent
+    tools: [sealant_tool]
+  "7":
+    cap: absent
+    tools: [sealant_tool]
+  "8":
+    cap: absent
+    tools: [sealant_tool]
+  "9":
+    cap: absent
+    tools: [sealant_tool]
+    failures:
+      - {skill: dispense, outcome: interrupted, target: side_3, attempt: 1}
+  "10":
+    cap: free
+    tools: [sealant_tool, vacuum]
+  "11":
+    cap: installed
+    tray: true
+    tools: [magnetic_tool]
+  "12":
+    cap: installed
+    tray: true
+    tools: [magnetic_tool]
+  "13":
+    cap: installed
+    tray: true
+    tools: [magnetic_tool]
+  "14":
+    cap: installed
+    tray: true
+    tools: [magnetic_tool, torque_tool]
+  "15":
+    cap: installed
+    tray: true
+    tools: [magnetic_tool, torque_tool]
+    failures:
+      - {skill: grab, outcome: grasp_failed, target: third_selected_screw, attempt: 1}
+      - {skill: tighten, outcome: torque_not_reached, target: hole_4, attempt: 1}
+  "16":
+    cap: free
+    tray: true
+    tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
+  "17":
+    cap: free
+    tray: true
+    tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
+  "18":
+    cap: free
+    tray: true
+    tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
+  "19":
+    cap: free
+    cap_pose: {x: 0.37, y: -0.20, z: 0.790667, yaw_deg: 60}
+    tray: true
+    tray_pose: {x: -0.10, y: 0.36, z: 0.793, yaw_deg: 0}
+    tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
+  "20":
+    cap: free
+    tray: true
+    tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
+    failures:
+      - {skill: dispense, outcome: interrupted, attempt: 1}
+      - {skill: grab, outcome: grasp_failed, attempt: 1}
+      - {skill: verify, outcome: not_ok, target: cap, attempt: 1}
