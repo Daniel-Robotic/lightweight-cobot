@@ -333,6 +333,15 @@ class ReferenceOperations:
             self.bridge.assert_synchronized(*self.bridge.expected_sets())
         except Exception as error:
             raise OperationError(f'planning scene is not synchronized: {error}') from error
+        # The relay to /planning_scene is asynchronous for the MoveItPy
+        # monitor.  Give it a short, bounded window before planning.
+        if self.node is None:
+            return
+        import time
+
+        end = time.monotonic() + 0.5
+        while time.monotonic() < end:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
 
     def _expect_latest(self, timeout: float = 2.0) -> dict[str, Any]:
         import time
