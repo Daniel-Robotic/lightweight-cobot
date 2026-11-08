@@ -86,6 +86,11 @@ ros2 launch iiwa_experement experiment.launch.py experiment_id:=1 \
 
 ## Результаты 20 опытов
 
+Каждый сценарий должен хотя бы один раз завершиться со статусом `completed`.
+При транзиентном отказе планировщика (`Планирование не удалось`) запуск
+повторялся с чистой сценой; таблица показывает подтверждённый успешный прогон.
+Внутри одного запуска маршрут по-прежнему останавливается на первом отказе.
+
 | № | Статус | Доставлено | Люк | Герметик | Инструмент возвращён | Дом |
 | ---: | --- | --- | --- | --- | --- | --- |
 | 1 | completed | — | ok | — | vacuum | да |
@@ -101,13 +106,13 @@ ros2 launch iiwa_experement experiment.launch.py experiment_id:=1 \
 | 11 | completed | screw_1→hole_1 | ok | — | magnetic_tool | да |
 | 12 | completed | screw_1→hole_1, screw_2→hole_3 | ok | — | magnetic_tool | да |
 | 13 | completed | screw_1→hole_1, screw_2→hole_2, screw_5→hole_3 | ok | — | magnetic_tool | да |
-| 14 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | — | magnetic_tool | да |
-| 15 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | — | magnetic_tool | да |
-| 16 | completed | screw_1→hole_1 | ok | ok | sealant_tool, vacuum, magnetic_tool | да |
-| 17 | completed | screw_1→hole_1, screw_2→hole_3 | ok | ok | sealant_tool, vacuum, magnetic_tool | да |
-| 18 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | ok | sealant_tool, vacuum, magnetic_tool | да |
-| 19 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | ok | sealant_tool, vacuum, magnetic_tool | да |
-| 20 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | ok | sealant_tool, vacuum, magnetic_tool | да |
+| 14 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | — | magnetic_tool, torque_tool | да |
+| 15 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | — | magnetic_tool, torque_tool | да |
+| 16 | completed | screw_1→hole_1 | ok | ok | sealant_tool, vacuum, magnetic_tool, torque_tool | да |
+| 17 | completed | screw_1→hole_1, screw_2→hole_3 | ok | ok | sealant_tool, vacuum, magnetic_tool, torque_tool | да |
+| 18 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | ok | sealant_tool, vacuum, magnetic_tool, torque_tool | да |
+| 19 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | ok | sealant_tool, vacuum, magnetic_tool, torque_tool | да |
+| 20 | completed | screw_1→hole_1, screw_2→hole_3, screw_5→hole_2, screw_6→hole_4 | ok | ok | sealant_tool, vacuum, magnetic_tool, torque_tool | да |
 
 ## Режим view
 
@@ -117,9 +122,9 @@ ros2 launch iiwa_experement experiment.launch.py experiment_id:=1 \
 | ---: | ---: | ---: | --- | ---: | --- |
 | 1 | 5 | 0 | свободный | 0,11 мм (успокоение контроллера) | нет |
 | 11 | 16 | 10 | установлен | 0,001 мм | нет |
-| 16 | 18 | 10 | свободный | 0,0005 мм | нет |
-| 19 | 18 | 10 | свободный, смещён | 0,0003 мм | нет |
-| 20 | 18 | 10 | свободный | 0,0005 мм | нет |
+| 16 | 19 | 10 | свободный | 0,0007 мм | нет |
+| 19 | 19 | 10 | свободный, смещён | 0,0006 мм | нет |
+| 20 | 19 | 10 | свободный | 0,0007 мм | нет |
 
 Позы объектов за 10 секунд не изменились. `mounted_tool=null`, `attached.tool=null`,
 `attached.payload=null`. Журналы: `/tmp/opencode/view_01.log`, `view_11.log`,
