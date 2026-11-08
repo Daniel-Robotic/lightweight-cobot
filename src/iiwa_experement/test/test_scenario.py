@@ -19,16 +19,16 @@ SCENES = PACKAGE / 'config' / 'scenes.yaml'
 
 STANDARD_TOOLS = set(TOOL_NAMES)
 STANDARD_SCREWS = {
-    'screw_1': (-0.120, 0.325),
-    'screw_2': (-0.040, 0.325),
-    'screw_3': (-0.120, 0.355),
-    'screw_4': (-0.040, 0.355),
-    'screw_5': (-0.100, 0.325),
-    'screw_6': (-0.080, 0.325),
-    'screw_7': (-0.060, 0.325),
-    'screw_8': (-0.100, 0.355),
-    'screw_9': (-0.080, 0.355),
-    'screw_10': (-0.060, 0.355),
+    'screw_1': (0.160, 0.445),
+    'screw_2': (0.240, 0.445),
+    'screw_3': (0.160, 0.475),
+    'screw_4': (0.240, 0.475),
+    'screw_5': (0.180, 0.445),
+    'screw_6': (0.200, 0.445),
+    'screw_7': (0.220, 0.445),
+    'screw_8': (0.180, 0.475),
+    'screw_9': (0.200, 0.475),
+    'screw_10': (0.220, 0.475),
 }
 
 
@@ -144,7 +144,7 @@ def test_experiment_nineteen_moves_hatch_and_tray_with_all_screws():
     assert spec.cap_pose.xy == (0.37, -0.20)
     assert spec.cap_pose.yaw_deg == 60
     assert spec.tray_pose is not None
-    assert (spec.tray_pose.x, spec.tray_pose.y, spec.tray_pose.z) == (-0.10, 0.36, 0.793)
+    assert (spec.tray_pose.x, spec.tray_pose.y, spec.tray_pose.z) == (0.18, 0.48, 0.793)
     for screw in spec.screws:
         expected = STANDARD_SCREWS[screw.name]
         assert screw.pose.xy == pytest.approx(

@@ -158,7 +158,7 @@ def test_experiment_nineteen_shifts_the_tray_and_all_ten_screws():
     standard = by_name(nodes(11))
     shifted = by_name(nodes(19))
     tray = translation(shifted['grant_tray'])
-    assert tray == pytest.approx((-0.10, 0.36, 0.793))
+    assert tray == pytest.approx((0.18, 0.48, 0.793))
     for index in range(1, 11):
         name = f'grant_screw_{index:02d}'
         old = translation(standard[name])

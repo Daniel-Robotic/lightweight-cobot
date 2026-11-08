@@ -27,8 +27,10 @@ poses:
     z: 0.793
     yaw_deg: 0
   tray:
-    x: -0.08
-    y: 0.34
+    # Left/front edge of the reachable workspace, clear of the tool rack and
+    # the fixture. Moving the whole tray also moves its ten screws.
+    x: 0.20
+    y: 0.46
     z: 0.793
     yaw_deg: 0
   cap_free:
@@ -164,7 +166,7 @@ experiments:
     cap: free
     cap_pose: {x: 0.37, y: -0.20, z: 0.790667, yaw_deg: 60}
     tray: true
-    tray_pose: {x: -0.10, y: 0.36, z: 0.793, yaw_deg: 0}
+    tray_pose: {x: 0.18, y: 0.48, z: 0.793, yaw_deg: 0}
     tools: [vacuum, magnetic_tool, sealant_tool, torque_tool]
   "20":
     cap: free
