@@ -8,7 +8,40 @@ from ament_index_python.packages import get_package_share_directory
 from iiwa_experement.runtime_config import (
     LOCAL_PROTOS,
     prepare_runtime_files,
+    validate_mode,
+    validate_start_delay,
+    validate_trace_dir,
 )
+
+
+@pytest.mark.parametrize('raw, expected', [('view', 'view'), (' Execute ', 'execute')])
+def test_mode_validation(raw, expected):
+    assert validate_mode(raw) == expected
+
+
+@pytest.mark.parametrize('raw', ['', 'motion', 'execute!'])
+def test_mode_validation_rejects_unknown_modes(raw):
+    with pytest.raises(ValueError):
+        validate_mode(raw)
+
+
+@pytest.mark.parametrize('raw, expected', [('0', 0.0), (' 3.0 ', 3.0)])
+def test_start_delay_validation(raw, expected):
+    assert validate_start_delay(raw) == expected
+
+
+@pytest.mark.parametrize('raw', ['', '-0.1', 'no', 'nan', 'inf'])
+def test_start_delay_validation_rejects_bad_values(raw):
+    with pytest.raises(ValueError):
+        validate_start_delay(raw)
+
+
+def test_trace_dir_validation():
+    assert validate_trace_dir('~/.ros/iiwa_experement/runs') == (
+        '~/.ros/iiwa_experement/runs'
+    )
+    with pytest.raises(ValueError):
+        validate_trace_dir('')
 
 
 PACKAGE = Path(__file__).resolve().parents[1]

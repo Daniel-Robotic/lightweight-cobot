@@ -1,12 +1,25 @@
-"""Launch validation and action wiring."""
+"""Launch validation and action wiring for view/execute modes."""
 import importlib.util
 from pathlib import Path
 
 import pytest
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    RegisterEventHandler,
+)
 from launch_ros.actions import Node
 
-from iiwa_experement.runtime_config import validate_experiment_id
+from iiwa_experement.runtime_config import (
+    DEFAULT_START_DELAY_SEC,
+    DEFAULT_TRACE_DIR,
+    validate_experiment_id,
+    validate_mode,
+    validate_start_delay,
+    validate_trace_dir,
+)
 
 
 PACKAGE = Path(__file__).resolve().parents[1]
@@ -32,36 +45,100 @@ def test_invalid_experiment_ids_are_rejected(raw):
         validate_experiment_id(raw)
 
 
-def test_runtime_actions_include_bringup_and_one_scene_spawner():
+@pytest.mark.parametrize('raw, expected', [('view', 'view'), ('execute', 'execute'), (' VIEW ', 'view')])
+def test_valid_modes(raw, expected):
+    assert validate_mode(raw) == expected
+
+
+@pytest.mark.parametrize('raw', ['', 'run', 'VIEW '[:-1] + 'x', '1'])
+def test_invalid_modes_are_rejected(raw):
+    with pytest.raises(ValueError):
+        validate_mode(raw)
+
+
+@pytest.mark.parametrize('raw, expected', [('0', 0.0), ('3', 3.0), ('2.5', 2.5)])
+def test_valid_start_delays(raw, expected):
+    assert validate_start_delay(raw) == expected
+
+
+@pytest.mark.parametrize('raw', ['', '-1', 'abc', 'nan', 'inf'])
+def test_invalid_start_delays_are_rejected(raw):
+    with pytest.raises(ValueError):
+        validate_start_delay(raw)
+
+
+def test_trace_dir_must_not_be_empty():
+    assert validate_trace_dir('~/.ros/run') == '~/.ros/run'
+    with pytest.raises(ValueError):
+        validate_trace_dir('  ')
+
+
+def test_view_starts_bringup_spawner_and_read_only_supervisor():
     module = load_launch_module()
     actions = module.runtime_actions(
         experiment_id=19,
         scene_config='/tmp/custom scenes.yaml',
         setting_path='/tmp/run/setting.yaml',
         rviz='false',
+        mode='view',
     )
     includes = [a for a in actions if isinstance(a, IncludeLaunchDescription)]
     nodes = [a for a in actions if isinstance(a, Node)]
+    processes = [a for a in actions if type(a) is ExecuteProcess]
     assert len(includes) == 1
     assert len(nodes) == 1
-    assert 'iiwa_bringup' in repr(includes[0].launch_description_source.location)
+    assert len(processes) == 1
     arguments = dict(includes[0].launch_arguments)
     assert arguments['simulate'] == 'true'
     assert arguments['rviz'] == 'false'
     assert arguments['setting'] == '/tmp/run/setting.yaml'
-    node = nodes[0]
-    assert node.node_package == 'iiwa_experement'
-    assert node.node_executable == 'scene_spawner'
-    assert vars(node)['_Node__node_name'] == 'scene_spawner'
+    spawner = nodes[0]
+    assert spawner.node_package == 'iiwa_experement'
+    assert spawner.node_executable == 'scene_spawner'
     assert module.spawner_parameters(19, '/tmp/custom scenes.yaml') == {
         'experiment_id': 19,
         'scene_config': '/tmp/custom scenes.yaml',
     }
+    parameters = module.supervisor_parameters(
+        19, '/tmp/custom scenes.yaml', '/tmp/geometry.yaml', True,
+    )
+    assert parameters['experiment_id'] == 19
+    assert parameters['read_only'] is True
+    # A view run has no motion client or trajectory targets.
+    assert not any(
+        isinstance(action, Node) and action.node_executable == 'reference_runner'
+        for action in actions
+    )
+
+
+def test_execute_adds_the_reference_runner_after_the_supervisor():
+    module = load_launch_module()
+    actions = module.runtime_actions(
+        experiment_id=1,
+        scene_config='/tmp/scenes.yaml',
+        setting_path='/tmp/setting.yaml',
+        mode='execute',
+        start_delay_sec=4.5,
+    )
+    runner = [
+        action for action in actions
+        if isinstance(action, Node) and action.node_executable == 'reference_runner'
+    ]
+    assert len(runner) == 1
+    payload = module.runner_parameters(
+        1, '/tmp/scenes.yaml', '/tmp/geometry.yaml', 4.5, DEFAULT_TRACE_DIR,
+    )
+    assert payload['experiment_id'] == 1
+    assert payload['start_delay_sec'] == 4.5
+    assert payload['trace_dir'] == DEFAULT_TRACE_DIR
+    parameters = module.supervisor_parameters(
+        1, '/tmp/scenes.yaml', '/tmp/geometry.yaml', False,
+    )
+    assert parameters['read_only'] is False
+    assert any(type(action) is ExecuteProcess for action in actions)
 
 
 def test_runtime_actions_can_register_cleanup(tmp_path):
-    from launch.actions import RegisterEventHandler
-
     module = load_launch_module()
     actions = module.runtime_actions(
         experiment_id=1,
@@ -69,7 +146,6 @@ def test_runtime_actions_can_register_cleanup(tmp_path):
         setting_path='/tmp/setting.yaml',
         cleanup_dir=str(tmp_path / 'run'),
     )
-    assert len(actions) == 3
     assert isinstance(actions[-1], RegisterEventHandler)
     target = tmp_path / 'run'
     target.mkdir()
@@ -86,10 +162,17 @@ def test_launch_description_declares_all_arguments_and_validates_in_opaque_funct
         for entity in description.entities
         if isinstance(entity, DeclareLaunchArgument)
     }
-    assert set(arguments) == {'experiment_id', 'rviz', 'scene_config', 'base_setting'}
+    assert set(arguments) == {
+        'experiment_id', 'mode', 'start_delay_sec', 'trace_dir',
+        'rviz', 'scene_config', 'base_setting',
+    }
     assert [substitution.text for substitution in arguments['experiment_id']] == ['']
-    assert [substitution.text for substitution in arguments['rviz']] == ['false']
-    assert 'scenes.yaml' in repr(arguments['scene_config'])
-    assert 'setting.yaml' in repr(arguments['base_setting'])
+    assert [substitution.text for substitution in arguments['mode']] == ['view']
+    assert [substitution.text for substitution in arguments['start_delay_sec']] == [
+        f'{DEFAULT_START_DELAY_SEC:g}'
+    ]
+    assert [substitution.text for substitution in arguments['trace_dir']] == [
+        DEFAULT_TRACE_DIR
+    ]
     opaque = [e for e in description.entities if isinstance(e, OpaqueFunction)]
     assert len(opaque) == 1

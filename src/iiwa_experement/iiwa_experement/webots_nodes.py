@@ -148,7 +148,7 @@ def _solid(
     physics_mass: float | None = None,
 ) -> str:
     lines = [
-        'Solid {',
+        f'DEF {name} Solid {{',
         f'  translation {_vector(translation)}',
         f'  rotation {_vector(rotation)}',
         f'  name "{name}"',

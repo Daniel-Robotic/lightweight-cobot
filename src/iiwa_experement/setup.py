@@ -26,6 +26,7 @@ setup(
     entry_points={
         'console_scripts': [
             'scene_spawner = iiwa_experement.scene_spawner:main',
+            'grant_supervisor = iiwa_experement.grant_supervisor:main',
         ],
     },
 )

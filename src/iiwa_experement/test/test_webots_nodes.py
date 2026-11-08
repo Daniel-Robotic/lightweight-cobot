@@ -88,6 +88,16 @@ def test_scenarios_one_six_eleven_sixteen_nineteen_are_complete():
         assert [NAME_RE.search(node).group(1) for node in nodes(experiment_id)] == names
 
 
+def test_every_managed_node_has_a_stable_unique_def():
+    for experiment_id in range(1, 21):
+        node_list = nodes(experiment_id)
+        defs = [re.search(r'^DEF (\w+) Solid \{', node).group(1) for node in node_list]
+        assert len(defs) == len(set(defs))
+        assert len(defs) == len(node_list)
+        for node, def_name in zip(node_list, defs):
+            assert re.search(rf'name "{def_name}"', node)
+
+
 def test_node_names_are_unique_and_never_duplicate_patron():
     for experiment_id in range(1, 21):
         node_list = nodes(experiment_id)

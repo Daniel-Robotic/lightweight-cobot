@@ -1,27 +1,20 @@
 #VRML_SIM R2025a utf8
 
-# Universal grant experiment world. The robot, cameras and experiment objects
-# are added at run time: iiwa_bringup spawns the iiwa 7 and
-# iiwa_experement/scene_spawner adds the deterministic scenario. The two local
-# EXTERNPROTO paths are valid from this source tree; runtime_config.py rewrites
-# them to absolute paths from the installed iiwa_description share before
-# Webots opens the temporary copy of this world.
-
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
-EXTERNPROTO "../../../iiwa_description/resource/protos/CollaborativeRobotTable.proto"
-EXTERNPROTO "../../../iiwa_description/resource/protos/WorkspaceLimiter.proto"
-
+EXTERNPROTO "/home/daniel/dev/kuka_iiwa7_ros2/src/iiwa_description/resource/protos/CollaborativeRobotTable.proto"
+EXTERNPROTO "/home/daniel/dev/kuka_iiwa7_ros2/src/iiwa_description/resource/protos/WorkspaceLimiter.proto"
 
 WorldInfo {
   title "KUKA iiwa grant experiments"
-  basicTimeStep 32
   optimalThreadCount 4
   contactProperties [
     ContactProperties {
       material1 "TableMaterial"
-      coulombFriction [ 0.6 ]
+      coulombFriction [
+        0.6
+      ]
       bounce 0
       bounceVelocity 0
       softERP 1
@@ -35,17 +28,14 @@ WorldInfo {
       maxContactJoints 100
     }
     ContactProperties {
-      material1 "default"
-      material2 "default"
-      maxContactJoints 20
       bounce 0
-      softCFM 0.001
+      maxContactJoints 20
     }
   ]
 }
 Viewpoint {
-  orientation -0.268113062897852 0.00505693741372527 0.963374181140187 3.1052558422585
-  position 2.6 -0.1 2.4
+  orientation -0.16538833828406266 0.05829171450270743 0.9845043288782285 2.4736073370602876
+  position 4.897723425157077 -3.966075191122516 3.20774809692606
   followType "None"
   ambientOcclusionRadius 3
 }
@@ -85,4 +75,12 @@ DEF limiter Group {
 DirectionalLight {
   direction -0.1 0.1 0
   intensity 2
+}
+
+# External controller from iiwa_experement/grant_supervisor.py.  It is the
+# only process that changes object ownership and follows the actual tcp.
+Robot {
+  name "GrantAttachmentSupervisor"
+  controller "<extern>"
+  supervisor TRUE
 }

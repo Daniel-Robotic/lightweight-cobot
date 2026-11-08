@@ -8,6 +8,7 @@ legacy random object spawner.
 """
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,9 @@ import yaml
 
 
 EXPERIMENT_IDS = tuple(range(1, 21))
+MODES = ('view', 'execute')
+DEFAULT_START_DELAY_SEC = 3.0
+DEFAULT_TRACE_DIR = '~/.ros/iiwa_experement/runs'
 LOCAL_PROTOS = (
     'CollaborativeRobotTable.proto',
     'WorkspaceLimiter.proto',
@@ -34,6 +38,37 @@ def validate_experiment_id(raw: str) -> int:
     if value not in EXPERIMENT_IDS:
         raise ValueError(f'experiment_id {value} is outside 1..20')
     return value
+
+
+def validate_mode(raw: str) -> str:
+    """Accept only the documented view/execute modes."""
+    text = str(raw).strip().lower()
+    if text not in MODES:
+        raise ValueError(f'mode must be one of {list(MODES)}, got {raw!r}')
+    return text
+
+
+def validate_start_delay(raw: str) -> float:
+    """Return a finite non-negative simulation-time delay."""
+    text = str(raw).strip()
+    try:
+        value = float(text)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f'start_delay_sec must be a finite non-negative number, got {raw!r}'
+        ) from error
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError(
+            f'start_delay_sec must be a finite non-negative number, got {raw!r}'
+        )
+    return value
+
+
+def validate_trace_dir(raw: str) -> str:
+    text = str(raw).strip()
+    if not text:
+        raise ValueError('trace_dir must not be empty')
+    return text
 
 
 def _absolute_proto(source: str, description_share: Path) -> str:
