@@ -162,7 +162,9 @@ def _solid(
         '  boundingObject ' + bounding,
     ])
     if physics_mass is not None:
-        lines.append(f'  physics Physics {{ mass {format(physics_mass, ".12g")} }}')
+        lines.append(
+            f'  physics Physics {{ density -1 mass {format(physics_mass, ".12g")} }}'
+        )
     lines.append('}')
     return '\n'.join(lines)
 

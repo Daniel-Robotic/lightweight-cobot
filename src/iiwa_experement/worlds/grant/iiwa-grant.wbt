@@ -44,9 +44,9 @@ WorldInfo {
   ]
 }
 Viewpoint {
-  orientation 0.19663259328507318 -0.09057124279298501 -0.9762850368805829 3.9867817928674034
-  position 1.75 -1.85 1.77
-  followType "Mounted Shot"
+  orientation -0.268113062897852 0.00505693741372527 0.963374181140187 3.1052558422585
+  position 2.6 -0.1 2.4
+  followType "None"
   ambientOcclusionRadius 3
 }
 TexturedBackground {
