@@ -59,6 +59,8 @@ class FakeBridge:
 
     def remove(self, object_id):
         self.removed.append(object_id)
+        if object_id in self.attached:
+            self.attached.remove(object_id)
 
     def add_world(self, object_id, box, pose):
         self.added_world = getattr(self, 'added_world', [])
@@ -142,7 +144,7 @@ def test_take_tool_follows_the_visible_axial_route():
         'take_tool(vacuum):exit',
     ]
     assert supervisor.commands[0][:2] == ('attach_tool', 'vacuum')
-    assert bridge.attached == []
+    assert bridge.attached == ['grant_vacuum']
     contact_goal = motion.moves[2][3]
     assert contact_goal.xyz == pytest.approx(expected.xyz, abs=1e-9)
     assert motion.moves[0][1] == 'ompl'
@@ -162,7 +164,7 @@ def test_dock_tool_returns_the_tool_to_its_socket():
 def test_cap_pick_and_place_use_the_hatch_node_transform():
     operations, supervisor, bridge, motion, geometry = make_operations(1)
     assert operations.pick_cap().success
-    assert bridge.attached == []
+    assert bridge.attached == ['grant_cap']
     assert supervisor.commands[0][:2] == ('grab_cap', 'cap')
     assert operations.place_cap().success
     assert bridge.added_world[0][0] == 'grant_cap'
@@ -213,7 +215,7 @@ def test_contour_does_not_lift_between_adjacent_sides():
 def test_screw_pick_and_handoff_are_one_motion_and_one_removal():
     operations, supervisor, bridge, motion, geometry = make_operations(11)
     assert operations.pick_screw('screw_1').success
-    assert bridge.attached == []
+    assert bridge.attached == ['grant_screw_01']
     assert supervisor.commands[0][:2] == ('grab_screw', 'screw_1')
     assert operations.handoff_screw('screw_1', 'hole_1').success
     assert supervisor.commands[1][0] == 'handoff_screw'
@@ -236,33 +238,64 @@ def test_tighten_hole_is_a_visible_revolution_without_a_screw():
     assert label == 'tighten_hole(hole_1):joint_twist'
     assert joints[:6] == (0.0,) * 6
     assert joints[6] == pytest.approx(math.radians(45.0))
+    # The flange is untwisted before the axial retreat, so joint 7 does not
+    # accumulate twist across holes.
+    untwist_label, untwist_joints = motion.joint_moves[1]
+    assert untwist_label == 'tighten_hole(hole_1):joint_untwist'
+    assert untwist_joints == (0.0,) * 7
+    assert names[-2:] == [
+        'tighten_hole(hole_1):retreat', 'tighten_hole(hole_1):clear',
+    ]
     # The operation is a simulation only: no supervisor command changes state.
     assert supervisor.commands == []
     assert bridge.attached == []
 
 
-def test_screw_pick_reconfigures_to_home_when_work_is_blocked():
+def test_screw_pick_reconfigures_through_work_when_a_cell_is_blocked():
     operations, supervisor, bridge, motion, geometry = make_operations(11)
     motion.fail_labels.add('pick_screw(screw_1):transfer')
     assert operations.pick_screw('screw_1').success
-    assert motion.named[-1][0] == 'home'
-    assert 'pick_screw(screw_1):home_retry:transfer' in labels(motion)
+    assert motion.named[-1][0] == 'work'
+    assert 'pick_screw(screw_1):recovery:transfer' in labels(motion)
     assert supervisor.commands[0][:2] == ('grab_screw', 'screw_1')
+
+
+def test_screw_pick_stops_instead_of_dragging_when_the_lift_is_rejected():
+    operations, supervisor, bridge, motion, geometry = make_operations(11)
+    motion.fail_labels.add('pick_screw(screw_1):retreat')
+    with pytest.raises(OperationError):
+        operations.pick_screw('screw_1')
+    assert operations.events[-1]['phase'] == 'failed'
+
+
+def test_handoff_screw_lifts_axially_before_the_next_move():
+    operations, supervisor, bridge, motion, geometry = make_operations(11)
+    assert operations.pick_screw('screw_1').success
+    motion.moves.clear()
+    assert operations.handoff_screw('screw_1', 'hole_1').success
+    names = labels(motion)
+    assert names[-2:] == [
+        'handoff_screw(screw_1,hole_1):retreat',
+        'handoff_screw(screw_1,hole_1):clear',
+    ]
 
 
 def test_tighten_hole_reverses_when_the_flange_limit_blocks_one_direction():
     operations, supervisor, bridge, motion, geometry = make_operations(14)
     motion.fail_positive_joint = True
     assert operations.tighten_hole('hole_1').success
-    assert len(motion.joint_moves) == 2
+    assert len(motion.joint_moves) == 3
     assert motion.joint_moves[1][1][6] == pytest.approx(math.radians(-45.0))
+    # The untwist returns the flange to the contact configuration.
+    assert motion.joint_moves[2][0] == 'tighten_hole(hole_1):joint_untwist'
+    assert motion.joint_moves[2][1][6] == pytest.approx(0.0)
 
 
 def test_failed_motion_stops_the_operation_and_emits_failure():
     operations, supervisor, bridge, motion, geometry = make_operations(1)
     motion.fail_labels.update({
         'take_tool(vacuum):contact',
-        'take_tool(vacuum):home_retry:contact',
+        'take_tool(vacuum):recovery:contact',
     })
     with pytest.raises(OperationError):
         operations.take_tool('vacuum')

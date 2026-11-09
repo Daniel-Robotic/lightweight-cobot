@@ -31,15 +31,13 @@ def _work(speed: float = 0.3) -> ReferenceStep:
 
 
 def _take(tool: str, *, first: bool = False) -> list[ReferenceStep]:
+    # The route starts at 'work'; later tool changes reconfigure there first
+    # so the approach starts from a known branch.  The task itself follows
+    # directly from the tool exit.
     steps: list[ReferenceStep] = []
     if not first:
-        # 'work' is the neutral transfer pose: closer to the task area than
-        # 'home' and already used by the verified routes between operations.
         steps.append(_work())
-    steps.extend([
-        ReferenceStep('take_tool', (tool,)),
-        _work(),
-    ])
+    steps.append(ReferenceStep('take_tool', (tool,)))
     return steps
 
 
@@ -49,7 +47,6 @@ def _cap_steps(
     grasp_failure: bool = False,
     verify_failure: bool = False,
     first_tool: bool = False,
-    finish_home: bool = True,
 ) -> list[ReferenceStep]:
     steps = _take('vacuum', first=first_tool)
     if grasp_failure:
@@ -57,7 +54,7 @@ def _cap_steps(
             ReferenceStep('simulate_grasp_failure', ('cap',)),
             ReferenceStep('inspect_state'),
         ])
-    steps.extend([ReferenceStep('pick_cap'), _work()])
+    steps.append(ReferenceStep('pick_cap'))
     if verify_failure:
         shift = 0.003
         for failure in spec.failures:
@@ -68,7 +65,6 @@ def _cap_steps(
             ReferenceStep('place_cap_shifted', (), {'dx': shift}),
             ReferenceStep('inspect_cap', (), {'expect': 'not_ok', 'tolerance': 0.002}),
             ReferenceStep('pick_cap'),
-            _work(),
             ReferenceStep('place_cap'),
             ReferenceStep('inspect_cap', (), {'expect': 'ok'}),
         ])
@@ -77,13 +73,7 @@ def _cap_steps(
             ReferenceStep('place_cap'),
             ReferenceStep('inspect_cap', (), {'expect': 'ok'}),
         ])
-    steps.extend([
-        _home(),
-        ReferenceStep('dock_tool', ('vacuum',)),
-    ])
-    # Always leave the rack through home: the dock retreat can sit against a
-    # wrist limit from which 'work' is not reachable.
-    steps.append(_home())
+    steps.append(ReferenceStep('dock_tool', ('vacuum',)))
     return steps
 
 
@@ -92,7 +82,6 @@ def _sealant_steps(
     *,
     interrupted: bool = False,
     first_tool: bool = True,
-    finish_home: bool = True,
 ) -> list[ReferenceStep]:
     sides = list(spec.sealant_sides)
     steps = _take('sealant_tool', first=first_tool)
@@ -111,10 +100,8 @@ def _sealant_steps(
         steps.append(ReferenceStep('dispense_contour', (tuple(sides),)))
     steps.extend([
         ReferenceStep('inspect_sealant', (), {'expect': 'ok'}),
-        _home(),
         ReferenceStep('dock_tool', ('sealant_tool',)),
     ])
-    steps.append(_home())
     return steps
 
 
@@ -123,7 +110,6 @@ def _screw_steps(
     *,
     failure_index: int | None = None,
     first_tool: bool = False,
-    finish_home: bool = True,
 ) -> list[ReferenceStep]:
     steps = _take('magnetic_tool', first=first_tool)
     # Prefer the closer tray cells.  The far +Y/+X corner can be outside the
@@ -140,31 +126,23 @@ def _screw_steps(
             ReferenceStep('pick_screw', (screw,)),
             _work(),
             ReferenceStep('handoff_screw', (screw, hole)),
-            _work(),
         ])
-    steps.append(_home())
+    steps.append(_work())
     steps.append(ReferenceStep('dock_tool', ('magnetic_tool',)))
-    steps.append(_home())
     if 'torque_tool' in spec.tool_names:
-        steps.extend([
-            ReferenceStep('take_tool', ('torque_tool',)),
-            _work(),
-        ])
+        steps.append(_work())
+        steps.append(ReferenceStep('take_tool', ('torque_tool',)))
         for hole in spec.screw_holes:
-            steps.extend([
-                ReferenceStep('tighten_hole', (hole,)),
-                _work(),
-            ])
-        steps.append(_home())
+            steps.append(ReferenceStep('tighten_hole', (hole,)))
+        steps.append(_work())
         steps.append(ReferenceStep('dock_tool', ('torque_tool',)))
-        steps.append(_home())
     return steps
 
 
 def build_reference_sequence(spec: ScenarioSpec) -> tuple[ReferenceStep, ...]:
     """Return the deterministic route for one experiment."""
     experiment = spec.experiment_id
-    steps: list[ReferenceStep] = []
+    steps: list[ReferenceStep] = [_work()]
 
     if experiment in (1, 2, 3, 4, 5):
         steps.extend(_cap_steps(
@@ -179,7 +157,7 @@ def build_reference_sequence(spec: ScenarioSpec) -> tuple[ReferenceStep, ...]:
         ))
     elif experiment == 10:
         steps.extend(_sealant_steps(
-            spec, interrupted=False, first_tool=True, finish_home=False,
+            spec, interrupted=False, first_tool=True,
         ))
         steps.extend(_cap_steps(spec, first_tool=False))
     elif 11 <= experiment <= 15:
@@ -191,20 +169,35 @@ def build_reference_sequence(spec: ScenarioSpec) -> tuple[ReferenceStep, ...]:
     else:
         interrupted = experiment == 20
         steps.extend(_sealant_steps(
-            spec, interrupted=interrupted, first_tool=True, finish_home=False,
+            spec, interrupted=interrupted, first_tool=True,
         ))
         steps.extend(_cap_steps(
             spec,
             verify_failure=(experiment == 20),
             first_tool=False,
-            finish_home=False,
         ))
         steps.extend(_screw_steps(
             spec,
             failure_index=0 if experiment == 20 else None,
             first_tool=False,
         ))
-    return tuple(steps)
+
+    # The technical process always ends at 'work'; only the very last move is
+    # the final return to 'home'.
+    steps.append(_work())
+    steps.append(_home())
+    cleaned: list[ReferenceStep] = []
+    for step in steps:
+        if (
+            cleaned
+            and step.kind == 'move_named'
+            and step.args == ('work',)
+            and cleaned[-1].kind == 'move_named'
+            and cleaned[-1].args == ('work',)
+        ):
+            continue
+        cleaned.append(step)
+    return tuple(cleaned)
 
 
 def execute_sequence(sequence: tuple[ReferenceStep, ...], context) -> RunResult:

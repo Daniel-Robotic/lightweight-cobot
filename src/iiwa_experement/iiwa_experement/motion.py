@@ -395,21 +395,10 @@ class MotionAdapter:
             # the named service once as the fallback path.
             self.reset_stop()
         result = self._move_named_service(name, speed, label)
-        if result.success or name != 'work':
-            return result
-        # The tool rack can leave the arm in a branch from which the close
-        # 'work' pose is unreachable.  Fall back to the globally safe home
-        # configuration rather than aborting the route.
-        home = self.geometry.named_joints.get('home')
-        if home is not None:
-            self.reset_stop()
-            fallback = self.move_joints(home, speed, f'{label}:home')
-            if fallback.success:
-                if self.node is not None:
-                    self.node.get_logger().warning(
-                        f'{label}: work unreachable; reconfigured to home'
-                    )
-                return fallback
+        # 'home' and 'work' are the only named poses the reference executor
+        # may use; the forbidden 'transport' pose is never a fallback.  A
+        # rejected 'work' already tried its calibrated safe Cartesian pose
+        # inside the service path, so a failure here is reported as-is.
         return result
 
     def move_joints(

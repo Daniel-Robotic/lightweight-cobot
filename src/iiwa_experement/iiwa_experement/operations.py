@@ -331,36 +331,106 @@ class ReferenceOperations:
         self._move(goal, 'lin', self.geometry.speeds['contact'], f'{label}:contact')
 
     def _retreat(self, goal: Transform, label: str) -> None:
-        approach = self._above(goal, self.geometry.approach_gap)
-        transfer = self._above(goal, self.geometry.transfer_gap)
-        self._move(approach, 'lin', self.geometry.speeds['approach'], f'{label}:retreat')
-        self._move(transfer, 'ompl', self.geometry.speeds['transfer'], f'{label}:clear')
+        """Lift axially away from a contact pose before any lateral motion.
 
-    def _contact_with_home_retry(
+        On real hardware a sideways move straight out of a contact pose drags
+        the tool or the part across the fixture, so the lift is mandatory:
+        the gaps only shrink, and if every axial segment is rejected the
+        operation stops instead of continuing at contact depth.
+        """
+        lifted = False
+        for index, gap in enumerate((self.geometry.approach_gap, 0.03, 0.015)):
+            lift_label = f'{label}:retreat' if index == 0 else f'{label}:retreat:{gap:.3f}'
+            try:
+                self._move(
+                    self._above(goal, gap), 'lin',
+                    self.geometry.speeds['approach'], lift_label,
+                )
+                lifted = True
+                break
+            except OperationError as error:
+                if 'Планирование' not in str(error):
+                    raise
+                self.motion.reset_stop()
+        if not lifted:
+            raise OperationError(f'{label}: the axial retreat was rejected')
+        self._move(
+            self._above(goal, self.geometry.transfer_gap), 'ompl',
+            self.geometry.speeds['transfer'], f'{label}:clear',
+        )
+
+    def _exit_rack(self, goal: Transform, label: str) -> None:
+        """Lift straight up out of the rack, then step sideways out of it.
+
+        The lift is mandatory: a lateral move at socket depth would drag the
+        tool (or the empty patron) through the magazine on real hardware.
+        The sideways step starts from the height that was actually reached.
+        """
+        height = None
+        for index, gap in enumerate((
+            self.geometry.transfer_gap, self.geometry.approach_gap, 0.03, 0.015,
+        )):
+            lift_label = f'{label}:lift' if index == 0 else f'{label}:lift:{gap:.3f}'
+            try:
+                self._move(
+                    self._above(goal, gap), 'lin',
+                    self.geometry.speeds['approach'], lift_label,
+                )
+                height = gap
+                break
+            except OperationError as error:
+                if 'Планирование' not in str(error):
+                    raise
+                self.motion.reset_stop()
+        if height is None:
+            raise OperationError(
+                f'{label}: the axial lift out of the rack was rejected'
+            )
+        base = self._above(goal, height)
+        for offset in (0.10, 0.06, 0.03):
+            exit_pose = Transform.from_xyz_rpy(
+                [0.0, offset, 0.0], [0.0, 0.0, 0.0],
+                parent='world', child='rack_exit_offset',
+            ).compose_relaxed(base)
+            exit_label = (
+                f'{label}:exit' if offset == 0.10 else f'{label}:exit:{offset:.2f}'
+            )
+            try:
+                self._move(
+                    exit_pose, 'lin', self.geometry.speeds['transfer'], exit_label,
+                )
+                return
+            except OperationError as error:
+                if 'Планирование' not in str(error):
+                    raise
+                self.motion.reset_stop()
+        raise OperationError(f'{label}: no lateral rack exit was plannable')
+
+    def _contact_with_recovery(
         self, goal: Transform, label: str, *, prepare=None, **kwargs,
     ) -> None:
-        """Contact a target, reconfiguring through home only if planning fails.
+        """Contact a target, reconfiguring through 'work' if planning fails.
 
-        The routes use the closer 'work' pose between tasks.  A few tray and
-        rack cells are nevertheless only reachable from the home branch, so
-        the fallback is applied on demand instead of forcing a home detour on
-        every transition.
+        'work' is the only neutral pose the routes are allowed to use:
+        'transport' is forbidden entirely and 'home' is reserved for the end
+        of the route.  A single retry from 'work' switches the IK branch
+        without leaving the working area.
         """
         try:
             self._contact(goal, label, **kwargs)
         except OperationError as error:
             if 'Планирование' not in str(error):
                 raise
-            self._emit('reconfigure', label=label, target='home',
+            self._emit('reconfigure', label=label, target='work',
                        reason=str(error))
             if prepare is not None:
                 prepare()
             self.motion.reset_stop()
-            named = self.motion.move_named('home', 0.3)
+            named = self.motion.move_named('work', 0.3)
             if not getattr(named, 'success', False):
                 raise error
             self.motion.reset_stop()
-            self._contact(goal, f'{label}:home_retry', **kwargs)
+            self._contact(goal, f'{label}:recovery', **kwargs)
 
     def _require_synchronized(self) -> None:
         try:
@@ -394,49 +464,17 @@ class ReferenceOperations:
             self._require_synchronized()
             tool_pose = self.supervisor.object_pose(f'grant_{tool_name}')
             goal = tcp_goal(tool_pose, self.geometry.tool_tcp_to_nodes[tool_name])
-            self._contact_with_home_retry(
+            self._contact_with_recovery(
                 goal, f'take_tool({tool_name})',
                 remove_before_contact=f'grant_{tool_name}',
             )
             self.supervisor.command('attach_tool', tool_name)
-            # Lift a little, then translate along +Y away from the magazine
-            # before any large joint-space move.  A full-height vertical lift
-            # runs into the wrist limit; the lateral exit is what actually
-            # keeps the tool body out of the rack textures.
-            transfer = self._above(goal, self.geometry.transfer_gap)
-            try:
-                self._move(
-                    transfer, 'lin', self.geometry.speeds['approach'],
-                    f'take_tool({tool_name}):lift',
-                )
-            except OperationError as error:
-                # The tool is attached.  Continue with the lateral exit (or
-                # let the route's 'work' move recover) rather than aborting
-                # with the tool in the rack.
-                if 'Планирование' not in str(error):
-                    raise
-                self._emit('lift_skipped', label=f'take_tool({tool_name})',
-                           reason=str(error))
-                self.motion.reset_stop()
-            for offset in (0.10, 0.06, 0.03):
-                exit_pose = Transform.from_xyz_rpy(
-                    [0.0, offset, 0.0], [0.0, 0.0, 0.0],
-                    parent='world', child='rack_exit_offset',
-                ).compose_relaxed(transfer)
-                label = (
-                    f'take_tool({tool_name}):exit' if offset == 0.10
-                    else f'take_tool({tool_name}):exit:{offset:.2f}'
-                )
-                try:
-                    self._move(
-                        exit_pose, 'lin', self.geometry.speeds['transfer'],
-                        label,
-                    )
-                    break
-                except OperationError as error:
-                    if 'Планирование' not in str(error):
-                        raise
-                    self.motion.reset_stop()
+            # The held tool becomes part of the robot in the planning scene,
+            # so the lift, the rack exit and every later transfer are planned
+            # with the tool body instead of dragging it through the magazine.
+            self.bridge.attach(attached_tool(tool_name, self.geometry))
+            self._require_synchronized()
+            self._exit_rack(goal, f'take_tool({tool_name})')
             self._emit('take_tool', object=tool_name, phase='done',
                        tool=tool_name, tcp=goal.xyz)
             return OperationResult(True, 'take_tool', f'{tool_name} mounted', tuple(self.events))
@@ -455,7 +493,7 @@ class ReferenceOperations:
             # pose is verified by both the motion adapter and supervisor.
             self.bridge.remove(f'grant_{tool_name}')
             self._require_synchronized()
-            self._contact_with_home_retry(goal, f'dock_tool({tool_name})')
+            self._contact_with_recovery(goal, f'dock_tool({tool_name})')
             self.supervisor.command('dock_tool', tool_name)
             self.bridge.add_world(
                 f'grant_{tool_name}',
@@ -463,44 +501,7 @@ class ReferenceOperations:
                 rack_pose,
             )
             self._require_synchronized()
-            try:
-                self._retreat(goal, f'dock_tool({tool_name})')
-            except OperationError as error:
-                # The axial retreat can be rejected from the socket branch.
-                # The tool is already docked, so stepping out is still safe.
-                if 'Планирование' not in str(error):
-                    raise
-                self.motion.reset_stop()
-            # Step out of the rack along +Y before any joint-space move; the
-            # axial retreat alone can leave the wrist against its limit.  Use a
-            # lower height if the full retreat was rejected.
-            for gap in (
-                self.geometry.transfer_gap, 0.05, 0.02,
-            ):
-                base = self._above(goal, gap)
-                reached = False
-                for offset in (0.10, 0.06, 0.03):
-                    exit_pose = Transform.from_xyz_rpy(
-                        [0.0, offset, 0.0], [0.0, 0.0, 0.0],
-                        parent='world', child='rack_exit_offset',
-                    ).compose_relaxed(base)
-                    label = (
-                        f'dock_tool({tool_name}):exit' if offset == 0.10
-                        else f'dock_tool({tool_name}):exit:{offset:.2f}'
-                    )
-                    try:
-                        self._move(
-                            exit_pose, 'lin',
-                            self.geometry.speeds['transfer'], label,
-                        )
-                        reached = True
-                        break
-                    except OperationError as error:
-                        if 'Планирование' not in str(error):
-                            raise
-                        self.motion.reset_stop()
-                if reached:
-                    break
+            self._exit_rack(goal, f'dock_tool({tool_name})')
             self._emit('dock_tool', object=tool_name, phase='done')
             return OperationResult(True, 'dock_tool', f'{tool_name} docked', tuple(self.events))
         except Exception as error:
@@ -526,6 +527,10 @@ class ReferenceOperations:
                 goal, 'pick_cap', remove_before_contact='grant_cap',
             )
             self.supervisor.command('grab_cap', 'cap')
+            # Plan the retreat and the transfer with the hatch attached to the
+            # robot, not as a blind spot removed from the scene.
+            self.bridge.attach(attached_cap(self.geometry))
+            self._require_synchronized()
             self._retreat(goal, 'pick_cap')
             self._emit('pick_cap', object='cap', phase='done', tcp=goal.xyz)
             return OperationResult(True, 'pick_cap', 'hatch grasped', tuple(self.events))
@@ -607,9 +612,8 @@ class ReferenceOperations:
             first = sealant_point(self.geometry, self.spec, segments[0], 0.0)
             first_goal = tcp_goal(first, tip)
             self._contact(first_goal, 'dispense_contour:start')
-            for index, segment in enumerate(segments):
-                end_fraction = 1.0 if index < len(segments) - 1 else 1.0
-                end = sealant_point(self.geometry, self.spec, segment, end_fraction)
+            for segment in segments:
+                end = sealant_point(self.geometry, self.spec, segment, 1.0)
                 end_goal = tcp_goal(end, tip)
                 self._move(
                     end_goal, 'lin', self.geometry.speeds['contour'],
@@ -641,24 +645,18 @@ class ReferenceOperations:
                 )
                 self._require_synchronized()
 
-            self._contact_with_home_retry(
+            self._contact_with_recovery(
                 goal, f'pick_screw({screw_id})',
                 remove_before_contact=def_name,
                 prepare=restore_screw,
             )
             self.supervisor.command('grab_screw', screw_id)
-            try:
-                self._retreat(goal, f'pick_screw({screw_id})')
-            except OperationError as error:
-                # The screw is already attached.  A rejected axial lift at a
-                # far tray cell can be recovered by the route's next 'work'
-                # move instead of aborting with the screw in hand.
-                if 'Планирование' not in str(error):
-                    raise
-                self._emit('retreat_skipped',
-                           label=f'pick_screw({screw_id})',
-                           reason=str(error))
-                self.motion.reset_stop()
+            self.bridge.attach(attached_screw(screw_id, self.geometry))
+            self._require_synchronized()
+            # The axial lift is mandatory even at far tray cells: continuing
+            # laterally with the screw at tray depth would drag it across the
+            # tray walls on real hardware.
+            self._retreat(goal, f'pick_screw({screw_id})')
             self._emit('pick_screw', object=screw_id, phase='done')
             return OperationResult(True, 'pick_screw', f'{screw_id} grasped', tuple(self.events))
         except Exception as error:
@@ -672,7 +670,7 @@ class ReferenceOperations:
             self._require_synchronized()
             hole = world_target(self.spec, self.geometry, f'hole:{hole_id}')
             goal = tcp_goal(hole, self.geometry.screw_tcp_to_node)
-            self._contact(
+            self._contact_with_recovery(
                 goal, f'handoff_screw({screw_id},{hole_id})',
                 remove_before_contact=def_name,
                 remove_phase='contact',
@@ -681,9 +679,10 @@ class ReferenceOperations:
                 'handoff_screw', screw_id, target=hole, target_name=hole_id,
             )
             self._require_synchronized()
-            # A Cartesian retreat from the hole can leave the wrist in a
-            # singular branch.  The caller moves to 'work' in joint space
-            # immediately afterwards; that is the verified clearance move.
+            # Always lift axially out of the handoff pose before the route
+            # continues: a joint-space or lateral move at hole height would
+            # drag the magnet across the body on real hardware.
+            self._retreat(goal, f'handoff_screw({screw_id},{hole_id})')
             self._emit('delivered', object=screw_id, target=hole_id,
                        phase='done', hole=hole_id)
             return OperationResult(
@@ -717,10 +716,10 @@ class ReferenceOperations:
             )
             tip = self.geometry.tool_tcp_to_nodes['torque_tool']
             goal = tcp_goal(target, tip)
-            self._contact(goal, f'tighten_hole({hole_id})')
+            self._contact_with_recovery(goal, f'tighten_hole({hole_id})')
             twist_error = None
-            twisted = goal
             twist_done = False
+            joint_twist = False
             # Prefer a pure flange rotation: it twists the tool about its own
             # axis without moving the arm to another IK branch.  A Cartesian
             # twist can push joint 6 into its limit, after which 'work' is no
@@ -730,6 +729,7 @@ class ReferenceOperations:
             if provider is not None:
                 joints = provider()
             if joints is not None and len(joints) == 7:
+                joints = tuple(float(value) for value in joints)
                 for sign in (1.0, -1.0):
                     target_joints = list(joints)
                     target_joints[6] += math.radians(sign * twist_deg)
@@ -740,6 +740,7 @@ class ReferenceOperations:
                     )
                     if getattr(result, 'success', False):
                         twist_done = True
+                        joint_twist = True
                         self._emit('tighten_twist', object=hole_id,
                                    joint=7, delta_deg=sign * twist_deg)
                         break
@@ -761,7 +762,6 @@ class ReferenceOperations:
                             candidate, 'lin', self.geometry.speeds['contour'],
                             f'tighten_hole({hole_id}):{suffix}',
                         )
-                        twisted = candidate
                         twist_done = True
                         break
                     except OperationError as error:
@@ -774,9 +774,29 @@ class ReferenceOperations:
                         twist_error = error
                 if not twist_done:
                     raise twist_error
-            # The caller's following 'work' move is the verified clearance
-            # move, as after a screw handoff.  A separate Cartesian retreat
-            # from the twisted pose can be rejected by the wrist limits.
+            # Return the flange to the contact orientation before leaving.
+            # Without the untwist, joint 7 accumulates 45 deg per hole and the
+            # wrist winds up until every later plan starts from a twisted
+            # branch.
+            if joint_twist:
+                self.motion.wait_stationary()
+                untwist = self.motion.move_joints(
+                    joints, self.geometry.speeds['contour'],
+                    f'tighten_hole({hole_id}):joint_untwist',
+                )
+                if not getattr(untwist, 'success', False):
+                    raise OperationError(
+                        f'tighten_hole({hole_id}): the joint untwist failed: '
+                        f'{untwist.message}'
+                    )
+            else:
+                self._move(
+                    goal, 'lin', self.geometry.speeds['contour'],
+                    f'tighten_hole({hole_id}):untwist',
+                )
+            # Lift axially out of the hole before the route continues, exactly
+            # as after a screw handoff.
+            self._retreat(goal, f'tighten_hole({hole_id})')
             self._emit('tighten_simulated', object=hole_id, phase='done',
                        twist_deg=twist_deg)
             return OperationResult(

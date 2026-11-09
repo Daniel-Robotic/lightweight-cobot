@@ -40,8 +40,11 @@ SCENE_TOPIC = '/planning_scene'
 MONITORED_TOPIC = '/monitored_planning_scene'
 GET_SCENE_SERVICE = '/get_planning_scene'
 SCENE_FRAME = 'base_link'
+# The tool is rigidly bolted to the flange, so contact between its collision
+# box and the wrist/flange links is expected and allowed.  Without 'link7'
+# the wide vacuum box reads as a false collision against the wrist housing.
 TOUCH_LINKS = (
-    'tcp', 'patron', 'camera_holder', 'camera_corner',
+    'tcp', 'patron', 'link7', 'camera_holder', 'camera_corner',
     'camera_hand', 'camera_optical_frame',
 )
 ROBOT_LINKS = (

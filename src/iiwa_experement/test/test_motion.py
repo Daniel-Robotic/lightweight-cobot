@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from scipy.spatial.transform import Rotation
+
 from iiwa_experement.geometry import Transform, load_geometry
 from iiwa_experement.motion import MotionAdapter
 
@@ -245,3 +247,45 @@ def test_unavailable_server_is_reported_without_motion():
     assert 'unavailable' in result.message
     assert action.requests == []
     assert adapter.stopped is False
+
+
+def test_work_fallback_uses_the_safe_pose_and_never_transport():
+    planning_error = 'Планирование не удалось: injected failure'
+    joints = FakeActionClient(result=FakeResult(False, planning_error))
+    named = FakeService(success=False, message=planning_error)
+    action = FakeActionClient()
+
+    def echo_pose():
+        request = action.requests[-1]
+        matrix = Rotation.from_euler(
+            'ZYX', [request.a, request.b, request.c],
+        ).as_matrix()
+        return Transform(
+            xyz=(request.x, request.y, request.z),
+            rotation=tuple(tuple(float(v) for v in row) for row in matrix),
+            parent='base_link', child='tcp',
+        )
+
+    g = geometry()
+    # The forbidden pose is not mirrored into the executor at all.
+    assert 'transport' not in g.named_joints
+    adapter = MotionAdapter(
+        node=None,
+        geometry=g,
+        action_client=action,
+        joints_client=joints,
+        named_client=named,
+        stop_client=StopService(),
+        tf_buffer=object(),
+        scene_check=lambda: (True, 'ok'),
+        freshness_check=lambda: (True, 'ok'),
+        pose_provider=echo_pose,
+        spin_until=lambda future, timeout: future.done(),
+    )
+    result = adapter.move_named('work', speed=0.2)
+    assert result.success, result.message
+    # Both named paths were rejected, so the calibrated safe Cartesian pose
+    # was planned with OMPL instead of reconfiguring through 'transport'.
+    assert action.requests[-1].planner == 'ompl'
+    for request in joints.requests:
+        assert list(request.joints) == list(g.named_joints['work'])

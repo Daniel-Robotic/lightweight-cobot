@@ -40,6 +40,27 @@ def test_every_route_is_nonempty_and_returns_home():
         assert names[-2:] == ['dock_tool', 'move_named'] or names[-1] == 'move_named' or 'dock_tool' in names
 
 
+def test_routes_start_at_work_and_only_end_at_home():
+    for experiment_id in range(1, 21):
+        steps = route(experiment_id)
+        assert steps[0].kind == 'move_named'
+        assert steps[0].args == ('work',)
+        assert steps[-2].kind == 'move_named'
+        assert steps[-2].args == ('work',)
+        assert steps[-1].kind == 'move_named'
+        assert steps[-1].args == ('home',)
+        homes = [
+            index for index, step in enumerate(steps)
+            if step.kind == 'move_named' and step.args == ('home',)
+        ]
+        assert homes == [len(steps) - 1]
+        # The 'transport' pose is forbidden in the reference routes.
+        assert not any(
+            step.kind == 'move_named' and step.args == ('transport',)
+            for step in steps
+        )
+
+
 def test_cap_experiments_use_the_vacuum_tool():
     for experiment_id in range(1, 6):
         names = kinds(experiment_id)

@@ -9,7 +9,7 @@ robot:
 
 digital_twin:
   tcp_gizmo:
-    enabled: true              # TCP-гизма в Webots; только в режиме симуляции
+    enabled: false              # TCP-гизма в Webots; только в режиме симуляции
     publish_period: 0.032      # период управления [с]
     command_timeout: 0.3       # максимальный возраст цели при отпускании мыши [с]
     state_timeout: 0.5         # допустимый возраст состояния робота [с]

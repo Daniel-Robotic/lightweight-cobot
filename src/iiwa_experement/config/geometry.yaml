@@ -126,10 +126,13 @@ speeds:
 
 # Calibrated safe Cartesian tcp poses (world frame).  They are used as an
 # OMPL fallback when a short PTP named motion is rejected.
+# Only the two poses the reference executor is allowed to use are mirrored
+# here: 'work' is the neutral working pose, 'home' is the final pose of a
+# route.  The 'transport' pose from the global MoveIt config is deliberately
+# not listed: it is forbidden in the reference routes.
 named_joints:
   home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   work: [0.0, 0.0, 0.0, -1.57, 0.0, 1.57, 0.0]
-  transport: [0.0, 0.436, 0.0, 1.57, 0.0, 0.0, 0.0]
 
 safe_poses:
   work:
