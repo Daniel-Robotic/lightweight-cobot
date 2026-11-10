@@ -1,0 +1,15 @@
+# Defaults for `ros2 launch iiwa_llm_plan_executor planner.launch.py`.
+# Qwen3 is called outside this project; this file only configures Webots and
+# the two new nodes.
+start_delay_sec: 3.0
+scene_max_age_sec: 2.0
+max_steps: 512
+scene_freshness_sec: 2.0
+close_inspection_objects:
+  - cap
+top_camera_topic: /d455_top/image_raw
+hand_camera_topic: /camera/color
+frame_timeout_sec: 2.0
+trace_dir: ~/.ros/iiwa_llm_plan_executor/runs
+planning_group: iiwa_arm
+pose_link: tcp
