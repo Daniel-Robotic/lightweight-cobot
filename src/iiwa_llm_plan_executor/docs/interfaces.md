@@ -88,3 +88,35 @@ Important pre-movement rules:
 * Screws are handed to the virtual operator at a hole; the hole stays empty
   and no insertion/tightening occurs.
 * No task is inferred from `experiment_id`; only the initial scene is selected.
+
+## Constrained motion adapter
+
+`MotionPolicy` (`config/motion_limits.yaml`) checks every point before the
+controller sees a plan:
+
+* `joint_7` must stay inside `work_reference_rad +/- corridor_rad`
+  (0 +/- 90 deg; boundaries inclusive).
+* The tcp local +Z (working direction) must point down within
+  `max_tilt_deg` (10 deg).
+* Consecutive points may not jump more than `max_joint_jump_rad` (0.6 rad) or
+  `max_cartesian_jump_m` (0.15 m); the first point must match the measured
+  joints used as IK seed.
+* `joint_states` and the planning scene freshness are checked before planning.
+
+`MoveItPyPlanner` uses the installed MoveItPy 2.12 API:
+
+```python
+arm.set_start_state_to_current_state()          # IK seed from current joints
+arm.set_path_constraints(constraints)           # joint_7 + orientation
+arm.set_goal_state(pose_stamped_msg=..., pose_link='tcp')
+result = arm.plan(single_plan_parameters=params)
+result.trajectory.get_robot_trajectory_msg()    # every point checked
+moveit.execute(result.trajectory, controllers=[])
+```
+
+The path constraints are a `JointConstraint` on `joint_7` with
+`tolerance_below/above = corridor_rad` and an `OrientationConstraint` on
+`tcp` with the goal quaternion and 10 deg tolerance on each axis.  The planner
+never falls back to an unconstrained `MoveToPose` goal: a rejected constrained
+plan, a limit violation or an execution failure stops the backend.
+

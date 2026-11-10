@@ -1,0 +1,25 @@
+# Hard limits for the constrained MoveItPy adapter.  They are deliberately
+# separate from the reference executor: the graph executor never falls back to
+# an unconstrained MoveToPose goal.
+schema_version: 1
+
+joint7:
+  # The neutral work pose has joint_7 = 0 rad.  The first-stage hard corridor
+  # is +/-90 degrees around it; the -180 degree IK branch is forbidden.
+  work_reference_rad: 0.0
+  corridor_rad: 1.5707963267948966
+
+tcp:
+  # The working tip points down; a working motion may tilt at most 10 degrees.
+  max_tilt_deg: 10.0
+
+trajectory:
+  # A near-pi jump indicates an IK branch change.  Reject it before execution.
+  max_joint_jump_rad: 0.6
+  max_cartesian_jump_m: 0.15
+  # The planned first point must match the measured joints used as IK seed.
+  start_tolerance_rad: 0.35
+
+freshness:
+  joint_state_max_age_sec: 1.0
+  scene_max_age_sec: 2.0
