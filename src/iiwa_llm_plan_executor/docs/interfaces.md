@@ -89,6 +89,26 @@ Important pre-movement rules:
   and no insertion/tightening occurs.
 * No task is inferred from `experiment_id`; only the initial scene is selected.
 
+## Skill phases
+
+A skill may contain the mandatory geometric phases of one action. `approach`
+moves above the target and saves that height; `lower` moves along the tool
+axis to contact; `grab` performs only the missing phases, confirms the grasp
+through the supervisor, then lifts back to the saved approach pose. Explicit
+`approach`/`lower`/`lift` nodes do not repeat motion already performed.
+
+`release` always lifts axially before any lateral motion or wrist rotation.
+`transfer` stops at the safe height over the destination. `release(cap,
+hatch_seat)` lowers, places, detaches and withdraws. `handoff_screw` lowers at
+the hole, hands the screw to the virtual operator and withdraws; it never
+inserts or tightens and the hole remains empty.
+
+`detect` first withdraws axially from a contact, moves to `work`, waits for a
+fresh top frame and reads the exact pose from the supervisor. When the object
+is configured for close inspection, a second fresh frame from the hand camera
+is required; RGB/D is used for liveness only.
+
+
 ## Constrained motion adapter
 
 `MotionPolicy` (`config/motion_limits.yaml`) checks every point before the
