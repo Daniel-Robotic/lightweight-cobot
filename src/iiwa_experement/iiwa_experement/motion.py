@@ -357,6 +357,21 @@ class MotionAdapter:
                     True, 'motion completed', label, True, base_goal, actual,
                     time.monotonic() - started,
                 )
+            # The Webots trajectory controller reports success on the desired
+            # trajectory state while the measured arm is still creeping to the
+            # held final setpoint.  Give it a bounded window to arrive before
+            # re-issuing the goal; re-issuing at once looks like a violent
+            # sideways snap of 5-10 cm.
+            converged = self._wait_for_converged_pose(base_goal, timeout_sec=8.0)
+            if converged is not None:
+                if self.node is not None:
+                    self.node.get_logger().info(
+                        f'{label}: tcp converged to the goal after a short wait'
+                    )
+                return MotionResult(
+                    True, 'motion completed', label, True, base_goal, converged,
+                    time.monotonic() - started,
+                )
             if attempt + 1 < self.pose_correction_attempts:
                 # The action succeeded but the controller stopped outside the
                 # pose tolerance.  Re-issue the same verified goal once; this
@@ -525,6 +540,30 @@ class MotionAdapter:
             True, response.message or 'motion completed', label,
             True, None, self.actual_tcp(), time.monotonic() - started,
         )
+
+    def _wait_for_converged_pose(
+        self, goal: Transform, timeout_sec: float,
+    ) -> Transform | None:
+        """Wait for the measured tcp to reach the goal within tolerances.
+
+        Returns the converged pose, or None when the window elapsed.
+        """
+        if self.node is None:
+            return None
+        import rclpy
+
+        deadline = time.monotonic() + max(0.0, float(timeout_sec))
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+            current = self.actual_tcp()
+            if current is not None:
+                distance, angle = _pose_distance(current, goal)
+                if (
+                    distance <= self.position_tolerance
+                    and angle <= self.orientation_tolerance
+                ):
+                    return current
+        return None
 
     def _settle(self) -> None:
         if self.settle_time_sec <= 0.0 or self.node is None:

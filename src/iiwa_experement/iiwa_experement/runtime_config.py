@@ -131,6 +131,13 @@ def _materialize_setting(
     objects['enabled'] = False
     objects['count'] = 0
     webots['world'] = str(world_path.resolve())
+    # The interactive TCP gizmo must not exist in reference runs: it draws an
+    # overlay ball and can preempt the reference route.  cobot-setting.yaml
+    # only applies to `cobot run`, not to this launch.
+    gizmo = _mapping(
+        digital_twin.setdefault('tcp_gizmo', {}), 'digital_twin.tcp_gizmo',
+    )
+    gizmo['enabled'] = False
 
     tool = _mapping(data.setdefault('tool', {}), 'tool')
     tool['active'] = 'patron'

@@ -9,7 +9,7 @@ robot:
 
 digital_twin:
   tcp_gizmo:
-    enabled: true             # TCP-гизма в Webots; только в режиме симуляции
+    enabled: false           # TCP-гизма в Webots; только в режиме симуляции
     publish_period: 0.032      # период управления [с]
     command_timeout: 0.3       # максимальный возраст цели при отпускании мыши [с]
     state_timeout: 0.5         # допустимый возраст состояния робота [с]
@@ -23,7 +23,7 @@ digital_twin:
     controller_timer: "50"
 
     objects:
-      enabled: true
+      enabled: false
       count: 5                    # точное общее количество; модели могут повторяться
       models:
         - path: pkg://iiwa_description/objects/hammer/hammer1.obj

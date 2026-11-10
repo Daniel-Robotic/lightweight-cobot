@@ -739,6 +739,7 @@ class ReferenceOperations:
             twist_error = None
             twist_done = False
             joint_twist = False
+            twisted_goal = goal
             # Prefer a pure flange rotation: it twists the tool about its own
             # axis without moving the arm to another IK branch.  A Cartesian
             # twist can push joint 6 into its limit, after which 'work' is no
@@ -782,6 +783,7 @@ class ReferenceOperations:
                             f'tighten_hole({hole_id}):{suffix}',
                         )
                         twist_done = True
+                        twisted_goal = candidate
                         break
                     except OperationError as error:
                         # Holes on the far side of the body can sit against
@@ -793,14 +795,24 @@ class ReferenceOperations:
                         twist_error = error
                 if not twist_done:
                     raise twist_error
-            # Return the flange to the contact orientation before leaving.
-            # Without the untwist, joint 7 accumulates 45 deg per hole and the
-            # wrist winds up until every later plan starts from a twisted
-            # branch.
+            # Lift axially out of the hole BEFORE undoing the twist: rotating
+            # the flange back at the contact point would visibly unscrew the
+            # simulated tightening.
+            self._retreat(twisted_goal, f'tighten_hole({hole_id})')
             if joint_twist:
+                # Return only joint 7 to its pre-twist value; the other
+                # joints stay where the retreat left them.
+                current = provider() if provider is not None else None
+                self._require(
+                    current is not None and len(current) == 7,
+                    f'tighten_hole({hole_id}): joint state unavailable for '
+                    'the untwist',
+                )
+                untwist_joints = list(current)
+                untwist_joints[6] = joints[6]
                 self.motion.wait_stationary()
                 untwist = self.motion.move_joints(
-                    joints, self.geometry.speeds['contour'],
+                    untwist_joints, self.geometry.speeds['contour'],
                     f'tighten_hole({hole_id}):joint_untwist',
                 )
                 if not getattr(untwist, 'success', False):
@@ -809,13 +821,13 @@ class ReferenceOperations:
                         f'{untwist.message}'
                     )
             else:
+                # Pure rotation about the tool axis at the safe height; the
+                # raised untwisted pose shares the retreat position.
                 self._move(
-                    goal, 'lin', self.geometry.speeds['contour'],
+                    self._above(goal, self.geometry.transfer_gap), 'lin',
+                    self.geometry.speeds['contour'],
                     f'tighten_hole({hole_id}):untwist',
                 )
-            # Lift axially out of the hole before the route continues, exactly
-            # as after a screw handoff.
-            self._retreat(goal, f'tighten_hole({hole_id})')
             self._emit('tighten_simulated', object=hole_id, phase='done',
                        twist_deg=twist_deg)
             return OperationResult(
