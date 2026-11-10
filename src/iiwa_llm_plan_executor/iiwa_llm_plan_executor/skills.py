@@ -440,6 +440,10 @@ class SkillRegistry:
         tool = node.object
         if context.mounted_tool == tool:
             return SkillOutcome('success', {'reused': True, 'tool': tool})
+        adapter = self._adapter(context)
+        prepare = getattr(adapter, 'prepare_grab_tool', None)
+        if prepare is not None:
+            prepare(tool)
         self._ensure_contact(context, node)
         try:
             self._command(
@@ -447,11 +451,16 @@ class SkillRegistry:
             )
         except SkillError as error:
             context.ownership_unknown = True
+            restore = getattr(adapter, 'restore_tool', None)
+            if restore is not None:
+                try:
+                    restore(tool)
+                except Exception:
+                    pass
             return SkillOutcome('grasp_failed', {'reason': str(error)})
         context.mounted_tool = tool
         context.held_object = None
         context.ownership_unknown = False
-        adapter = self._adapter(context)
         if adapter is not None:
             try:
                 adapter.attach_tool(tool)
@@ -471,11 +480,24 @@ class SkillRegistry:
         command: str,
         tool: str,
     ) -> SkillOutcome:
+        adapter = self._adapter(context)
+        if node.object == 'cap':
+            prepare = getattr(adapter, 'prepare_grab_cap', None)
+        else:
+            prepare = getattr(adapter, 'prepare_grab_screw', None)
+        if prepare is not None:
+            prepare(node.object)
         contact = self._ensure_contact(context, node)
         try:
             self._command(context, command, node.object, event='grasp_failed')
         except SkillError as error:
             context.ownership_unknown = True
+            restore = getattr(adapter, 'restore_part', None)
+            if restore is not None:
+                try:
+                    restore(node.object)
+                except Exception:
+                    pass
             return SkillOutcome('grasp_failed', {'reason': str(error)})
         context.held_object = node.object
         context.mounted_tool = tool
@@ -483,7 +505,6 @@ class SkillRegistry:
         if node.object == 'cap':
             cap_pose = self._live_pose(context, node.object)
             context.cap_relative = contact.inverse().compose_relaxed(cap_pose)
-        adapter = self._adapter(context)
         if adapter is not None:
             try:
                 if node.object == 'cap':
@@ -587,6 +608,10 @@ class SkillRegistry:
                 ),
                 'moved': False,
             })
+        adapter = self._adapter(context)
+        prepare = getattr(adapter, 'prepare_dock_tool', None)
+        if prepare is not None:
+            prepare(tool)
         if not context.approach_matches((tool, socket)):
             goal = self._destination_goal(context, tool, socket)
             safe = _above(goal, context.geometry.approach_gap)
@@ -615,6 +640,10 @@ class SkillRegistry:
             return SkillOutcome('failed', {'reason': 'hatch is not held'})
         target = node.target or 'hatch_seat'
         self._ensure_approach(context, node)
+        adapter = self._adapter(context)
+        prepare = getattr(adapter, 'prepare_place_cap', None)
+        if prepare is not None:
+            prepare()
         if context.phase != 'contact':
             goal = self._destination_goal(context, 'cap', target)
             self._move(context, goal, 'lower')
@@ -655,6 +684,10 @@ class SkillRegistry:
         if context.mounted_tool != 'magnetic_tool':
             return SkillOutcome('failed', {'reason': 'magnetic_tool is not mounted'})
         self._ensure_approach(context, node)
+        adapter = self._adapter(context)
+        prepare = getattr(adapter, 'prepare_handoff_screw', None)
+        if prepare is not None:
+            prepare(screw)
         if context.phase != 'contact':
             goal = self._destination_goal(context, screw, hole)
             self._move(context, goal, 'lower')

@@ -12,6 +12,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/MotionPriority.srv"
   "srv/MoveToPose.srv"
   "srv/MoveToNamedPose.srv"
+  "srv/GetRunStatus.srv"
   "action/MoveToPose.action"
   "action/MoveToJoints.action"
   DEPENDENCIES geometry_msgs action_msgs

@@ -123,6 +123,9 @@ class MoveItPyPlanner:
         self._stopped = False
 
     # ------------------------------------------------------------------ setup
+    def ensure_ready(self) -> None:
+        self._ensure()
+
     def _ensure(self) -> None:
         if self._arm is not None:
             return

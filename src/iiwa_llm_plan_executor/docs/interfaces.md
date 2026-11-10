@@ -89,6 +89,31 @@ Important pre-movement rules:
   and no insertion/tightening occurs.
 * No task is inferred from `experiment_id`; only the initial scene is selected.
 
+## ROS execution interfaces
+
+| Direction | Name | Type | Payload |
+| --- | --- | --- | --- |
+| service | `/iiwa_llm_plan_executor/submit` | `webots_ros2_msgs/SetString` | `{"run_id", "scene_revision", "response"}`. `success` means admitted; the rejection reason is in `/status` and `get_status`. |
+| topic | `/iiwa_llm_plan_executor/plan` | `std_msgs/String` | `{"run_id","scene_revision","response"}` exactly for the accepted graph; transient-local, depth 1. Published once per `run_id` before the first node. Rejected graphs never appear. |
+| topic | `/iiwa_llm_plan_executor/status` | `std_msgs/String` | Each node event and terminal. Fields: `run_id`, `state`, `reason`, `node_id`, `skill`, `event`, `next`, `scene_revision`, `terminal`, `mounted_tool`, `held_object`, `timestamp`, plus event details. |
+| service | `/iiwa_llm_plan_executor/get_status` | `iiwa_msgs/GetRunStatus` | request `string run_id`; response `bool found`, `string status_json`. |
+| service | `/iiwa_llm_plan_executor/cancel` | `webots_ros2_msgs/SetString` | `{"run_id": "..."}` or a plain run id; stops execution and preserves the grasp. |
+
+Admission conditions: fresh `scene_json`, matching `scene_revision`,
+`scene_ready`, a ready MoveIt/controller, fresh `joint_states`, and at least
+3.0 s of simulation time since the first ready scene. Only one run may be
+active. Repeating `submit` with the same `run_id` is idempotent and never
+starts a second motion; a different `run_id` while active is rejected as
+`busy`.
+
+Terminals are `completed`, `replan_required`, `operator_required`, plus
+`failed`/`canceled` for safety stops. `replan_required` emits the newest
+`scene_json`; the external client decides whether to call Qwen3 again.
+Execution runs in a worker thread, so `get_status` and `cancel` stay
+responsive. A JSONL log with every event is written under `trace_dir`
+(default `~/.ros/iiwa_llm_plan_executor/runs`).
+
+
 ## Skill phases
 
 A skill may contain the mandatory geometric phases of one action. `approach`

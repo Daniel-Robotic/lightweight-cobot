@@ -13,7 +13,7 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Callable, Iterable, Sequence
 
 import numpy as np
 import rclpy
@@ -465,6 +465,7 @@ class PlanningSceneBridge:
         node: Node | None = None,
         use_sim_time: bool = True,
         srdf_path: str | None = None,
+        spin_fn: Callable[[float], None] | None = None,
     ) -> None:
         self._owns_node = node is None
         if node is None:
@@ -473,6 +474,7 @@ class PlanningSceneBridge:
                 'use_sim_time', value=use_sim_time,
             )])
         self.node = node
+        self._spin_fn = spin_fn
         self.geometry: GeometrySpec | None = None
         self.spec: ScenarioSpec | None = None
         self.base_to_world: Transform | None = None
@@ -553,10 +555,17 @@ class PlanningSceneBridge:
                 attached[entry.object.id] = copy.deepcopy(entry)
         scene.robot_state.attached_collision_objects = list(attached.values())
 
+    def _spin_once(self, timeout_sec: float) -> None:
+        """Let the owning executor spin, or spin locally in the reference run."""
+        if self._spin_fn is not None:
+            self._spin_fn(timeout_sec)
+            return
+        rclpy.spin_once(self.node, timeout_sec=timeout_sec)
+
     def _spin(self, seconds: float = 0.05) -> None:
         end = time.monotonic() + seconds
         while time.monotonic() < end:
-            rclpy.spin_once(self.node, timeout_sec=0.01)
+            self._spin_once(0.01)
 
     def _publish(self, scene: PlanningScene) -> None:
         self._seen_world.clear()
@@ -575,7 +584,7 @@ class PlanningSceneBridge:
         future = self._get_scene.call_async(request)
         end = time.monotonic() + 3.0
         while time.monotonic() < end and not future.done():
-            rclpy.spin_once(self.node, timeout_sec=0.05)
+            self._spin_once(0.05)
         if future.done():
             try:
                 matrix = future.result().scene.allowed_collision_matrix
@@ -639,7 +648,7 @@ class PlanningSceneBridge:
             )
         end = time.monotonic() + 0.5
         while time.monotonic() < end:
-            rclpy.spin_once(self.node, timeout_sec=0.02)
+            self._spin_once(0.02)
             current = self._latest_joint_state
             if current is None:
                 continue
@@ -672,7 +681,7 @@ class PlanningSceneBridge:
             future = self._get_scene.call_async(request)
             end = time.monotonic() + 1.0
             while time.monotonic() < end and not future.done():
-                rclpy.spin_once(self.node, timeout_sec=0.05)
+                self._spin_once(0.05)
             if not future.done():
                 continue
             try:
@@ -859,7 +868,7 @@ class PlanningSceneBridge:
         future = self._get_scene.call_async(request)
         end = time.monotonic() + timeout_sec
         while time.monotonic() < end and not future.done():
-            rclpy.spin_once(self.node, timeout_sec=0.05)
+            self._spin_once(0.05)
         if not future.done():
             return None
         try:
@@ -891,7 +900,7 @@ class PlanningSceneBridge:
         last_world: set[str] = set()
         last_attached: set[str] = set()
         while time.monotonic() < end:
-            rclpy.spin_once(self.node, timeout_sec=0.05)
+            self._spin_once(0.05)
             # 1. Every expected id must have appeared in a monitored scene
             #    (published by the MoveItPy or move_group monitor).
             served = (
