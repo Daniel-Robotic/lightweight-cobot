@@ -138,6 +138,7 @@ class SceneContextNode(Node):
             freshness_sec=float(self.get_parameter('freshness_sec').value),
         )
         self._last_published: tuple[int, int] | None = None
+        self._last_publish_time = -1.0
         self._ready_client = self.create_client(Trigger, READY_SERVICE)
         self._ready_request_pending = False
         self._service = self.create_service(
@@ -199,9 +200,15 @@ class SceneContextNode(Node):
         if envelope is None:
             return
         key = (int(envelope['scene_revision']), int(envelope['state_version']))
-        if key == self._last_published:
+        now = self._now()
+        period = max(
+            0.05, float(self.get_parameter('publish_period_sec').value),
+        )
+        changed = key != self._last_published
+        if not changed and now - self._last_publish_time < period:
             return
         self._last_published = key
+        self._last_publish_time = now
         message = String()
         message.data = json.dumps(envelope, ensure_ascii=False)
         self._publisher.publish(message)

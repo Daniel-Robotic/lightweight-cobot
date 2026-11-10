@@ -23,12 +23,12 @@ from .catalog import (
 
 DEFAULT_CAMERAS = {
     'top': {
-        'topic': '/d455_top/image_raw',
+        'topic': '/d455_top/image_raw/image_color',
         'role': 'overview',
         'required_for': ['detect'],
     },
     'hand': {
-        'topic': '/camera/color',
+        'topic': '/camera/color/image_color',
         'role': 'close_inspection',
         'required_for': ['detect', 'capture'],
     },

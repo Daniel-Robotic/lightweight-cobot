@@ -102,3 +102,28 @@ def test_snapshot_scene_is_the_catalog_scene_not_the_state():
     expected = build_scene(store.spec, store.state, store.catalog)
     assert envelope['scene_json'] == expected
     assert 'pose' not in envelope['scene_json']
+
+
+def test_scene_topic_is_republished_to_keep_the_timestamp_fresh():
+    store = make_store()
+    store.set_scene_ready(True)
+    store.update(state(1), received_at=10.0)
+    node = object.__new__(SceneContextNode)
+    node.store = store
+    node._last_published = None
+    node._last_publish_time = -1.0
+    node._publisher = type('Publisher', (), {
+        'messages': [],
+        'publish': lambda self, message: self.messages.append(message),
+    })()
+    clock = {'now': 10.1}
+    node._now = lambda: clock['now']
+    node.get_parameter = lambda name: type('P', (), {
+        'value': 0.5 if name == 'publish_period_sec' else None,
+    })()
+    SceneContextNode._publish_if_new(node)
+    SceneContextNode._publish_if_new(node)
+    assert len(node._publisher.messages) == 1
+    clock['now'] = 10.7
+    SceneContextNode._publish_if_new(node)
+    assert len(node._publisher.messages) == 2
