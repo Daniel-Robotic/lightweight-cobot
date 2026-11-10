@@ -17,10 +17,8 @@ venv/
 .codex/
 __pycache__/
 .pytest_cache/
-output/
+!output/
+output/reference_photo/
 
 *.egg-info
 **.FCBak
-
-CLAUDE.md
-AGENTS.md

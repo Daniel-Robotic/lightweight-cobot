@@ -36,8 +36,8 @@ digital_twin:
         #   rotation_deg: [1.57, 0, 0]
         # - path: pkg://iiwa_description/objects/hammer/hammer5.obj
         #   rotation_deg: [1.57, 0, 0]
-        - path: pkg://iiwa_description/objects/grant/vint.obj
-          rotation_deg: [90, 0, 0]
+        # - path: pkg://iiwa_description/objects/grant/vint.obj
+          # rotation_deg: [90, 0, 0]
       area:                       # метры в системе основания робота, до падения
         x: [0.3, 0.7]
         y: [-0.3, 0.3]

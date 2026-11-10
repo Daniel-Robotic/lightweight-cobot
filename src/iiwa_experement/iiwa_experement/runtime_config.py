@@ -135,6 +135,15 @@ def _materialize_setting(
     tool = _mapping(data.setdefault('tool', {}), 'tool')
     tool['active'] = 'patron'
 
+    # The reference executor runs many rest-to-rest plans back to back.  The
+    # Webots position controller keeps a heavy tool oscillating at a few
+    # hundredths of rad/s for seconds after a stop, which trips the default
+    # 0.01 rad/s start-state guard and aborts otherwise valid plans.  Loosen
+    # the guard for these launches only; the runner still waits for the arm
+    # to settle before every plan and verifies the reached pose afterwards.
+    planning = _mapping(data.setdefault('planning', {}), 'planning')
+    planning['stopped_velocity_tolerance'] = 0.08
+
     if moveit_cpp_path is not None:
         controller = _mapping(data.setdefault('controller', {}), 'controller')
         moveit = _mapping(controller.setdefault('moveit', {}), 'controller.moveit')

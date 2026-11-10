@@ -146,12 +146,14 @@ safe_poses:
 # Webots bounding objects so MoveIt and the simulator agree.
 scene_collisions:
   table:
-    # Top at Z = 0.789, deliberately 1 mm below the robot base (Z = 0.790)
-    # and 4 mm below the work surface (Z = 0.793), so the base is not in
-    # collision while downward motion is still blocked.
+    # Top at Z = 0.786.  The base_link collision mesh reaches 2.05 mm below
+    # its frame origin (world Z = 0.788), so a table top at 0.789 was actually
+    # a permanent 1 mm penetration that the contact check flagged only
+    # intermittently.  The 2 mm gap below the mesh bottom keeps the base
+    # collision-free while the slab still blocks downward motion.
     type: box
     size: [1.28, 1.08, 0.045]
-    offset_z: 0.7665
+    offset_z: 0.7635
   # The fixture is a frame, not a solid block: a low base plate and two
   # side rails.  A full box would cover the hatch seat and make placement
   # impossible.

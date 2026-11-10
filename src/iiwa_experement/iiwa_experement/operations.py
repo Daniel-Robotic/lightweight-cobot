@@ -26,6 +26,8 @@ from .planning_scene import (
     attached_cap,
     attached_screw,
     attached_tool,
+    cap_world_box,
+    placed_cap_pose,
     screw_object_id,
 )
 from .scenario import ScenarioSpec
@@ -243,6 +245,11 @@ class ReferenceOperations:
         result = None
         planning_failed = False
         for attempt in range(attempts):
+            # Rest-to-rest planning: the server's response adapter rejects any
+            # plan whose start state is still moving.  Wait for the arm to
+            # settle before every attempt instead of rapid-firing retries
+            # into the same non-stationary window.
+            self.motion.wait_stationary()
             result = self.motion.move_pose(
                 goal,
                 planner=planner,
@@ -268,6 +275,7 @@ class ReferenceOperations:
                 continue
         if allow_fallback and planner != 'ompl' and planning_failed:
             self.motion.reset_stop()
+            self.motion.wait_stationary()
             fallback = self.motion.move_pose(
                 goal, planner='ompl', speed=speed, label=f'{label}:ompl',
             )
@@ -339,6 +347,7 @@ class ReferenceOperations:
         operation stops instead of continuing at contact depth.
         """
         lifted = False
+        last_error: OperationError | None = None
         for index, gap in enumerate((self.geometry.approach_gap, 0.03, 0.015)):
             lift_label = f'{label}:retreat' if index == 0 else f'{label}:retreat:{gap:.3f}'
             try:
@@ -351,9 +360,12 @@ class ReferenceOperations:
             except OperationError as error:
                 if 'Планирование' not in str(error):
                     raise
+                last_error = error
                 self.motion.reset_stop()
         if not lifted:
-            raise OperationError(f'{label}: the axial retreat was rejected')
+            raise OperationError(
+                f'{label}: the axial retreat was rejected ({last_error})'
+            )
         self._move(
             self._above(goal, self.geometry.transfer_gap), 'ompl',
             self.geometry.speeds['transfer'], f'{label}:clear',
@@ -367,6 +379,7 @@ class ReferenceOperations:
         The sideways step starts from the height that was actually reached.
         """
         height = None
+        last_error: OperationError | None = None
         for index, gap in enumerate((
             self.geometry.transfer_gap, self.geometry.approach_gap, 0.03, 0.015,
         )):
@@ -381,10 +394,12 @@ class ReferenceOperations:
             except OperationError as error:
                 if 'Планирование' not in str(error):
                     raise
+                last_error = error
                 self.motion.reset_stop()
         if height is None:
             raise OperationError(
-                f'{label}: the axial lift out of the rack was rejected'
+                f'{label}: the axial lift out of the rack was rejected '
+                f'({last_error})'
             )
         base = self._above(goal, height)
         for offset in (0.10, 0.06, 0.03):
@@ -403,8 +418,11 @@ class ReferenceOperations:
             except OperationError as error:
                 if 'Планирование' not in str(error):
                     raise
+                last_error = error
                 self.motion.reset_stop()
-        raise OperationError(f'{label}: no lateral rack exit was plannable')
+        raise OperationError(
+            f'{label}: no lateral rack exit was plannable ({last_error})'
+        )
 
     def _contact_with_recovery(
         self, goal: Transform, label: str, *, prepare=None, **kwargs,
@@ -495,11 +513,9 @@ class ReferenceOperations:
             self._require_synchronized()
             self._contact_with_recovery(goal, f'dock_tool({tool_name})')
             self.supervisor.command('dock_tool', tool_name)
-            self.bridge.add_world(
-                f'grant_{tool_name}',
-                self.geometry.tool_collisions[tool_name],
-                rack_pose,
-            )
+            # The tool is back in its calibrated socket: restore the exact
+            # initial box pose instead of reusing the rotated node pose.
+            self.bridge.restore_world(f'grant_{tool_name}')
             self._require_synchronized()
             self._exit_rack(goal, f'dock_tool({tool_name})')
             self._emit('dock_tool', object=tool_name, phase='done')
@@ -551,8 +567,12 @@ class ReferenceOperations:
                 remove_phase='contact',
             )
             self.supervisor.command('place_cap', 'cap', target=target)
+            # The collision box of the installed hatch is flat, thinner than
+            # the plate and centred on it: it must clear both the body box
+            # below and the suction-cup box above at the contact pose.
             self.bridge.add_world(
-                'grant_cap', self.geometry.cap_collision, target,
+                'grant_cap', cap_world_box(self.geometry),
+                placed_cap_pose(target, self.spec.body.yaw_deg),
             )
             self._require_synchronized()
             self._retreat(goal, 'place_cap')
@@ -639,10 +659,9 @@ class ReferenceOperations:
             goal = tcp_goal(screw_pose, self.geometry.screw_tcp_to_node)
             def restore_screw() -> None:
                 # The first attempt removed the screw from the planning scene
-                # before its transfer was rejected.  Restore it for the retry.
-                self.bridge.add_world(
-                    def_name, self.geometry.screw_collision, screw_pose,
-                )
+                # before its transfer was rejected.  Restore its calibrated
+                # tray pose for the retry.
+                self.bridge.restore_world(def_name)
                 self._require_synchronized()
 
             self._contact_with_recovery(
@@ -820,9 +839,7 @@ class ReferenceOperations:
                 goal = tcp_goal(pose, self.geometry.cap_tcp_to_node)
                 self._contact(goal, label, remove_before_contact='grant_cap')
                 self._retreat(goal, label)
-                self.bridge.add_world(
-                    'grant_cap', self.geometry.cap_collision, pose,
-                )
+                self.bridge.restore_world('grant_cap')
                 self._require_synchronized()
             elif kind == 'screw':
                 def_name = screw_object_id(name)
@@ -830,9 +847,7 @@ class ReferenceOperations:
                 goal = tcp_goal(pose, self.geometry.screw_tcp_to_node)
                 self._contact(goal, label, remove_before_contact=def_name)
                 self._retreat(goal, label)
-                self.bridge.add_world(
-                    def_name, self.geometry.screw_collision, pose,
-                )
+                self.bridge.restore_world(def_name)
                 self._require_synchronized()
             else:
                 raise OperationError(f'unknown grasp target {kind!r}')

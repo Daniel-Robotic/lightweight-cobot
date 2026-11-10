@@ -37,7 +37,7 @@ public:
                   const sensor_msgs::msg::JointState &requested) const {
     // Explicit nonzero requested initial dynamics are never silently discarded.
     if (!requested.velocity.empty() && !velocities_ok(names, requested))
-      return false;
+      return diagnose(names, requested, "request start_state has moving joints");
     auto node = node_.lock();
     if (!node)
       return velocities_ok(names,
@@ -46,15 +46,39 @@ public:
     if (!latest_ || std::chrono::duration<double>(
                         std::chrono::steady_clock::now() - received_)
                             .count() > timeout_)
-      return false;
+      return diagnose(names, requested, "no fresh /joint_states (wall clock)");
     const double age =
         node->now().seconds() -
         (latest_->header.stamp.sec + latest_->header.stamp.nanosec * 1e-9);
-    return std::isfinite(age) && age >= 0 && age <= timeout_ &&
-           velocities_ok(names, *latest_);
+    if (!(std::isfinite(age) && age >= 0 && age <= timeout_))
+      return diagnose(names, requested, "stale /joint_states stamp");
+    return velocities_ok(names, *latest_)
+               ? true
+               : diagnose(names, *latest_, "joints still moving");
   }
 
 private:
+  bool diagnose(const std::vector<std::string> &names,
+                const sensor_msgs::msg::JointState &msg,
+                const char *why) const {
+    double worst = -1.0;
+    std::string worst_joint;
+    for (const auto &name : names) {
+      auto found = std::find(msg.name.begin(), msg.name.end(), name);
+      if (found == msg.name.end())
+        continue;
+      const size_t i = found - msg.name.begin();
+      if (i < msg.velocity.size() && std::isfinite(msg.velocity[i]) &&
+          std::abs(msg.velocity[i]) > worst) {
+        worst = std::abs(msg.velocity[i]);
+        worst_joint = name;
+      }
+    }
+    RCLCPP_WARN(rclcpp::get_logger("iiwa_spline_limits"),
+                "Start state rejected: %s; max |velocity| = %.4f rad/s at %s",
+                why, worst, worst_joint.c_str());
+    return false;
+  }
   bool velocities_ok(const std::vector<std::string> &names,
                      const sensor_msgs::msg::JointState &msg) const {
     for (const auto &name : names) {

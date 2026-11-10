@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from moveit_msgs.msg import CollisionObject, PlanningScene
 
-from iiwa_experement.geometry import Box, Transform, load_geometry
+from iiwa_experement.geometry import Box, Transform, load_geometry, world_target
 from iiwa_experement.planning_scene import (
     PlanningSceneBridge,
     SceneObject,
@@ -16,6 +16,7 @@ from iiwa_experement.planning_scene import (
     attached_tool,
     build_world_objects,
     collision_object,
+    placed_cap_pose,
     scene_ids,
     update_contact_entry,
 )
@@ -41,6 +42,7 @@ class FakeBridge(PlanningSceneBridge):
         self._world_objects = {
             obj.object_id: obj for obj in build_world_objects(scenario, geometry)
         }
+        self._initial_world = dict(self._world_objects)
         self._attached = {}
         self._disabled_pairs = []
         self._acm_names = []
@@ -87,7 +89,7 @@ def test_collision_boxes_match_measured_meshes():
     objects = {obj.object_id: obj for obj in build_world_objects(
         spec(16), load_geometry(GEOMETRY))}
     assert objects['grant_body'].box.size == pytest.approx((0.30, 0.17, 0.00915))
-    assert objects['grant_cap'].box.size == pytest.approx((0.1384, 0.0984, 0.00367))
+    assert objects['grant_cap'].box.size == pytest.approx((0.1384, 0.0984, 0.00267))
     assert objects['grant_screw_01'].box.size == pytest.approx((0.0055, 0.0055, 0.009))
     assert objects['grant_vacuum'].box.size[2] == pytest.approx(0.140)
 
@@ -144,9 +146,11 @@ def test_cap_and_screw_attachment_geometry_uses_tcp_offsets():
     geometry = load_geometry(GEOMETRY)
     cap = attached_cap(geometry)
     screw = attached_screw('screw_3', geometry)
-    assert cap.relative_pose.xyz == pytest.approx((0.0, 0.0, 0.141835 + 0.0552))
-    assert cap.box.size == pytest.approx((0.1384, 0.0984, 0.00367))
-    assert screw.relative_pose.xyz == pytest.approx((0.0, 0.0, 0.1445 + 0.0552))
+    # The boxes stop 1 mm short of the support surface at the grasp pose.
+    assert cap.relative_pose.xyz == pytest.approx((0.0, 0.0, 0.141335 + 0.0552))
+    assert cap.box.size == pytest.approx((0.1384, 0.0984, 0.00267))
+    assert screw.relative_pose.xyz == pytest.approx((0.0, 0.0, 0.144 + 0.0552))
+    assert screw.box.size == pytest.approx((0.0055, 0.0055, 0.008))
 
 
 def test_contact_permission_changes_exactly_one_pair():
@@ -157,6 +161,40 @@ def test_contact_permission_changes_exactly_one_pair():
     assert matrix[2][1] is True and matrix[1][2] is True
     assert matrix[2][0] is False and matrix[0][2] is False
     assert matrix[0][1] is False
+
+
+def test_restore_world_returns_the_calibrated_box_pose():
+    bridge = FakeBridge(16)
+    tool = attached_tool('vacuum', bridge.geometry)
+    bridge.attach(tool)
+    bridge.restore_world(tool.object_id)
+    assert tool.object_id not in bridge._attached
+    restored = bridge._world_objects[tool.object_id]
+    expected = {
+        obj.object_id: obj
+        for obj in build_world_objects(bridge.spec, bridge.geometry)
+    }[tool.object_id]
+    assert restored.pose.xyz == pytest.approx(expected.pose.xyz)
+    assert restored.pose.rotation == expected.pose.rotation
+    with pytest.raises(Exception):
+        bridge.restore_world('grant_unknown')
+
+
+def test_placed_cap_box_is_flat_and_matches_the_preinstalled_cap():
+    geometry = load_geometry(GEOMETRY)
+    scenario = spec(1)
+    seat = world_target(scenario, geometry, 'cap_seat')
+    placed = placed_cap_pose(seat, scenario.body.yaw_deg)
+    # The box is flat (yaw only) and centred on the plate, like the
+    # pre-installed hatch of experiments 11-15.
+    preinstalled = {
+        obj.object_id: obj
+        for obj in build_world_objects(spec(11), geometry)
+    }['grant_cap']
+    assert placed.xyz == pytest.approx(preinstalled.pose.xyz)
+    assert np.asarray(placed.rotation) == pytest.approx(
+        np.asarray(preinstalled.pose.rotation)
+    )
 
 
 def test_srdf_collision_matrix_allows_only_disabled_pairs():

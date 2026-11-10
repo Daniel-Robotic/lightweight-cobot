@@ -50,6 +50,7 @@ class FakeBridge:
         self.attached = []
         self.detached = []
         self.removed = []
+        self.restored = []
 
     def attach(self, spec):
         self.attached.append(spec.object_id)
@@ -62,7 +63,14 @@ class FakeBridge:
         if object_id in self.attached:
             self.attached.remove(object_id)
 
+    def restore_world(self, object_id):
+        if object_id in self.attached:
+            self.attached.remove(object_id)
+        self.restored.append(object_id)
+
     def add_world(self, object_id, box, pose):
+        if object_id in self.attached:
+            self.attached.remove(object_id)
         self.added_world = getattr(self, 'added_world', [])
         self.added_world.append((object_id, pose))
 
@@ -157,7 +165,7 @@ def test_dock_tool_returns_the_tool_to_its_socket():
     result = operations.dock_tool('vacuum')
     assert result.success
     assert supervisor.commands[0][:2] == ('dock_tool', 'vacuum')
-    assert bridge.added_world[0][0] == 'grant_vacuum'
+    assert bridge.restored == ['grant_vacuum']
     assert labels(motion)[-1] == 'dock_tool(vacuum):exit'
 
 

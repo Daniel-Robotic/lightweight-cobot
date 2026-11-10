@@ -200,6 +200,11 @@ def build_reference_sequence(spec: ScenarioSpec) -> tuple[ReferenceStep, ...]:
     return tuple(cleaned)
 
 
+def _planning_failure(message: str) -> bool:
+    text = message.lower()
+    return 'планирование' in text or 'planning' in text or 'недостижима' in text
+
+
 def execute_sequence(sequence: tuple[ReferenceStep, ...], context) -> RunResult:
     """Execute a route, stopping at the first unsafe or unexpected outcome."""
     operations = context.operations
@@ -216,6 +221,15 @@ def execute_sequence(sequence: tuple[ReferenceStep, ...], context) -> RunResult:
             trace.event({'event': 'step', 'step': step.as_dict(), 'phase': 'start'})
             if step.kind == 'move_named':
                 result = motion.move_named(*step.args, **step.kwargs)
+                if not result.success and _planning_failure(result.message):
+                    # A rejected plan executed no motion.  The start-state
+                    # guard can trip on a startup clock/telemetry race, so
+                    # wait for the arm to settle and retry exactly once.
+                    trace.event({'event': 'named_retry', 'step': step.as_dict(),
+                                 'reason': result.message})
+                    motion.wait_stationary(timeout_sec=5.0)
+                    motion.reset_stop()
+                    result = motion.move_named(*step.args, **step.kwargs)
                 if not result.success:
                     raise SequenceError(result.message)
                 if step.args and step.args[0] == 'home':

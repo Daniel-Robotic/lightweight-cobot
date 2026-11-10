@@ -102,6 +102,45 @@ def screw_object_id(screw_id: str) -> str:
     return f'grant_screw_{int(screw_id.split("_")[1]):02d}'
 
 
+# Lift from an object node pose to the collision-box centre, matching
+# build_world_objects.  A node origin sits on the lower face/axis of the OBJ
+# and is rotated so the local Y axis becomes world Z; the collision box is a
+# flat, yaw-only box centred above the support surface.
+#
+# The installed hatch is sandwiched between two hard constraints: its box
+# must clear the conservative body box below AND the suction-cup box above at
+# the place contact pose.  A zero-distance touch on either side reads as a
+# scene contact and blocks every later plan from that state, so the world
+# model of the hatch is 1 mm thinner than the real plate, leaving 0.5 mm of
+# clearance on both sides.
+CAP_BOX_LIFT = 0.004165
+CAP_BOX_THICKNESS = 0.00267
+SCREW_BOX_LIFT = 0.0055
+TOOL_BOX_LIFT = 0.070
+
+
+def cap_world_box(geometry: GeometrySpec) -> Box:
+    """Collision box of the hatch as a world object (thinner than the plate)."""
+    return Box(
+        size=(
+            geometry.cap_collision.size[0],
+            geometry.cap_collision.size[1],
+            CAP_BOX_THICKNESS,
+        ),
+        offset=geometry.cap_collision.offset,
+    )
+
+
+def placed_cap_pose(seat: Transform, body_yaw_deg: float) -> Transform:
+    """Collision-box pose of the installed hatch: flat, centred on the plate."""
+    return Transform.from_xyz_rpy(
+        [seat.xyz[0], seat.xyz[1], seat.xyz[2] + CAP_BOX_LIFT],
+        [0.0, 0.0, body_yaw_deg],
+        parent='world',
+        child='cap',
+    )
+
+
 @dataclass(frozen=True)
 class SceneObject:
     object_id: str
@@ -242,7 +281,7 @@ def build_world_objects(spec: ScenarioSpec, geometry: GeometrySpec) -> list[Scen
                 _rotated_pose(
                     screw.pose.x,
                     screw.pose.y,
-                    screw.pose.z + 0.0045,
+                    screw.pose.z + SCREW_BOX_LIFT,
                     screw.pose.yaw_deg,
                 ),
             ))
@@ -254,7 +293,7 @@ def build_world_objects(spec: ScenarioSpec, geometry: GeometrySpec) -> list[Scen
             f'grant_{tool.name}',
             Box(size=size, offset=(0.0, 0.0, 0.070)),
             _rotated_pose(
-                tool.pose.x, tool.pose.y, tool.pose.z + 0.070,
+                tool.pose.x, tool.pose.y, tool.pose.z + TOOL_BOX_LIFT,
                 tool.pose.yaw_deg + 180.0,
             ),
         ))
@@ -264,9 +303,9 @@ def build_world_objects(spec: ScenarioSpec, geometry: GeometrySpec) -> list[Scen
         assert cap_pose is not None
         objects.append(SceneObject(
             'grant_cap',
-            geometry.cap_collision,
+            cap_world_box(geometry),
             _rotated_pose(
-                cap_pose.x, cap_pose.y, cap_pose.z + 0.004165,
+                cap_pose.x, cap_pose.y, cap_pose.z + CAP_BOX_LIFT,
                 cap_pose.yaw_deg,
             ),
         ))
@@ -292,11 +331,19 @@ def attached_tool(name: str, geometry: GeometrySpec) -> AttachedSpec:
 
 
 def attached_cap(geometry: GeometrySpec) -> AttachedSpec:
+    # The plate box stops 1 mm short of the support surface (body/table at
+    # the grasp pose): a zero-distance touch reads as a scene contact and
+    # blocks the mandatory axial retreat right after the grasp.
+    box = Box(
+        size=(geometry.cap_collision.size[0], geometry.cap_collision.size[1],
+              0.00267),
+        offset=(0.0, 0.0, 0.141335),
+    )
     return AttachedSpec(
         object_id='grant_cap',
-        box=geometry.cap_collision,
+        box=box,
         relative_pose=Transform.from_xyz_rpy(
-            [0.0, 0.0, geometry.cap_collision.offset[2] + 0.0552],
+            [0.0, 0.0, 0.141335 + 0.0552],
             [0.0, 0.0, 0.0],
             parent='patron',
             child='grant_cap',
@@ -306,12 +353,14 @@ def attached_cap(geometry: GeometrySpec) -> AttachedSpec:
 
 
 def attached_screw(screw_id: str, geometry: GeometrySpec) -> AttachedSpec:
+    # Same 1 mm clearance at the tray floor as in attached_cap.
+    box = Box(size=(0.0055, 0.0055, 0.008), offset=(0.0, 0.0, 0.144))
     object_id = screw_object_id(screw_id)
     return AttachedSpec(
         object_id=object_id,
-        box=geometry.screw_collision,
+        box=box,
         relative_pose=Transform.from_xyz_rpy(
-            [0.0, 0.0, geometry.screw_collision.offset[2] + 0.0552],
+            [0.0, 0.0, 0.144 + 0.0552],
             [0.0, 0.0, 0.0],
             parent='patron',
             child=object_id,
@@ -445,6 +494,7 @@ class PlanningSceneBridge:
             GetPlanningScene, GET_SCENE_SERVICE,
         )
         self._world_objects: dict[str, SceneObject] = {}
+        self._initial_world: dict[str, SceneObject] = {}
         self._attached: dict[str, AttachedSpec] = {}
         self._seen_world: set[str] = set()
         self._seen_attached: set[str] = set()
@@ -694,6 +744,7 @@ class PlanningSceneBridge:
         self._world_objects = {
             obj.object_id: obj for obj in build_world_objects(spec, geometry)
         }
+        self._initial_world = dict(self._world_objects)
         self._attached.clear()
         extra = []
         for spec in self._attached.values():
@@ -708,6 +759,26 @@ class PlanningSceneBridge:
             self._world_objects, (), seen_world=set(self._world_objects),
         )
 
+    def _publish_attached_removal(self, object_id: str) -> None:
+        """Send an explicit attached-object removal diff.
+
+        Full scenes carry the attached list inside ``robot_state`` with
+        ``is_diff=True``; a consumer that applies that list as a diff never
+        treats an omission as a removal and keeps a ghost attachment.  The
+        explicit REMOVE entry is unambiguous for every consumer.
+        """
+        publisher = getattr(self, '_publisher', None)
+        if publisher is None or self.node is None:
+            return
+        scene = self._diff()
+        removal = AttachedCollisionObject()
+        removal.link_name = 'patron'
+        removal.object.id = object_id
+        removal.object.operation = CollisionObject.REMOVE
+        scene.robot_state.attached_collision_objects.append(removal)
+        publisher.publish(scene)
+        self._spin()
+
     def attach(self, spec: AttachedSpec) -> None:
         self._world_objects.pop(spec.object_id, None)
         self._attached[spec.object_id] = spec
@@ -720,20 +791,42 @@ class PlanningSceneBridge:
                 f'cannot detach {object_id!r}: it is not attached'
             )
         spec = self._attached.pop(object_id)
+        self._publish_attached_removal(object_id)
         object_spec = SceneObject(object_id, spec.box, world_pose)
         self._world_objects[object_id] = object_spec
         self._rebuild_acm()
         self._publish_full()
 
     def remove(self, object_id: str) -> None:
-        self._attached.pop(object_id, None)
+        if self._attached.pop(object_id, None) is not None:
+            self._publish_attached_removal(object_id)
         self._world_objects.pop(object_id, None)
         self._rebuild_acm()
         self._publish_full()
 
     def add_world(self, object_id: str, box: Box, world_pose: Transform) -> None:
-        self._attached.pop(object_id, None)
+        if self._attached.pop(object_id, None) is not None:
+            self._publish_attached_removal(object_id)
         self._world_objects[object_id] = SceneObject(object_id, box, world_pose)
+        self._rebuild_acm()
+        self._publish_full()
+
+    def restore_world(self, object_id: str) -> None:
+        """Return an object to the exact box pose it had at scene initialisation.
+
+        Use this when an object physically returns to its calibrated support
+        pose (a tool docked in its socket, a part restored after a simulated
+        grasp failure): the initial pose already carries the correct
+        box-centre lift and flat orientation.
+        """
+        original = self._initial_world.get(object_id)
+        if original is None:
+            raise SceneSynchronizationError(
+                f'cannot restore {object_id!r}: it was not in the initial scene'
+            )
+        if self._attached.pop(object_id, None) is not None:
+            self._publish_attached_removal(object_id)
+        self._world_objects[object_id] = original
         self._rebuild_acm()
         self._publish_full()
 
