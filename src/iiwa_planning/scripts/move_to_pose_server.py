@@ -298,10 +298,22 @@ class IiwaMotionServer(Node):
         feedback.state = "executing"
         goal_handle.publish_feedback(feedback)
 
+        # Суставные цели — классический PTP (детерминированная интерполяция
+        # без случайных дуг RRTConnect); OMPL — запасной вариант.
         plan_params = self._make_plan_params(
-            "ompl", "RRTConnectkConfigDefault", 10.0, velocity_scale
+            "pilz_industrial_motion_planner", "PTP", 2.0, velocity_scale
         )
         ok, msg = self._plan_and_execute(plan_params, goal_handle)
+        if ok is False:
+            self.get_logger().warn(
+                f"PTP не справился ({msg}); переключаюсь на OMPL"
+            )
+            self._arm.set_start_state_to_current_state()
+            self._arm.set_goal_state(robot_state=goal_state)
+            plan_params = self._make_plan_params(
+                "ompl", "RRTConnectkConfigDefault", 10.0, velocity_scale
+            )
+            ok, msg = self._plan_and_execute(plan_params, goal_handle)
         return result, ok, msg
 
     def _handle_named(self, request: MoveToNamedPose.Request, response: MoveToNamedPose.Response):

@@ -317,10 +317,13 @@ class ReferenceOperations:
         self.motion.wait_stationary()
         transfer = self._above(goal, transfer_gap)
         approach = self._above(goal, approach_gap)
-        self._move(transfer, 'ompl', self.geometry.speeds['transfer'], f'{label}:transfer')
+        # Transfers and approaches use Pilz PTP: deterministic joint-space
+        # interpolation instead of OMPL's random wide elbow sweeps.  OMPL
+        # remains the automatic fallback of _move when PTP cannot plan.
+        self._move(transfer, 'ptp', self.geometry.speeds['transfer'], f'{label}:transfer')
         try:
             self._move(
-                approach, 'ompl', self.geometry.speeds['approach'],
+                approach, 'ptp', self.geometry.speeds['approach'],
                 f'{label}:approach',
             )
         except OperationError as error:
@@ -367,7 +370,7 @@ class ReferenceOperations:
                 f'{label}: the axial retreat was rejected ({last_error})'
             )
         self._move(
-            self._above(goal, self.geometry.transfer_gap), 'ompl',
+            self._above(goal, self.geometry.transfer_gap), 'ptp',
             self.geometry.speeds['transfer'], f'{label}:clear',
         )
 

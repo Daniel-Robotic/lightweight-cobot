@@ -155,8 +155,8 @@ def test_take_tool_follows_the_visible_axial_route():
     assert bridge.attached == ['grant_vacuum']
     contact_goal = motion.moves[2][3]
     assert contact_goal.xyz == pytest.approx(expected.xyz, abs=1e-9)
-    assert motion.moves[0][1] == 'ompl'
-    assert motion.moves[1][1] == 'ompl'
+    assert motion.moves[0][1] == 'ptp'
+    assert motion.moves[1][1] == 'ptp'
     assert motion.moves[2][1] == 'lin'
 
 
