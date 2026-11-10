@@ -110,6 +110,11 @@ def supervisor_process(
     )
 
 
+def mode_read_only(mode: str) -> bool:
+    """Only ``view`` is passive; execute and planner accept grab commands."""
+    return mode == 'view'
+
+
 def runtime_actions(
     experiment_id: int,
     scene_config: str,
@@ -126,7 +131,10 @@ def runtime_actions(
     package_share = Path(get_package_share_directory('iiwa_experement'))
     if geometry_path is None:
         geometry_path = str(package_share / 'config' / 'geometry.yaml')
-    read_only = mode != 'execute'
+    # Only the passive view mode locks the supervisor.  Both the reference
+    # executor and the external-graph planner need to accept grab/dock
+    # commands; the planner mode simply never starts the reference runner.
+    read_only = mode_read_only(mode)
     actions = [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
@@ -264,7 +272,9 @@ def generate_launch_description():
             default_value='view',
             description=(
                 'view = open the prepared scene without motion; '
-                'execute = run the reference sequence after start_delay_sec.'
+                'execute = run the reference sequence after start_delay_sec; '
+                'planner = writable scene for an externally supplied graph, '
+                'no reference sequence.'
             ),
         ),
         DeclareLaunchArgument(

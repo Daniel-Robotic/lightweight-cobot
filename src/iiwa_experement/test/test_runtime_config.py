@@ -14,12 +14,17 @@ from iiwa_experement.runtime_config import (
 )
 
 
-@pytest.mark.parametrize('raw, expected', [('view', 'view'), (' Execute ', 'execute')])
+@pytest.mark.parametrize('raw, expected', [
+    ('view', 'view'),
+    (' Execute ', 'execute'),
+    ('planner', 'planner'),
+    (' PLANNER ', 'planner'),
+])
 def test_mode_validation(raw, expected):
     assert validate_mode(raw) == expected
 
 
-@pytest.mark.parametrize('raw', ['', 'motion', 'execute!'])
+@pytest.mark.parametrize('raw', ['', 'motion', 'execute!', 'plan'])
 def test_mode_validation_rejects_unknown_modes(raw):
     with pytest.raises(ValueError):
         validate_mode(raw)

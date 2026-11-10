@@ -17,7 +17,7 @@ import yaml
 
 
 EXPERIMENT_IDS = tuple(range(1, 21))
-MODES = ('view', 'execute')
+MODES = ('view', 'execute', 'planner')
 DEFAULT_START_DELAY_SEC = 3.0
 DEFAULT_TRACE_DIR = '~/.ros/iiwa_experement/runs'
 LOCAL_PROTOS = (

@@ -45,12 +45,17 @@ def test_invalid_experiment_ids_are_rejected(raw):
         validate_experiment_id(raw)
 
 
-@pytest.mark.parametrize('raw, expected', [('view', 'view'), ('execute', 'execute'), (' VIEW ', 'view')])
+@pytest.mark.parametrize('raw, expected', [
+    ('view', 'view'),
+    ('execute', 'execute'),
+    ('planner', 'planner'),
+    (' VIEW ', 'view'),
+])
 def test_valid_modes(raw, expected):
     assert validate_mode(raw) == expected
 
 
-@pytest.mark.parametrize('raw', ['', 'run', 'VIEW '[:-1] + 'x', '1'])
+@pytest.mark.parametrize('raw', ['', 'run', 'VIEW '[:-1] + 'x', '1', 'plan'])
 def test_invalid_modes_are_rejected(raw):
     with pytest.raises(ValueError):
         validate_mode(raw)
@@ -136,6 +141,46 @@ def test_execute_adds_the_reference_runner_after_the_supervisor():
     )
     assert parameters['read_only'] is False
     assert any(type(action) is ExecuteProcess for action in actions)
+
+
+def _process_arguments(process):
+    return [item[0].text for item in process.cmd if item and item[0].text]
+
+
+def test_planner_is_writable_and_has_no_reference_runner():
+    module = load_launch_module()
+    actions = module.runtime_actions(
+        experiment_id=20,
+        scene_config='/tmp/scenes.yaml',
+        setting_path='/tmp/setting.yaml',
+        mode='planner',
+    )
+    assert not any(
+        isinstance(action, Node) and action.node_executable == 'reference_runner'
+        for action in actions
+    )
+    processes = [action for action in actions if type(action) is ExecuteProcess]
+    assert len(processes) == 1
+    assert 'read_only:=false' in _process_arguments(processes[0])
+    assert module.mode_read_only('planner') is False
+    parameters = module.supervisor_parameters(
+        20, '/tmp/scenes.yaml', '/tmp/geometry.yaml', False,
+    )
+    assert parameters['read_only'] is False
+
+
+def test_view_remains_read_only_after_adding_the_planner_mode():
+    module = load_launch_module()
+    actions = module.runtime_actions(
+        experiment_id=1,
+        scene_config='/tmp/scenes.yaml',
+        setting_path='/tmp/setting.yaml',
+        mode='view',
+    )
+    processes = [action for action in actions if type(action) is ExecuteProcess]
+    assert 'read_only:=true' in _process_arguments(processes[0])
+    assert module.mode_read_only('view') is True
+    assert module.mode_read_only('execute') is False
 
 
 def test_runtime_actions_can_register_cleanup(tmp_path):
