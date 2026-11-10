@@ -10,13 +10,14 @@ from std_srvs.srv import Trigger
 
 from .dynamic_router import build_dynamic_router
 from .ros_node import CobotWebNode, get_bridge, set_bridge
-from . import runner, trajectory, positions
+from . import runner, trajectory, positions, planner
 
 
 stop_router = APIRouter(tags=["stop"])
 
 @stop_router.post("/stop", summary="Остановить всё: runner, траекторию и планировщик")
 def stop_all():
+    planner.cancel_active_run()
     runner.stop_if_running()
     trajectory.send_stop_trajectory()
 
@@ -41,6 +42,22 @@ def stop_all():
         }
 
 
+def add_application_routes(app: FastAPI, endpoints_path, joint_limits_path) -> None:
+    """Add the same routers to the schema app and the serving app."""
+    app.include_router(build_dynamic_router(endpoints_path, joint_limits_path))
+    app.include_router(runner.router)
+    app.include_router(trajectory.router)
+    app.include_router(positions.router)
+    app.include_router(planner.router)
+    app.include_router(stop_router)
+
+
+def build_schema_app(endpoints_path=None, joint_limits_path=None) -> FastAPI:
+    schema_app = FastAPI()
+    add_application_routes(schema_app, endpoints_path, joint_limits_path)
+    return schema_app
+
+
 def main():
     rclpy.init()
     node = CobotWebNode()
@@ -54,12 +71,7 @@ def main():
 
     positions.init()
 
-    _schema_app = FastAPI()
-    _schema_app.include_router(build_dynamic_router(endpoints_path, joint_limits_path))
-    _schema_app.include_router(runner.router)
-    _schema_app.include_router(trajectory.router)
-    _schema_app.include_router(positions.router)
-    _schema_app.include_router(stop_router)
+    _schema_app = build_schema_app(endpoints_path, joint_limits_path)
 
     mcp = FastMCP.from_fastapi(app=_schema_app)
     mcp_http = mcp.http_app(path='/')
@@ -71,11 +83,7 @@ def main():
             yield
 
     app = FastAPI(lifespan=lifespan)
-    app.include_router(build_dynamic_router(endpoints_path, joint_limits_path))
-    app.include_router(runner.router)
-    app.include_router(trajectory.router)
-    app.include_router(positions.router)
-    app.include_router(stop_router)
+    add_application_routes(app, endpoints_path, joint_limits_path)
     app.mount("/mcp", mcp_http)
 
     uvicorn.run(app, host=host, port=port)
