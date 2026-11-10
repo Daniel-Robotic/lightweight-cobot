@@ -31,8 +31,8 @@ DEFAULT_CONFIG = {
     'max_steps': 512,
     'scene_freshness_sec': 2.0,
     'close_inspection_objects': ['cap'],
-    'top_camera_topic': '/d455_top/image_raw',
-    'hand_camera_topic': '/camera/color',
+    'top_camera_topic': '/d455_top/image_raw/image_color',
+    'hand_camera_topic': '/camera/color/image_color',
     'frame_timeout_sec': 2.0,
     'trace_dir': '~/.ros/iiwa_llm_plan_executor/runs',
     'planning_group': 'iiwa_arm',
@@ -72,6 +72,69 @@ def validate_arguments(
     return experiment_id, mode
 
 
+def moveit_parameters(base_setting: str) -> list:
+    """Parameters MoveItPy reads from the process-wide ROS arguments.
+
+    MoveItPy creates its own node, but ROS 2 applies the process command-line
+    ``-p`` arguments to every node in the process.  The same parameter set is
+    used by the existing move_to_pose_server in iiwa_bringup.
+    """
+    from iiwa_utils import converter, setting_loader
+    from iiwa_utils.converter import effective_joint_limits
+    from moveit_configs_utils import MoveItConfigsBuilder
+
+    settings = setting_loader.build_settings(base_setting, check_files=True)
+    moveit_configs = (
+        MoveItConfigsBuilder('iiwa7', package_name='iiwa_config')
+        .robot_description(
+            file_path=settings.robot.description,
+            mappings={
+                'initial_positions_file': settings.controller.moveit.initial_positions,
+                'joint_limits_file': settings.controller.moveit.joint_limits,
+            },
+        )
+        .robot_description_semantic(file_path=settings.controller.moveit.srdf)
+        .robot_description_kinematics(file_path=settings.controller.moveit.kinematics)
+        .joint_limits(file_path=settings.controller.moveit.joint_limits)
+        .pilz_cartesian_limits(file_path=settings.controller.moveit.pilz_limits)
+        .trajectory_execution(file_path=settings.controller.moveit.moveit_controllers)
+        .moveit_cpp(file_path=settings.controller.moveit.moveit_cpp)
+        .to_moveit_configs()
+    )
+    moveit_configs.joint_limits['robot_description_planning'] = (
+        effective_joint_limits(moveit_configs.joint_limits['robot_description_planning'])
+    )
+    configuration = moveit_configs.to_dict()
+    # The executor checks every planned point itself.  The Ruckig smoothing
+    # chain can overshoot a joint limit on a valid OMPL path and then the
+    # custom LimitSplineDynamics adapter rejects the whole plan.  Keep the
+    # deterministic rest-boundary/time-parameterization and validation
+    # adapters for this process; move_group keeps the full pipeline.
+    ompl = configuration.get('ompl')
+    if isinstance(ompl, dict):
+        ompl['response_adapters'] = [
+            adapter for adapter in ompl.get('response_adapters', [])
+            if adapter not in (
+                'default_planning_response_adapters/AddRuckigTrajectorySmoothing',
+                'iiwa_planning/LimitSplineDynamics',
+            )
+        ]
+    robot_description = converter.load_robot_description(
+        settings.robot.description,
+        settings.robot.name,
+        {
+            'simulate': 'true',
+            'initial_positions_file': settings.controller.moveit.initial_positions,
+            'joint_limits_file': settings.controller.moveit.joint_limits,
+        },
+    )
+    return [
+        configuration,
+        {'robot_description': robot_description},
+        {'use_sim_time': True},
+    ]
+
+
 def runtime_actions(
     *,
     experiment_id: int,
@@ -79,6 +142,7 @@ def runtime_actions(
     base_setting: str,
     rviz: str,
     config: dict,
+    moveit_config_parameters: list | None = None,
 ) -> list:
     experiment = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(PathJoinSubstitution([
@@ -109,29 +173,32 @@ def runtime_actions(
         executable='llm_plan_executor',
         name='iiwa_llm_plan_executor',
         output='screen',
-        parameters=[{
-            'experiment_id': int(experiment_id),
-            'scene_config': str(scene_config),
-            'start_delay_sec': float(config.get('start_delay_sec', 3.0)),
-            'scene_max_age_sec': float(config.get('scene_max_age_sec', 2.0)),
-            'max_steps': int(config.get('max_steps', 512)),
-            'close_inspection_objects': list(
-                config.get('close_inspection_objects', ['cap'])
-            ),
-            'top_camera_topic': str(
-                config.get('top_camera_topic', '/d455_top/image_raw')
-            ),
-            'hand_camera_topic': str(
-                config.get('hand_camera_topic', '/camera/color')
-            ),
-            'frame_timeout_sec': float(config.get('frame_timeout_sec', 2.0)),
-            'trace_dir': str(
-                config.get('trace_dir', '~/.ros/iiwa_llm_plan_executor/runs')
-            ),
-            'planning_group': str(config.get('planning_group', 'iiwa_arm')),
-            'pose_link': str(config.get('pose_link', 'tcp')),
-            'use_sim_time': True,
-        }],
+        parameters=[
+            *(moveit_config_parameters or []),
+            {
+                'experiment_id': int(experiment_id),
+                'scene_config': str(scene_config),
+                'start_delay_sec': float(config.get('start_delay_sec', 3.0)),
+                'scene_max_age_sec': float(config.get('scene_max_age_sec', 2.0)),
+                'max_steps': int(config.get('max_steps', 512)),
+                'close_inspection_objects': list(
+                    config.get('close_inspection_objects', ['cap'])
+                ),
+                'top_camera_topic': str(
+                    config.get('top_camera_topic', '/d455_top/image_raw/image_color')
+                ),
+                'hand_camera_topic': str(
+                    config.get('hand_camera_topic', '/camera/color/image_color')
+                ),
+                'frame_timeout_sec': float(config.get('frame_timeout_sec', 2.0)),
+                'trace_dir': str(
+                    config.get('trace_dir', '~/.ros/iiwa_llm_plan_executor/runs')
+                ),
+                'planning_group': str(config.get('planning_group', 'iiwa_arm')),
+                'pose_link': str(config.get('pose_link', 'tcp')),
+                'use_sim_time': True,
+            },
+        ],
     )
     return [experiment, scene_context, executor]
 
@@ -147,6 +214,8 @@ def _setup(context, *args, **kwargs):
         raise RuntimeError(f'Invalid planner launch arguments: {error}') from error
     config_path = LaunchConfiguration('config').perform(context)
     config = load_config(config_path)
+    base_setting = str(LaunchConfiguration('base_setting').perform(context))
+    moveit_config_parameters = moveit_parameters(base_setting)
     print(
         f'[iiwa_llm_plan_executor] experiment {experiment_id} planner mode: '
         f'no reference sequence; waiting for an external graph'
@@ -154,9 +223,10 @@ def _setup(context, *args, **kwargs):
     return runtime_actions(
         experiment_id=experiment_id,
         scene_config=str(LaunchConfiguration('scene_config').perform(context)),
-        base_setting=str(LaunchConfiguration('base_setting').perform(context)),
+        base_setting=base_setting,
         rviz=str(LaunchConfiguration('rviz').perform(context)).lower(),
         config=config,
+        moveit_config_parameters=moveit_config_parameters,
     )
 
 

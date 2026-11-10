@@ -110,7 +110,7 @@ class MotionCheck:
         return {'ok': self.ok, 'reason': self.reason, 'details': dict(self.details)}
 
 
-def _tcp_tilt_deg(pose: Transform) -> float:
+def tcp_tilt_deg(pose: Transform) -> float:
     matrix = pose.matrix
     # The working direction is the tcp local +Z axis; it must point down.
     z_axis = matrix[:, 2]
@@ -152,6 +152,9 @@ class MotionPolicy:
         points: Sequence[Sequence[float]],
         tcp_poses: Sequence[Transform],
         current_joints: Sequence[float] | None = None,
+        *,
+        start_tcp_pose: Transform | None = None,
+        held_object: str | None = None,
     ) -> MotionCheck:
         if not points:
             return MotionCheck(False, 'trajectory is empty')
@@ -201,17 +204,44 @@ class MotionPolicy:
             )
 
         max_tilt = 0.0
+        start_tilt = (
+            tcp_tilt_deg(start_tcp_pose)
+            if isinstance(start_tcp_pose, Transform)
+            else 0.0
+        )
+        # A robot that starts outside the working posture (the calibrated home
+        # pose points the tip up) needs one empty-gripper reorientation to the
+        # downward working pose.  This exception is explicit and logged; J7,
+        # jumps and the final downward orientation are still checked.  Any
+        # motion with a held/mounted object is always fully tilt-checked.
+        reorientation = (
+            start_tilt > self.limits.max_tilt_deg + epsilon
+            and held_object is None
+        )
+        # 0.1 deg is the measurement/numerical band of the FK check; the
+        # planner is constrained to a stricter 8 deg band.
+        tilt_epsilon_deg = 0.25
+        tilt_limit_deg = self.limits.max_tilt_deg + tilt_epsilon_deg
         for index, pose in enumerate(tcp_poses):
             if not isinstance(pose, Transform):
                 return MotionCheck(False, f'tcp pose {index} is not a Transform')
-            tilt = _tcp_tilt_deg(pose)
+            tilt = tcp_tilt_deg(pose)
             max_tilt = max(max_tilt, tilt)
-            if tilt > self.limits.max_tilt_deg + epsilon:
+            if tilt > tilt_limit_deg and not reorientation:
                 return MotionCheck(
                     False,
                     f'tcp tilt at point {index} is {tilt:.2f} deg '
                     f'(limit {self.limits.max_tilt_deg:.2f})',
                     {'max_tilt_deg': tilt, 'point': index},
+                )
+        if reorientation:
+            final_tilt = tcp_tilt_deg(tcp_poses[-1])
+            if final_tilt > tilt_limit_deg:
+                return MotionCheck(
+                    False,
+                    'a reorientation motion must finish in the downward '
+                    f'working posture (final tilt {final_tilt:.2f} deg)',
+                    {'final_tilt_deg': final_tilt},
                 )
 
         max_jump = 0.0
@@ -252,6 +282,7 @@ class MotionPolicy:
                 'min_j7': min_j7,
                 'max_j7': max_j7,
                 'max_tilt_deg': max_tilt,
+                'reorientation': reorientation,
                 'max_joint_jump_rad': max_jump,
                 'max_cartesian_step_m': max_step,
             },

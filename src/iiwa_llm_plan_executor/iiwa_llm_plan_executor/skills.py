@@ -157,6 +157,11 @@ class SkillRegistry:
                 event, getattr(outcome, 'message', 'motion failed'),
             )
         context.last_verified_pose = goal
+        work = context.geometry.safe_poses['work']
+        context.at_work = (
+            _distance(goal, work) <= context.geometry.position_tolerance
+            and _angle(goal, work) <= context.geometry.orientation_tolerance_rad
+        )
         return outcome
 
     def _command(
@@ -221,10 +226,18 @@ class SkillRegistry:
                 context.geometry.tool_tcp_to_nodes[object_id],
             )
         if object_id == 'cap':
-            return tcp_goal(
+            goal = tcp_goal(
                 self._live_pose(context, object_id),
                 context.geometry.cap_tcp_to_node,
             )
+            # The suction cup is rotationally symmetric.  A 180-degree wrist
+            # yaw offset keeps the cap grasp on the branch inside the hard
+            # joint-7 corridor; the measured relative pose makes the later
+            # placement use the same offset.
+            return goal.compose_relaxed(Transform.from_xyz_rpy(
+                [0.0, 0.0, 0.0], [0.0, 0.0, 180.0],
+                parent='tcp', child='cap_grasp_yaw',
+            ))
         if object_id.startswith('screw_'):
             return tcp_goal(
                 self._live_pose(context, object_id),
@@ -334,8 +347,10 @@ class SkillRegistry:
             self._move(context, context.approach_pose, 'retreat')
             context.mark_lifted()
         work = context.geometry.safe_poses['work']
-        self._move(context, work, 'transfer')
+        if not (context.at_work and context.phase == 'free'):
+            self._move(context, work, 'transfer')
         context.reset_phase()
+        context.at_work = True
         if context.capture_frame('top') is None:
             return SkillOutcome('failed', {'reason': 'no fresh top camera frame'})
         if node.object in context.close_inspection_objects:
@@ -537,7 +552,8 @@ class SkillRegistry:
             return SkillOutcome('failed', {'reason': f'{obj!r} cannot be transferred'})
         goal = self._destination_goal(context, obj, target)
         safe = _above(goal, context.geometry.transfer_gap)
-        self._move(context, safe, 'transfer')
+        phase = 'transfer' if obj in context.spec.tool_names else 'transfer_lin'
+        self._move(context, safe, phase)
         context.transfer_target = target
         context.mark_approach(safe, (obj, target))
         return SkillOutcome('success', {

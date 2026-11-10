@@ -89,6 +89,42 @@ def test_tcp_tilt_above_ten_degrees_is_rejected():
     )
     assert rejected.ok is False
     assert 'tilt' in rejected.reason
+    assert checker.validate_trajectory(
+        [point(0.0)], [down_pose(10.05)],
+    ).ok
+
+
+def test_an_empty_gripper_may_reorient_to_the_working_posture():
+    checker = policy()
+    up = Transform.from_xyz_rpy(
+        [0.4, 0.0, 1.2], [0.0, 0.0, 0.0], parent='world', child='tcp',
+    )
+    accepted = checker.validate_trajectory(
+        [point(0.0), point(0.0)],
+        [up, down_pose()],
+        start_tcp_pose=up,
+        held_object=None,
+    )
+    assert accepted.ok is True
+    assert accepted.details['reorientation'] is True
+
+    held = checker.validate_trajectory(
+        [point(0.0), point(0.0)],
+        [up, down_pose()],
+        start_tcp_pose=up,
+        held_object='cap',
+    )
+    assert held.ok is False
+    assert 'tilt' in held.reason
+
+    stuck_up = checker.validate_trajectory(
+        [point(0.0), point(0.0)],
+        [up, up],
+        start_tcp_pose=up,
+        held_object=None,
+    )
+    assert stuck_up.ok is False
+    assert 'working posture' in stuck_up.reason
 
 
 def test_stale_joint_state_and_scene_are_rejected_before_motion():

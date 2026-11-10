@@ -148,20 +148,37 @@ controller sees a plan:
   joints used as IK seed.
 * `joint_states` and the planning scene freshness are checked before planning.
 
+One explicit exception is recorded: if the measured start posture is not yet the
+downward working posture (the calibrated home pose points the tip up) and the
+gripper is empty, the first reorientation to `work` is allowed to pass through
+larger tilt angles.  Joint 7, joint jumps, Cartesian jumps and the final
+downward orientation are still checked, and the event records
+`reorientation: true`.  A reorientation with a held object is always rejected.
+
 `MoveItPyPlanner` uses the installed MoveItPy 2.12 API:
 
 ```python
-arm.set_start_state_to_current_state()          # IK seed from current joints
-arm.set_path_constraints(constraints)           # joint_7 + orientation
+arm.set_start_state(robot_state=clamped_robot_state)  # measured joints as IK seed
+arm.set_path_constraints(constraints)                 # hard joint_7 corridor
 arm.set_goal_state(pose_stamped_msg=..., pose_link='tcp')
 result = arm.plan(single_plan_parameters=params)
-result.trajectory.get_robot_trajectory_msg()    # every point checked
+result.trajectory.get_robot_trajectory_msg()          # every point checked
 moveit.execute(result.trajectory, controllers=[])
 ```
 
-The path constraints are a `JointConstraint` on `joint_7` with
-`tolerance_below/above = corridor_rad` and an `OrientationConstraint` on
-`tcp` with the goal quaternion and 10 deg tolerance on each axis.  The planner
-never falls back to an unconstrained `MoveToPose` goal: a rejected constrained
-plan, a limit violation or an execution failure stops the backend.
+The path constraint is a `JointConstraint` on `joint7` with
+`tolerance_below/above = corridor_rad`.  The planner applies it on OMPL
+transfers.  In this MoveIt/Pilz installation the orientation path constraint is
+not honored reliably, so the 10 deg working-tilt limit is enforced **after**
+planning by `MotionPolicy` on every returned point; the planner also gets a
+wider internal orientation tolerance for its goal sampling.  Tool transits use
+OMPL with the J7 corridor, part transits and approaches use Cartesian LIN, and
+short contact moves use LIN.  A plan that cannot be produced or that violates
+the point-wise checks is stopped; there is no unconstrained `MoveToPose`
+fallback.
+
+The measured start state is clamped to the same soft joint limits used by
+MoveIt (`soft_min_position`/`soft_max_position`) before it becomes the IK
+seed.  Without that clamp a Webots-controller overshoot of ~0.00003 rad makes
+`CheckStartStateBounds` abort every following plan.
 

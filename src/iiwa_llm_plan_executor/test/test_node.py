@@ -200,6 +200,21 @@ def test_context_factory_sets_sources_and_inspection_configuration():
     assert context.notify('x', {}) is True
 
 
+def test_future_scene_timestamps_cannot_delay_the_start_gate():
+    from std_msgs.msg import String
+
+    node = fake_node()
+    node._scene_ready_at = None
+    node._latest_scene = None
+    message = String()
+    message.data = json.dumps({'timestamp': 500.0, 'scene_revision': 1})
+    PlannerExecutorNode._on_scene(node, message)
+    assert node._scene_ready_at == 10.0
+    message.data = json.dumps({'timestamp': 5.0, 'scene_revision': 1})
+    PlannerExecutorNode._on_scene(node, message)
+    assert node._scene_ready_at == 5.0
+
+
 def test_robot_freshness_uses_the_joint_limit_age():
     node = fake_node()
     node.limits = SimpleNamespace(joint_state_max_age_sec=1.0)

@@ -97,7 +97,7 @@ class SupervisorFacade:
     def __init__(self, node: Node, callback_group) -> None:
         self.node = node
         self._lock = threading.Condition()
-        self.latest: dict[str, Any] | None = None
+        self._latest: dict[str, Any] | None = None
         self._client = node.create_client(
             webots_ros2_msgs.srv.SetString,
             COMMAND_SERVICE,
@@ -116,12 +116,12 @@ class SupervisorFacade:
         if not isinstance(payload, dict):
             return
         with self._lock:
-            self.latest = payload
+            self._latest = payload
             self._lock.notify_all()
 
     def state(self) -> dict[str, Any]:
         with self._lock:
-            return dict(self.latest or {})
+            return dict(self._latest or {})
 
     # Alias used by the skills.
     def latest_state(self) -> dict[str, Any]:
@@ -183,7 +183,7 @@ class SupervisorFacade:
         deadline = time.monotonic() + timeout
         with self._lock:
             while True:
-                state = dict(self.latest or {})
+                state = dict(self._latest or {})
                 last = state.get('last_command_result') or {}
                 if last.get('request_id') == request_id:
                     return state
@@ -292,14 +292,21 @@ class PlannerExecutorNode(Node):
             'motion_limits_path',
             str(executor_share / 'config' / 'motion_limits.yaml'),
         )
+        self.declare_parameter(
+            'joint_limits_path',
+            str(
+                Path(get_package_share_directory('iiwa_config'))
+                / 'config' / 'moveit' / 'joint_limits.yaml'
+            ),
+        )
         self.declare_parameter('start_delay_sec', 3.0)
         self.declare_parameter('scene_max_age_sec', 2.0)
         self.declare_parameter('max_steps', 512)
         self.declare_parameter('planning_group', 'iiwa_arm')
         self.declare_parameter('pose_link', 'tcp')
         self.declare_parameter('close_inspection_objects', ['cap'])
-        self.declare_parameter('top_camera_topic', '/d455_top/image_raw')
-        self.declare_parameter('hand_camera_topic', '/camera/color')
+        self.declare_parameter('top_camera_topic', '/d455_top/image_raw/image_color')
+        self.declare_parameter('hand_camera_topic', '/camera/color/image_color')
         self.declare_parameter('frame_timeout_sec', 2.0)
         self.declare_parameter('controller_action', CONTROLLER_ACTION)
         self.declare_parameter('trace_dir', DEFAULT_TRACE_DIR)
@@ -335,9 +342,11 @@ class PlannerExecutorNode(Node):
         self._latest_scene: dict[str, Any] | None = None
         self._scene_ready_at: float | None = None
         self._last_joint: tuple[float, ...] | None = None
+        self._last_joint_velocity: tuple[float, ...] | None = None
         self._last_joint_at: float | None = None
         self._moveit_ready = False
         self._bridge_ready = False
+        self._motion_init_lock = threading.Lock()
         self._last_plan: dict[str, Any] | None = None
         self._last_status: dict[str, Any] | None = None
         self._frame_conditions = {
@@ -413,6 +422,7 @@ class PlannerExecutorNode(Node):
             freshness_guard=self._robot_fresh,
             scene_guard=self._scene_guard,
             current_joints=lambda: self._last_joint,
+            before_plan=self._wait_stationary,
             on_event=self._on_motion_event,
         )
         self.skills = SkillRegistry(
@@ -449,13 +459,35 @@ class PlannerExecutorNode(Node):
 
     # ------------------------------------------------------------------ setup
     def _make_planner(self):
+        import yaml
+
         from .moveit_backend import MoveItPyPlanner
 
+        limits_path = Path(str(self.get_parameter('joint_limits_path').value))
+        joint_limits = {}
+        try:
+            raw = yaml.safe_load(limits_path.read_text(encoding='utf-8')) or {}
+            for name, entry in (raw.get('joint_limits') or {}).items():
+                if isinstance(entry, dict):
+                    low = max(
+                        float(entry['min_position']),
+                        float(entry.get('soft_min_position', entry['min_position'])),
+                    )
+                    high = min(
+                        float(entry['max_position']),
+                        float(entry.get('soft_max_position', entry['max_position'])),
+                    )
+                    joint_limits[name] = (low, high)
+        except Exception as error:
+            self.get_logger().warning(
+                f'falling back to model joint bounds: {error}'
+            )
         return MoveItPyPlanner(
             self.geometry,
             self.policy,
             planning_group=str(self.get_parameter('planning_group').value),
             pose_link=str(self.get_parameter('pose_link').value),
+            joint_limits=joint_limits,
         )
 
     def _now(self) -> float:
@@ -464,6 +496,10 @@ class PlannerExecutorNode(Node):
     def _on_joints(self, message: JointState) -> None:
         if len(message.position) == 7:
             self._last_joint = tuple(float(value) for value in message.position)
+            if len(message.velocity) == 7:
+                self._last_joint_velocity = tuple(
+                    float(value) for value in message.velocity
+                )
             self._last_joint_at = self._now()
 
     def _on_image(self, topic: str, message: Image) -> None:
@@ -488,14 +524,22 @@ class PlannerExecutorNode(Node):
             return
         if not isinstance(envelope, dict):
             return
+        now = self._now()
         with self._lock:
             self._latest_scene = envelope
-            if self._scene_ready_at is None:
-                stamp = envelope.get('timestamp')
-                self._scene_ready_at = (
-                    float(stamp) if isinstance(stamp, (int, float))
-                    else self._now()
-                )
+            stamp = envelope.get('timestamp')
+            try:
+                stamp_value = float(stamp)
+            except (TypeError, ValueError):
+                stamp_value = None
+            # Ignore impossible future stamps from a stale/ghost publisher.
+            candidate = (
+                stamp_value
+                if stamp_value is not None and stamp_value <= now + 1.0
+                else now
+            )
+            if self._scene_ready_at is None or candidate < self._scene_ready_at:
+                self._scene_ready_at = candidate
 
     def _scene_provider(self) -> dict[str, Any] | None:
         with self._lock:
@@ -518,6 +562,25 @@ class PlannerExecutorNode(Node):
             return False, f'/joint_states is stale ({age:.2f} s old)'
         return True, 'ok'
 
+    def _wait_stationary(
+        self,
+        timeout_sec: float = 4.0,
+        tolerance: float = 0.01,
+    ) -> None:
+        start = time.monotonic()
+        stable_since = None
+        while time.monotonic() - start < timeout_sec:
+            velocities = self._last_joint_velocity
+            if velocities is not None and all(
+                abs(value) <= tolerance for value in velocities
+            ):
+                stable_since = stable_since or time.monotonic()
+                if time.monotonic() - stable_since >= 0.2:
+                    return
+            else:
+                stable_since = None
+            time.sleep(0.05)
+
     def _scene_guard(self) -> tuple[bool, str]:
         if not self._bridge_ready:
             return False, 'planning scene bridge is not initialized'
@@ -532,21 +595,27 @@ class PlannerExecutorNode(Node):
     def _ensure_motion_ready(self) -> None:
         if self._moveit_ready and self._bridge_ready:
             return
+        if not self._motion_init_lock.acquire(blocking=False):
+            return
         try:
-            self.motion.planner.ensure_ready()
-            self._moveit_ready = True
-        except Exception as error:
-            self._moveit_ready = False
-            self.get_logger().warning(f'MoveIt is not ready yet: {error}')
-        if self._moveit_ready and not self._bridge_ready:
-            try:
-                self.bridge.initialize(self.spec, self.geometry)
-                self._bridge_ready = True
-            except Exception as error:
-                self._bridge_ready = False
-                self.get_logger().warning(
-                    f'planning scene bridge is not ready yet: {error}'
-                )
+            if not self._moveit_ready:
+                try:
+                    self.motion.planner.ensure_ready()
+                    self._moveit_ready = True
+                except Exception as error:
+                    self._moveit_ready = False
+                    self.get_logger().warning(f'MoveIt is not ready yet: {error}')
+            if self._moveit_ready and not self._bridge_ready:
+                try:
+                    self.bridge.initialize(self.spec, self.geometry)
+                    self._bridge_ready = True
+                except Exception as error:
+                    self._bridge_ready = False
+                    self.get_logger().warning(
+                        f'planning scene bridge is not ready yet: {error}'
+                    )
+        finally:
+            self._motion_init_lock.release()
 
     def _readiness_tick(self) -> None:
         self._ensure_motion_ready()

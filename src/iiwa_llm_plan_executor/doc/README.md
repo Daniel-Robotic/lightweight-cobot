@@ -97,6 +97,9 @@ The JSONL log with every event is written to
 The executor checks J7 (±90° around `work`) and the downward TCP tilt (≤10°)
 on **every** planned point, seeds IK from current joints, enforces these as
 MoveIt path constraints, checks scene/joint freshness and verifies the final
-pose.  It never falls back to an unconstrained `MoveToPose` goal.  This is a
+pose.  The only logged exception is the initial empty-gripper reorientation
+from home to the downward `work` posture; J7 and the final orientation are
+still enforced and a reorientation with a held object is rejected.  The
+executor never falls back to an unconstrained `MoveToPose` goal.  This is a
 Webots verification, not a physical-robot validation and not a Qwen3 quality
 evaluation.

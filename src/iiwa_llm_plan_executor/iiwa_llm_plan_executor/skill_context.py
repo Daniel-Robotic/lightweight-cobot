@@ -26,6 +26,7 @@ class SkillContext:
     supervisor_state: dict[str, Any] = field(default_factory=dict)
     accepted_revisions: set[int] = field(default_factory=set)
     close_inspection_objects: frozenset[str] = frozenset()
+    at_work: bool = False
 
     # Injected sources, replaced in tests.
     frame_provider: Callable[[str], float | None] | None = None

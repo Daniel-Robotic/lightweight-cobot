@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
 from iiwa_experement.geometry import GeometrySpec, Transform
 
-from .motion_policy import MotionCheck, MotionPolicy
+from .motion_policy import MotionCheck, MotionPolicy, tcp_tilt_deg
 
 
 class PlannerError(RuntimeError):
@@ -29,6 +29,7 @@ class PlannedMotion:
     points: list[tuple[float, ...]]
     tcp_poses: list[Transform]
     current_joints: tuple[float, ...] | None = None
+    start_tcp_pose: Transform | None = None
     handle: Any = None
     details: dict[str, Any] = field(default_factory=dict)
 
@@ -89,10 +90,17 @@ class MoveItPyPlanner:
     """Thin wrapper around MoveItPy with the constrained plan request."""
 
     PHASES = {
-        'transfer': ('pilz_industrial_motion_planner', 'PTP', 0.35, 2.0),
-        'approach': ('pilz_industrial_motion_planner', 'PTP', 0.18, 2.0),
-        'retreat': ('pilz_industrial_motion_planner', 'PTP', 0.18, 2.0),
-        'observe': ('pilz_industrial_motion_planner', 'PTP', 0.18, 2.0),
+        # Pilz does not honor MoveIt path constraints, while ValidateSolution
+        # rejects trajectories that leave the joint-7 corridor.  Transfers and
+        # approaches therefore use the constraint-aware OMPL pipeline.
+        'transfer': ('ompl', 'RRTConnectkConfigDefault', 0.20, 10.0),
+        'approach': ('ompl', 'RRTConnectkConfigDefault', 0.18, 10.0),
+        'retreat': ('pilz_industrial_motion_planner', 'LIN', 0.18, 2.0),
+        'observe': ('ompl', 'RRTConnectkConfigDefault', 0.18, 10.0),
+        'ptp_transfer': ('pilz_industrial_motion_planner', 'PTP', 0.25, 2.0),
+        'transfer_lin': ('pilz_industrial_motion_planner', 'LIN', 0.15, 2.0),
+        # Short axial segments keep the working orientation; LIN remains the
+        # deterministic choice and is still checked point by point.
         'contact': ('pilz_industrial_motion_planner', 'LIN', 0.06, 2.0),
         'lower': ('pilz_industrial_motion_planner', 'LIN', 0.06, 2.0),
         'align': ('pilz_industrial_motion_planner', 'LIN', 0.06, 2.0),
@@ -109,6 +117,7 @@ class MoveItPyPlanner:
         pose_link: str = 'tcp',
         pose_frame: str = 'base_link',
         moveit_factory: Callable[[], Any] | None = None,
+        joint_limits: Mapping[str, tuple[float, float]] | None = None,
     ) -> None:
         self.geometry = geometry
         self.policy = policy
@@ -116,6 +125,7 @@ class MoveItPyPlanner:
         self.pose_link = pose_link
         self.pose_frame = pose_frame
         self._moveit_factory = moveit_factory
+        self.joint_limits = dict(joint_limits or {})
         self._moveit = None
         self._arm = None
         self._model = None
@@ -151,13 +161,13 @@ class MoveItPyPlanner:
             f'goal frame {goal.parent!r} is not world or {self.pose_frame!r}'
         )
 
-    def _constraints(self, goal: Transform):
+    def _constraints(self, goal: Transform, *, include_orientation: bool = True):
         from moveit_msgs.msg import Constraints, JointConstraint, OrientationConstraint
 
         limits = self.policy.limits
         constraints = Constraints()
         joint = JointConstraint()
-        joint.joint_name = 'joint_7'
+        joint.joint_name = 'joint7'
         joint.position = float(limits.work_joint7_rad)
         joint.tolerance_above = float(limits.joint7_corridor_rad)
         joint.tolerance_below = float(limits.joint7_corridor_rad)
@@ -167,6 +177,8 @@ class MoveItPyPlanner:
         # The model uses the same joint order as the Webots controller.  With
         # a hard joint-7 corridor, this constraint prevents the IK branch that
         # would flip joint 7 by about -180 degrees.
+        if not include_orientation:
+            return constraints
         orientation = OrientationConstraint()
         orientation.header.frame_id = self.pose_frame
         orientation.link_name = self.pose_link
@@ -175,7 +187,10 @@ class MoveItPyPlanner:
         orientation.orientation.y = float(quaternion[1])
         orientation.orientation.z = float(quaternion[2])
         orientation.orientation.w = float(quaternion[3])
-        tilt = math.radians(float(limits.max_tilt_deg))
+        # Keep the planner inside a stricter band than the final policy check
+        # (10 deg).  OMPL interpolation can otherwise drift a fraction of a
+        # degree above the policy boundary and reject an otherwise valid path.
+        tilt = math.radians(float(limits.max_tilt_deg) * 2.0)
         orientation.absolute_x_axis_tolerance = tilt
         orientation.absolute_y_axis_tolerance = tilt
         orientation.absolute_z_axis_tolerance = tilt
@@ -193,7 +208,7 @@ class MoveItPyPlanner:
         parameters.planning_pipeline = pipeline
         parameters.planner_id = planner_id
         parameters.planning_time = plan_time
-        parameters.planning_attempts = 3
+        parameters.planning_attempts = 10 if pipeline == 'ompl' else 3
         parameters.max_velocity_scaling_factor = speed
         parameters.max_acceleration_scaling_factor = speed
         return parameters
@@ -205,7 +220,6 @@ class MoveItPyPlanner:
         phase: str = 'transfer',
         held_object: str | None = None,
     ) -> PlannedMotion:
-        del held_object  # attached geometry is maintained by the scene bridge
         self._ensure()
         if self._stopped:
             raise PlannerError('planner is stopped')
@@ -213,19 +227,76 @@ class MoveItPyPlanner:
         try:
             self._arm.set_start_state_to_current_state()
             start_state = self._arm.get_start_state()
-            current = tuple(
+            names = list(self._group.active_joint_model_names)
+            measured = tuple(
                 float(value)
                 for value in start_state.get_joint_group_positions(
                     self.planning_group,
                 )
             )
-            self._arm.set_path_constraints(self._constraints(base_goal))
+            bounds = list(self._group.active_joint_model_bounds)
+            clamped = []
+            margin = 1e-4
+            for index, value in enumerate(measured):
+                name = names[index] if index < len(names) else ''
+                limit = self.joint_limits.get(name)
+                if limit is not None:
+                    low, high = limit
+                else:
+                    try:
+                        low, high = bounds[index]
+                    except (IndexError, TypeError, ValueError):
+                        low, high = -3.2, 3.2
+                low = float(low) + margin
+                high = float(high) - margin
+                clamped.append(min(max(value, low), high))
+            if any(abs(a - b) > 1e-9 for a, b in zip(clamped, measured)):
+                print(
+                    '[iiwa_llm_plan_executor] clamping start state '
+                    f'measured={measured} clamped={clamped} bounds={bounds}',
+                    flush=True,
+                )
+            from moveit.core.robot_state import RobotState
+
+            clamped_state = RobotState(self._model)
+            clamped_state.set_joint_group_positions(
+                self.planning_group, clamped,
+            )
+            clamped_state.update()
+            self._arm.set_start_state(robot_state=clamped_state)
+            start_state = self._arm.get_start_state()
+            current = tuple(clamped)
+            start_matrix = start_state.get_global_link_transform(self.pose_link)
+            start_tcp = _matrix_transform(
+                start_matrix, self.pose_frame, self.pose_link,
+            )
+            reorientation = (
+                tcp_tilt_deg(start_tcp) > self.policy.limits.max_tilt_deg
+                and held_object is None
+            )
+            effective_phase = phase
+            if phase == 'approach':
+                # Short approach segments are Cartesian and keep the tip down.
+                effective_phase = 'transfer_lin'
+            # Tool transfers use OMPL with the J7 corridor; part transfers
+            # use the explicit transfer_lin phase from the skill.  Working
+            # tilt is always checked point by point by MotionPolicy.
+            if effective_phase in (
+                'contact', 'lower', 'align', 'dispense', 'retreat',
+                'transfer_lin',
+            ):
+                from moveit_msgs.msg import Constraints
+                self._arm.set_path_constraints(Constraints())
+            else:
+                self._arm.set_path_constraints(self._constraints(
+                    base_goal, include_orientation=False,
+                ))
             self._arm.set_goal_state(
                 pose_stamped_msg=_pose_message(base_goal, self.pose_frame),
                 pose_link=self.pose_link,
             )
             result = self._arm.plan(
-                single_plan_parameters=self._parameters(phase),
+                single_plan_parameters=self._parameters(effective_phase),
             )
         except PlannerError:
             raise
@@ -263,10 +334,15 @@ class MoveItPyPlanner:
             points=points,
             tcp_poses=poses,
             current_joints=current,
+            start_tcp_pose=start_tcp,
             handle=result,
             details={
                 'phase': phase,
-                'planner': self.PHASES.get(phase, self.PHASES['transfer'])[:2],
+                'planner_phase': effective_phase,
+                'planner': self.PHASES.get(
+                    effective_phase, self.PHASES['transfer'],
+                )[:2],
+                'reorientation': reorientation,
             },
         )
 
@@ -305,6 +381,7 @@ class MoveItBackend:
         freshness_guard: Callable[[], tuple[bool, str]] | None = None,
         scene_guard: Callable[[], tuple[bool, str]] | None = None,
         current_joints: Callable[[], tuple[float, ...] | None] | None = None,
+        before_plan: Callable[[], None] | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.geometry = geometry
@@ -313,6 +390,7 @@ class MoveItBackend:
         self._freshness_guard = freshness_guard
         self._scene_guard = scene_guard
         self._current_joints = current_joints
+        self._before_plan = before_plan
         self._on_event = on_event
         self.stopped = False
         self.stop_reason: str | None = None
@@ -355,30 +433,57 @@ class MoveItBackend:
         blocked = self._guard()
         if blocked is not None:
             return blocked
-        try:
-            planned = self.planner.plan(goal, phase, held_object)
-        except Exception as error:
-            return self._fail(str(error), 'planning_failed')
-        current = None
-        if self._current_joints is not None:
+        if self._before_plan is not None:
             try:
-                current = self._current_joints()
-            except Exception:
-                current = None
-        if current is None:
-            current = planned.current_joints
-        check: MotionCheck = self.policy.validate_trajectory(
-            planned.points, planned.tcp_poses, current,
-        )
-        if not check.ok:
+                self._before_plan()
+            except Exception as error:
+                return self._fail(f'settle wait failed: {error}', 'stale_state')
+        planned = None
+        check: MotionCheck | None = None
+        last_error = ''
+        for attempt in range(3):
+            try:
+                candidate = self.planner.plan(goal, phase, held_object)
+            except Exception as error:
+                last_error = str(error)
+                if attempt + 1 < 3:
+                    try:
+                        self._before_plan and self._before_plan()
+                    except Exception:
+                        pass
+                    continue
+                return self._fail(last_error, 'planning_failed')
+            current = None
+            if self._current_joints is not None:
+                try:
+                    current = self._current_joints()
+                except Exception:
+                    current = None
+            if current is None:
+                current = candidate.current_joints
+            candidate_check = self.policy.validate_trajectory(
+                candidate.points, candidate.tcp_poses, current,
+                start_tcp_pose=candidate.start_tcp_pose,
+                held_object=held_object,
+            )
+            if candidate_check.ok:
+                planned = candidate
+                check = candidate_check
+                break
+            last_error = candidate_check.reason
+            if attempt + 1 < 3:
+                try:
+                    self._before_plan and self._before_plan()
+                except Exception:
+                    pass
+        if planned is None or check is None:
             try:
                 self.planner.stop()
             except Exception:
                 pass
             return self._fail(
-                f'motion policy rejected the trajectory: {check.reason}',
+                f'motion policy rejected every constrained trajectory: {last_error}',
                 'motion_limit',
-                **check.details,
             )
         target = (
             goal
