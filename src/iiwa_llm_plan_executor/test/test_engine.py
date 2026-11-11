@@ -42,6 +42,7 @@ class FakeSkills:
     def __init__(self):
         self.calls = []
         self.events = {}
+        self.details = {}
         self.on_execute = None
         self.block = False
         self.started = threading.Event()
@@ -54,7 +55,10 @@ class FakeSkills:
             self.started.set()
             self.release.wait(timeout=5.0)
         self.calls.append(node.id)
-        return SimpleNamespace(event=self.events.get(node.id, 'success'), details={})
+        return SimpleNamespace(
+            event=self.events.get(node.id, 'success'),
+            details=self.details.get(node.id, {}),
+        )
 
 
 def envelope(revision=1, stamp=5.0, experiment_id=1):
@@ -180,17 +184,42 @@ def test_rejected_graphs_are_never_published_or_executed():
     engine, skills, events, _, _ = make_engine()
     blocked = engine.submit('r1', {'status': 'blocked', 'entry': '', 'plan': []}, 1)
     assert blocked.code == 'blocked'
-    cap_without_vacuum = graph(
-        'g', node('g', 'grab', 'cap', next_on={'success': 'completed'}),
+    bad_next = graph(
+        'g',
+        node('g', 'grab', 'vacuum', next_on={'success': 'ghost'}),
     )
-    rejected = engine.submit('r2', cap_without_vacuum.as_dict(), 1)
+    rejected = engine.submit('r2', bad_next.as_dict(), 1)
     assert rejected.accepted is False
-    assert rejected.code == 'replan_required'
+    assert rejected.code == 'rejected'
     assert events['plans'] == []
     assert skills.calls == []
     stale = engine.submit('r3', STOP_GRAPH().as_dict(), 2)
     assert stale.code == 'stale_scene'
     assert engine.get_status('r2').state == 'rejected'
+
+
+def test_cap_grab_without_vacuum_is_admitted_and_follows_grasp_failed():
+    engine, skills, events, _, _ = make_engine()
+    value = graph(
+        'g',
+        node('g', 'grab', 'cap', next_on={
+            'success': 'completed',
+            'grasp_failed': 'operator_required',
+        }),
+    )
+    accepted = engine.submit('r1', value.as_dict(), 1)
+    assert accepted.accepted is True
+    assert len(events['plans']) == 1
+    skills.events = {'g': 'grasp_failed'}
+    skills.details = {'g': {'reason': 'required tool vacuum is not mounted'}}
+    engine.run_accepted('r1')
+    status = engine.get_status('r1')
+    assert status.state == 'operator_required'
+    assert status.events[0]['event'] == 'grasp_failed'
+    assert status.events[0]['next'] == 'operator_required'
+    assert status.events[0]['reason']
+    assert status.mounted_tool is None
+    assert status.held_object is None
 
 
 def test_accepted_graph_is_published_once_before_the_first_motion():

@@ -323,11 +323,8 @@ def _precondition(
         if obj == 'cap':
             if 'cap' not in facts.components:
                 return _reject(f'{node.id!r}: hatch is absent from this scene')
-            if state.mounted != 'vacuum':
-                return _replan(
-                    f'{node.id!r} requires the vacuum tool in patron; '
-                    f'mounted tool is {state.mounted!r}'
-                )
+            # A missing vacuum tool is a runtime grasp_failed condition, not
+            # a reason to reject the graph before execution.
             if state.held is not None:
                 return _replan(
                     f'{node.id!r} cannot grab the hatch while holding '
@@ -335,11 +332,7 @@ def _precondition(
                 )
             return None
         if obj in facts.components and facts.components[obj] == 'screw':
-            if state.mounted != 'magnetic_tool':
-                return _replan(
-                    f'{node.id!r} requires magnetic_tool in patron; '
-                    f'mounted tool is {state.mounted!r}'
-                )
+            # A missing magnetic tool is a runtime grasp_failed condition.
             if state.held is not None:
                 return _replan(
                     f'{node.id!r} cannot grab a screw while holding '
@@ -351,11 +344,6 @@ def _precondition(
     if skill == 'release':
         if obj in facts.tools:
             socket = facts.tools[obj]
-            if state.mounted != obj:
-                return _replan(
-                    f'{node.id!r}: {obj!r} is not mounted '
-                    f'(mounted={state.mounted!r})'
-                )
             if target != socket:
                 return _replan(
                     f'{node.id!r}: release({obj}) must name its socket '
@@ -388,8 +376,6 @@ def _precondition(
 
     if skill in ('transfer', 'move_to_storage'):
         if obj in facts.tools:
-            if state.mounted != obj:
-                return _replan(f'{node.id!r}: {obj!r} is not mounted')
             if target not in ('work', facts.tools[obj]):
                 return _replan(
                     f'{node.id!r}: tool transfer must target work or its socket'
@@ -419,10 +405,6 @@ def _precondition(
         return None
 
     if skill == 'dispense':
-        if state.mounted != 'sealant_tool':
-            return _replan(
-                f'{node.id!r}: dispense requires sealant_tool in patron'
-            )
         side = obj or target
         if facts.destinations.get(side) != 'contour':
             return _reject(
@@ -434,11 +416,6 @@ def _precondition(
         socket = facts.tools.get(obj)
         if socket is None:
             return _reject(f'{node.id!r}: {obj!r} is not a present tool')
-        if state.mounted != obj:
-            return _replan(
-                f'{node.id!r}: {obj!r} is not mounted '
-                f'(mounted={state.mounted!r})'
-            )
         if target != socket:
             return _replan(
                 f'{node.id!r}: dock_tool must target socket {socket!r}'
@@ -455,10 +432,6 @@ def _precondition(
             return _reject(f'{node.id!r}: {obj!r} is not a present screw')
         if state.held != obj:
             return _replan(f'{node.id!r}: {obj!r} is not held')
-        if state.mounted != 'magnetic_tool':
-            return _replan(
-                f'{node.id!r}: handoff_screw requires magnetic_tool'
-            )
         if facts.destinations.get(target) != 'hole':
             return _replan(
                 f'{node.id!r}: handoff_screw target must be a hole'
@@ -469,6 +442,58 @@ def _precondition(
         if obj not in facts.cameras:
             return _reject(f'{node.id!r}: unknown camera {obj!r}')
     return None
+
+
+def _success_feasible(
+    node: PlanNode,
+    state: _State,
+    facts: _Facts,
+) -> bool:
+    """Whether this node's nominal success can happen from ``state``.
+
+    A missing required tool must not reject the graph, but its success branch
+    must not be treated as already achieved either.  The validator therefore
+    skips only the success edge for that state and continues through the
+    failure events the graph actually declared.
+    """
+    skill = node.skill
+    obj = node.object
+    if skill in ('grab', 'pick'):
+        if obj in facts.tools:
+            return (
+                state.mounted in (None, obj)
+                and state.held is None
+            )
+        if obj == 'cap':
+            return state.mounted == 'vacuum' and state.held is None
+        if obj and facts.components.get(obj) == 'screw':
+            return state.mounted == 'magnetic_tool' and state.held is None
+        return False
+    if skill in ('transfer', 'move_to_storage'):
+        if obj in facts.tools:
+            return state.mounted == obj
+        if obj == 'cap':
+            return state.held == 'cap'
+        if obj and facts.components.get(obj) == 'screw':
+            return state.held == obj
+        return False
+    if skill == 'release':
+        if obj in facts.tools:
+            return state.mounted == obj
+        if obj == 'cap':
+            return state.held == 'cap'
+        if obj and facts.components.get(obj) == 'screw':
+            return state.held == obj and state.mounted == 'magnetic_tool'
+        return False
+    if skill == 'align':
+        return state.held is not None or state.mounted is not None
+    if skill == 'dispense':
+        return state.mounted == 'sealant_tool'
+    if skill == 'dock_tool':
+        return state.mounted == obj
+    if skill == 'handoff_screw':
+        return state.held == obj and state.mounted == 'magnetic_tool'
+    return True
 
 
 def _apply_event(
@@ -539,6 +564,14 @@ def _ownership_checks(graph: PlanGraph, facts: _Facts) -> ValidationResult | Non
         visited_states[node.id].add(state)
         for transition in node.transitions:
             if transition.next not in graph.ids:
+                continue
+            if (
+                transition.event in PROGRESS_EVENTS
+                and not _success_feasible(node, state, facts)
+            ):
+                # Do not simulate a success that cannot happen (for example
+                # pick(cap) without the vacuum tool).  The grasp_failed edge
+                # from the same state is still traversed and checked.
                 continue
             next_state = _apply_event(node, transition.event, state, facts)
             if (transition.next, next_state) not in seen:

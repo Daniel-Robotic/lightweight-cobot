@@ -143,6 +143,23 @@ class SkillRegistry:
             return {}
         return state if isinstance(state, dict) else {}
 
+    def _refresh_live_ownership(self, context: SkillContext) -> str | None:
+        """Read the tool and held object from the live supervisor.
+
+        Context memory is not authoritative between commands or runs: the
+        supervisor may have been changed by another accepted graph or by a
+        previous failed attempt.
+        """
+        state = self._state()
+        if not state:
+            return 'supervisor state is unavailable'
+        context.supervisor_state = state
+        mounted = state.get('mounted_tool')
+        held = state.get('held_object')
+        context.mounted_tool = mounted if isinstance(mounted, str) else None
+        context.held_object = held if isinstance(held, str) else None
+        return None
+
     def _move(
         self,
         context: SkillContext,
@@ -430,18 +447,35 @@ class SkillRegistry:
     # ------------------------------------------------------------------ grab
     def _grab(self, node: PlanNode, context: SkillContext) -> SkillOutcome:
         obj = node.object
+        unavailable = self._refresh_live_ownership(context)
+        if unavailable is not None:
+            return SkillOutcome('grasp_failed', {'reason': unavailable})
         if obj in context.spec.tool_names:
             return self._grab_tool(node, context)
         if obj == 'cap':
             if context.mounted_tool != 'vacuum':
-                return SkillOutcome('failed', {
-                    'reason': 'grab(cap) requires the vacuum tool in patron',
+                return SkillOutcome('grasp_failed', {
+                    'reason': 'required tool vacuum is not mounted',
+                    'required_tool': 'vacuum',
+                    'mounted_tool': context.mounted_tool,
+                })
+            if context.held_object is not None:
+                return SkillOutcome('grasp_failed', {
+                    'reason': f'hand is not free: {context.held_object!r} is held',
+                    'held_object': context.held_object,
                 })
             return self._grab_part(node, context, 'grab_cap', 'vacuum')
         if obj.startswith('screw_'):
             if context.mounted_tool != 'magnetic_tool':
-                return SkillOutcome('failed', {
-                    'reason': 'grab(screw) requires magnetic_tool in patron',
+                return SkillOutcome('grasp_failed', {
+                    'reason': 'required tool magnetic_tool is not mounted',
+                    'required_tool': 'magnetic_tool',
+                    'mounted_tool': context.mounted_tool,
+                })
+            if context.held_object is not None:
+                return SkillOutcome('grasp_failed', {
+                    'reason': f'hand is not free: {context.held_object!r} is held',
+                    'held_object': context.held_object,
                 })
             return self._grab_part(
                 node, context, 'grab_screw', 'magnetic_tool',
@@ -548,6 +582,9 @@ class SkillRegistry:
     def _transfer(self, node: PlanNode, context: SkillContext) -> SkillOutcome:
         obj = node.object
         target = node.target
+        unavailable = self._refresh_live_ownership(context)
+        if unavailable is not None:
+            return SkillOutcome('failed', {'reason': unavailable})
         if obj in context.spec.tool_names:
             if context.mounted_tool != obj:
                 return SkillOutcome('failed', {
@@ -601,6 +638,9 @@ class SkillRegistry:
     def _release(self, node: PlanNode, context: SkillContext) -> SkillOutcome:
         obj = node.object
         target = node.target
+        unavailable = self._refresh_live_ownership(context)
+        if unavailable is not None:
+            return SkillOutcome('failed', {'reason': unavailable})
         if obj in context.spec.tool_names:
             return self._release_tool(node, context)
         if obj == 'cap':
@@ -614,7 +654,9 @@ class SkillRegistry:
         socket = f'{tool}_socket'
         if context.mounted_tool != tool:
             return SkillOutcome('failed', {
-                'reason': f'{tool!r} is not mounted',
+                'reason': f'required tool {tool} is not mounted',
+                'required_tool': tool,
+                'mounted_tool': context.mounted_tool,
                 'moved': False,
             })
         if node.target != socket:
@@ -664,7 +706,10 @@ class SkillRegistry:
 
     def _release_cap(self, node: PlanNode, context: SkillContext) -> SkillOutcome:
         if context.held_object != 'cap':
-            return SkillOutcome('failed', {'reason': 'hatch is not held'})
+            return SkillOutcome('failed', {
+                'reason': 'hatch is not held',
+                'held_object': context.held_object,
+            })
         target = node.target or 'hatch_seat'
         self._ensure_approach(context, node)
         adapter = self._adapter(context)
@@ -692,6 +737,9 @@ class SkillRegistry:
         return SkillOutcome('success', {'object': 'cap', 'target': target})
 
     def _dock_tool(self, node: PlanNode, context: SkillContext) -> SkillOutcome:
+        unavailable = self._refresh_live_ownership(context)
+        if unavailable is not None:
+            return SkillOutcome('failed', {'reason': unavailable})
         if node.object not in context.spec.tool_names:
             return SkillOutcome('failed', {'reason': f'{node.object!r} is not a tool'})
         socket = f'{node.object}_socket'
@@ -704,12 +752,20 @@ class SkillRegistry:
     def _handoff_screw(self, node: PlanNode, context: SkillContext) -> SkillOutcome:
         screw = node.object
         hole = node.target
+        unavailable = self._refresh_live_ownership(context)
+        if unavailable is not None:
+            return SkillOutcome('grasp_failed', {'reason': unavailable})
+        if context.mounted_tool != 'magnetic_tool':
+            return SkillOutcome('grasp_failed', {
+                'reason': 'required tool magnetic_tool is not mounted',
+                'required_tool': 'magnetic_tool',
+                'mounted_tool': context.mounted_tool,
+            })
         if context.held_object != screw:
             return SkillOutcome('grasp_failed', {
                 'reason': f'{screw!r} is not held',
+                'held_object': context.held_object,
             })
-        if context.mounted_tool != 'magnetic_tool':
-            return SkillOutcome('failed', {'reason': 'magnetic_tool is not mounted'})
         self._ensure_approach(context, node)
         adapter = self._adapter(context)
         prepare = getattr(adapter, 'prepare_handoff_screw', None)
@@ -752,8 +808,15 @@ class SkillRegistry:
         return SkillOutcome('success', {'tcp': list(work.xyz)})
 
     def _dispense(self, node: PlanNode, context: SkillContext) -> SkillOutcome:
+        unavailable = self._refresh_live_ownership(context)
+        if unavailable is not None:
+            return SkillOutcome('failed', {'reason': unavailable})
         if context.mounted_tool != 'sealant_tool':
-            return SkillOutcome('failed', {'reason': 'sealant_tool is not mounted'})
+            return SkillOutcome('failed', {
+                'reason': 'required tool sealant_tool is not mounted',
+                'required_tool': 'sealant_tool',
+                'mounted_tool': context.mounted_tool,
+            })
         side = node.object or node.target
         start_fraction = float(node.params.get('start_fraction', 0.0))
         end_fraction = float(node.params.get('end_fraction', 1.0))

@@ -17,7 +17,7 @@ colcon test --base-paths src --packages-select \
 colcon test-result --verbose
 ```
 
-Result: build of 10 packages succeeded; `348 tests, 0 errors, 0 failures,
+Result: build of 10 packages succeeded; `359 tests, 0 errors, 0 failures,
 0 skipped`.
 
 `git diff --check` is clean.
@@ -50,7 +50,7 @@ client-supplied `run_id`; the accepted graph appeared in
 | `grab(vacuum) → transfer(vacuum,work) → completed` | `completed`; status ended with `mounted_tool: "vacuum"`, `held_object: null`. The cup stayed in `patron`. |
 | `transfer(vacuum,vacuum_socket) → dock_tool(vacuum,vacuum_socket) → completed` | `completed`; status ended with `mounted_tool: null`. This was a separate graph after the previous one. |
 | `grab(cap) → transfer(cap,hatch_seat) → align → release(cap,hatch_seat)` (cup already mounted) | Cap grasp, transfer, align and release succeeded; the supervisor reported the hatch installed. The final `verify` first failed because of a web-wrapper attribute shadowing bug (`latest`), which was fixed afterwards; a clean repeat of the whole cap graph was not obtained in this session. |
-| cap graph without explicit `grab(vacuum)` | Rejected before motion: `replan_required: 'gc' requires the vacuum tool in patron; mounted tool is None`. |
+| cap graph without explicit `grab(vacuum)`, with a `grasp_failed` edge | Admitted; execution returned `grasp_failed` with `reason: "required tool vacuum is not mounted"`, `next: "operator_required"`, `mounted_tool: null`, `held_object: null`. The supervisor state stayed at version 0 with the cap `free` and `vacuum` `docked`; the log contains no planner call for that run. `/plan` held the original graph, `/status`, `GET /planner/runs/...` and the JSONL log held the actual event/reason/ownership/next edge. |
 | stale `scene_revision=999` | Rejected: `stale_scene: submitted revision 999 does not match current revision 1`. |
 
 The screw handoff graph (`grab(magnetic_tool) → grab(screw_1) →

@@ -225,10 +225,11 @@ def test_grab_keeps_target_in_collision_scene_during_approach():
             self.events.append(('prepare_grab_cap', object_id))
 
     adapter = RecordingScene()
-    registry, context, motion, _ = make_registry(
+    registry, context, motion, supervisor = make_registry(
         motion=FakeMotion(success=False), adapter=adapter,
     )
     context.mounted_tool = 'vacuum'
+    supervisor.state['mounted_tool'] = 'vacuum'
     result = registry.execute(node('g', 'grab', 'cap'), context)
     assert result.event == 'failed'
     assert phases(motion) == ['approach']
@@ -253,10 +254,11 @@ def test_grab_restores_target_when_lowering_fails():
             )
 
     adapter = RecordingScene()
-    registry, context, motion, _ = make_registry(
+    registry, context, motion, supervisor = make_registry(
         motion=FailOnLower(), adapter=adapter,
     )
     context.mounted_tool = 'vacuum'
+    supervisor.state['mounted_tool'] = 'vacuum'
     result = registry.execute(node('g', 'grab', 'cap'), context)
     assert result.event == 'failed'
     assert phases(motion) == ['approach', 'lower']
@@ -292,11 +294,46 @@ def test_explicit_phases_are_not_repeated_by_grab():
     assert phases(motion) == ['approach', 'lower', 'retreat']
 
 
-def test_grab_cap_without_vacuum_does_not_move():
-    registry, context, motion, _ = make_registry()
+def test_grab_cap_without_vacuum_reports_grasp_failed_without_motion_or_command():
+    registry, context, motion, supervisor = make_registry()
+    before = copy.deepcopy(supervisor.state)
     result = registry.execute(node('g', 'grab', 'cap'), context)
-    assert result.event == 'failed'
+    assert result.event == 'grasp_failed'
+    assert result.details['reason'] == 'required tool vacuum is not mounted'
+    assert result.details['required_tool'] == 'vacuum'
     assert motion.calls == []
+    assert supervisor.commands == []
+    assert registry.scene_adapter.events == []
+    assert supervisor.state['cap']['state'] == before['cap']['state']
+    assert supervisor.state['held_object'] is None
+    assert context.held_object is None
+    assert context.mounted_tool is None
+
+
+def test_supervisor_state_overrides_stale_context_for_tool_checks():
+    registry, context, motion, supervisor = make_registry()
+    context.mounted_tool = 'vacuum'  # stale memory; supervisor says no tool
+    result = registry.execute(node('g', 'grab', 'cap'), context)
+    assert result.event == 'grasp_failed'
+    assert result.details['reason'] == 'required tool vacuum is not mounted'
+    assert motion.calls == []
+    assert supervisor.commands == []
+    assert context.mounted_tool is None
+
+
+def test_grab_screw_without_magnetic_tool_reports_grasp_failed_without_motion():
+    registry, context, motion, supervisor = make_registry()
+    before = copy.deepcopy(supervisor.state)
+    result = registry.execute(node('g', 'grab', 'screw_1'), context)
+    assert result.event == 'grasp_failed'
+    assert result.details['reason'] == 'required tool magnetic_tool is not mounted'
+    assert result.details['required_tool'] == 'magnetic_tool'
+    assert motion.calls == []
+    assert supervisor.commands == []
+    assert registry.scene_adapter.events == []
+    assert supervisor.state['screws']['screw_1']['state'] == before['screws']['screw_1']['state']
+    assert supervisor.state['held_object'] is None
+    assert context.held_object is None
 
 
 def test_tool_grab_docks_at_the_socket_and_lifts_out():
@@ -400,8 +437,10 @@ def test_release_lifts_axially_before_any_lateral_motion():
 
 
 def test_dispense_moves_along_the_segment_without_changing_ownership():
-    registry, context, motion, _ = make_registry()
+    registry, context, motion, supervisor = make_registry()
     context.mounted_tool = 'sealant_tool'
+    supervisor.state['mounted_tool'] = 'sealant_tool'
+    supervisor.state['tools']['sealant_tool']['state'] = 'mounted'
     result = registry.execute(
         node('d', 'dispense', 'side_1', params={
             'start_fraction': 0.0, 'end_fraction': 1.0,

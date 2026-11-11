@@ -382,16 +382,24 @@ class GraphEngine:
         next_id: str,
         outcome: Any,
     ) -> None:
+        context = run.context
+        if context is not None:
+            if hasattr(context, 'mounted_tool'):
+                run.mounted_tool = context.mounted_tool
+            if hasattr(context, 'held_object'):
+                run.held_object = context.held_object
+        details = getattr(outcome, 'details', {}) or {}
         entry = {
             'run_id': run.run_id,
             'node_id': node.id,
             'skill': node.skill,
             'event': event,
+            'reason': details.get('reason', ''),
             'next': next_id,
             'scene_revision': run.scene_revision,
             'mounted_tool': run.mounted_tool,
             'held_object': run.held_object,
-            'details': getattr(outcome, 'details', {}) or {},
+            'details': details,
             'timestamp': self._clock(),
         }
         run.events.append(entry)

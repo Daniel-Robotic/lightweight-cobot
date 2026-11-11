@@ -67,15 +67,27 @@ returns `ValidationResult(ok, code, reason, details)` with codes:
 | --- | --- |
 | `ok` | admitted |
 | `blocked` | the model returned `status=blocked`; no motion |
-| `replan_required` | a fresh scene/plan is required before motion (missing tool, missing explicit transfer, unconfirmed ownership) |
+| `replan_required` | a fresh scene/plan is required before motion (missing explicit transfer, unconfirmed ownership, or a graph branch that contradicts the live ownership state) |
 | `rejected` | structural or safety violation |
 | `stale_scene` | the graph was built for another `scene_revision` |
 
 Important pre-movement rules:
 
-* `grab(cap)` requires `vacuum` in `patron`. If the scene starts with the cup
-  docked, the graph must explicitly `grab(vacuum)`; otherwise admission is
-  `replan_required` and nothing moves.
+* A missing required tool is **not** an admission error. `pick(cap)` /
+  `grab(cap)` is admitted even when `vacuum` is docked. At execution time the
+  skill re-reads the live supervisor state. If `vacuum` is not mounted it
+  returns `grasp_failed` with the reason
+  `required tool vacuum is not mounted`, performs no contact motion, sends no
+  capture command, changes no object state, and the engine follows exactly the
+  graph's `grasp_failed` edge. The `success` edge is not assumed.
+* The same rule applies to screws without `magnetic_tool`
+  (`required tool magnetic_tool is not mounted`) and to other tool-dependent
+  skills, which return their contract's failure event.
+* The validator still simulates the reachable ownership branches. It skips a
+  nominal success edge only when that success is impossible from the current
+  tool/held state; a recovery branch that then assumes the part is held is
+  rejected with its own ownership reason (for example `hatch is not held`),
+  not with a missing-tool reason.
 * `release(vacuum)` without a target, or anywhere except its named socket and
   after an explicit `transfer(vacuum, vacuum_socket)`, is `replan_required`.
   The cup stays mounted. `release(vacuum, vacuum_socket)` and
@@ -98,6 +110,11 @@ Important pre-movement rules:
 | topic | `/iiwa_llm_plan_executor/status` | `std_msgs/String` | Each node event and terminal. Fields: `run_id`, `state`, `reason`, `node_id`, `skill`, `event`, `next`, `scene_revision`, `terminal`, `mounted_tool`, `held_object`, `timestamp`, plus event details. |
 | service | `/iiwa_llm_plan_executor/get_status` | `iiwa_msgs/GetRunStatus` | request `string run_id`; response `bool found`, `string status_json`. |
 | service | `/iiwa_llm_plan_executor/cancel` | `webots_ros2_msgs/SetString` | `{"run_id": "..."}` or a plain run id; stops execution and preserves the grasp. |
+
+Every event is logged with the actual skill result, the failure reason when
+present, `mounted_tool` and `held_object` read from the supervisor, and the
+`next` node selected from the published graph.  The same event is written to
+the JSONL log and returned by `GET /planner/runs/{run_id}`.
 
 Admission conditions: fresh `scene_json`, matching `scene_revision`,
 `scene_ready`, a ready MoveIt/controller, fresh `joint_states`, and at least

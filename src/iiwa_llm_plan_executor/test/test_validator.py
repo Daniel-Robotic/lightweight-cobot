@@ -111,15 +111,64 @@ def test_blocked_status_never_reaches_execution():
     assert result.code == 'blocked'
 
 
-def test_cap_grab_without_explicit_vacuum_is_replan_required_before_motion():
+def test_cap_grab_without_vacuum_is_admitted_for_runtime_grasp_failed():
     value = graph(
         'grab_cap',
-        node('grab_cap', 'grab', 'cap', next_on={'success': 'completed'}),
+        node('grab_cap', 'grab', 'cap', next_on={
+            'success': 'completed',
+            'grasp_failed': 'operator_required',
+        }),
+    )
+    result = expect(value, scene_for(1))
+    assert result.ok is True
+
+    # The success branch is kept in the graph but is not simulated as if the
+    # hatch were already held without a vacuum tool.
+    with_success_branch = graph(
+        'grab_cap',
+        node('grab_cap', 'grab', 'cap', next_on={
+            'success': 'transfer',
+            'grasp_failed': 'operator_required',
+        }),
+        node('transfer', 'transfer', 'cap', 'hatch_seat',
+             next_on={'success': 'completed'}),
+    )
+    assert expect(with_success_branch, scene_for(1)).ok is True
+
+
+def test_screw_grab_without_magnetic_tool_is_admitted():
+    value = graph(
+        'pick_screw',
+        node('pick_screw', 'pick', 'screw_1', next_on={
+            'success': 'completed',
+            'grasp_failed': 'operator_required',
+        }),
+    )
+    result = expect(value, scene_for(20))
+    assert result.ok is True
+
+
+def test_recovery_branch_that_assumes_a_held_hatch_has_its_own_reason():
+    value = graph(
+        'grab_cap',
+        node('grab_cap', 'grab', 'cap', next_on={
+            'success': 'completed',
+            'grasp_failed': 'inspect',
+        }),
+        node('inspect', 'inspect_state', 'cap', next_on={
+            'empty': 'transfer',
+            'holding': 'transfer',
+            'placed': 'completed',
+            'unknown': 'operator_required',
+        }),
+        node('transfer', 'transfer', 'cap', 'hatch_seat',
+             next_on={'success': 'completed'}),
     )
     result = expect(value, scene_for(1))
     assert result.ok is False
     assert result.code == 'replan_required'
-    assert 'vacuum' in result.reason
+    assert 'hatch is not held' in result.reason
+    assert 'vacuum' not in result.reason
 
 
 def test_take_vacuum_and_leave_it_in_patron_is_accepted():
@@ -354,12 +403,12 @@ def test_screw_handoff_is_to_the_operator_and_leaves_the_hole_empty():
     assert result.ok is True
 
 
-def test_dispense_requires_the_sealant_tool():
+def test_dispense_requires_the_sealant_tool_at_runtime():
     without = graph(
         'dispense', node('dispense', 'dispense', 'side_1',
                          next_on={'success': 'completed'}),
     )
-    assert expect(without, scene_for(20)).code == 'replan_required'
+    assert expect(without, scene_for(20)).ok is True
     with_tool = graph(
         'grab_sealant',
         node('grab_sealant', 'grab', 'sealant_tool',
