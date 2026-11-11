@@ -83,6 +83,13 @@ Important pre-movement rules:
 * The same rule applies to screws without `magnetic_tool`
   (`required tool magnetic_tool is not mounted`) and to other tool-dependent
   skills, which return their contract's failure event.
+* After a `grasp_failed` caused specifically by the missing tool, no contact
+  and no object change occurred.  For the **same** `scene_revision` the
+  following `inspect_state` for that part may therefore only produce `empty`;
+  `holding`/`placed` are not simulated.  Unknown ownership (a generic grasp
+  failure) keeps the conservative check of all `inspect_state` outcomes.
+  A known empty hatch that is already installed makes `placed` possible after
+  a release, while a free hatch makes `empty` possible.
 * The validator still simulates the reachable ownership branches. It skips a
   nominal success edge only when that success is impossible from the current
   tool/held state; a recovery branch that then assumes the part is held is

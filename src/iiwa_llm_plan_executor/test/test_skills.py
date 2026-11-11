@@ -25,6 +25,7 @@ class FakeMotion:
     def __init__(self, *, success=True):
         self.calls = []
         self.stop_calls = []
+        self.reset_calls = 0
         self.success = success
 
     def plan_and_execute(self, goal, phase, held_object):
@@ -36,6 +37,9 @@ class FakeMotion:
 
     def stop(self, reason='stop'):
         self.stop_calls.append(reason)
+
+    def reset_stop(self):
+        self.reset_calls += 1
 
 
 class FakeSupervisor:
@@ -486,7 +490,7 @@ def test_detect_withdraws_axially_then_uses_fresh_frames():
     result = registry.execute(node('d', 'detect', 'cap'), context)
     assert result.event == 'found'
     assert phases(motion)[0] == 'retreat'
-    assert phases(motion)[1] == 'transfer'
+    assert phases(motion)[1] == 'transfer_lin'
     assert context.phase == 'free'
 
     context.frame_provider = lambda name: None
@@ -562,6 +566,7 @@ def test_stop_preserves_ownership_and_wait_scene_clear_reports_timeout():
     context.held_object = 'cap'
     assert registry.execute(node('s', 'stop', 'robot'), context).event == 'success'
     assert motion.stop_calls == ['graph stop node']
+    assert motion.reset_calls == 1
     assert context.held_object == 'cap'
     context.scene_clear_provider = lambda: False
     assert registry.execute(

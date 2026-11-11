@@ -49,6 +49,8 @@ class _State:
     held: str | None = None
     unknown: bool = False
     transfer_target: str | None = None
+    empty_failure: bool = False
+    cap_installed: bool = False
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,7 @@ class _Facts:
     initial: _State
     available_skills: set[str]
     envelope: Mapping[str, Any]
+    cap_installed: bool
 
 
 def _scene_payload(scene: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
@@ -91,10 +94,19 @@ def _facts(scene: Mapping[str, Any]) -> _Facts:
     }
     cameras = set(payload.get('cameras', {}))
     service_objects = set(payload.get('service_objects', {}))
+    cap_entry = next(
+        (
+            entry for entry in payload.get('components', [])
+            if isinstance(entry, Mapping) and entry.get('id') == 'cap'
+        ),
+        {},
+    )
+    cap_installed = str(cap_entry.get('state', '')) == 'installed'
     initial_raw = payload.get('initial_state') or {}
     initial = _State(
         mounted=initial_raw.get('tool_mounted') or None,
         held=initial_raw.get('held_object') or None,
+        cap_installed=cap_installed,
     )
     available = set(payload.get('available_skills', []))
     return _Facts(
@@ -106,6 +118,7 @@ def _facts(scene: Mapping[str, Any]) -> _Facts:
         initial=initial,
         available_skills=available,
         envelope=envelope,
+        cap_installed=cap_installed,
     )
 
 
@@ -496,6 +509,45 @@ def _success_feasible(
     return True
 
 
+def _missing_tool_for_grasp(
+    node: PlanNode,
+    state: _State,
+    facts: _Facts,
+) -> bool:
+    """True when a grasp fails specifically because its tool is absent."""
+    if node.skill not in ('grab', 'pick'):
+        return False
+    obj = node.object
+    if obj == 'cap':
+        return state.mounted != 'vacuum'
+    if obj and facts.components.get(obj) == 'screw':
+        return state.mounted != 'magnetic_tool'
+    return False
+
+
+def _inspect_event_feasible(
+    node: PlanNode,
+    state: _State,
+    event: str,
+    facts: _Facts,
+) -> bool:
+    if node.skill != 'inspect_state':
+        return True
+    if state.unknown:
+        return True
+    if state.empty_failure:
+        return event == 'empty'
+    if node.object != 'cap':
+        return True
+    if event == 'empty':
+        return state.held is None and not state.cap_installed
+    if event == 'holding':
+        return state.held == 'cap'
+    if event == 'placed':
+        return state.held is None and state.cap_installed
+    return True
+
+
 def _apply_event(
     node: PlanNode,
     event: str,
@@ -506,37 +558,85 @@ def _apply_event(
     obj = node.object
     if skill == 'inspect_state' and event in ('empty', 'holding', 'placed', 'unknown'):
         if event == 'empty':
-            return _State(state.mounted, None, False, state.transfer_target)
+            return _State(
+                state.mounted, None, False, state.transfer_target, False, False,
+            )
         if event == 'holding':
-            return _State(state.mounted, obj or None, False, state.transfer_target)
+            return _State(
+                state.mounted, obj or None, False, state.transfer_target, False,
+                False,
+            )
         if event == 'placed':
-            return _State(state.mounted, None, False, state.transfer_target)
-        return _State(state.mounted, state.held, True, state.transfer_target)
+            return _State(
+                state.mounted, None, False, state.transfer_target, False,
+                state.cap_installed or obj == 'cap',
+            )
+        return _State(
+            state.mounted, state.held, True, state.transfer_target, False,
+            state.cap_installed,
+        )
     if event == 'grasp_failed':
-        return _State(state.mounted, state.held, True, state.transfer_target)
+        missing_tool = _missing_tool_for_grasp(node, state, facts)
+        return _State(
+            state.mounted,
+            state.held,
+            not missing_tool,
+            state.transfer_target,
+            missing_tool,
+            state.cap_installed,
+        )
     if event not in PROGRESS_EVENTS:
         return state
     if skill in ('grab', 'pick'):
         if obj in facts.tools:
-            return _State(obj, state.held, False, state.transfer_target)
+            return _State(
+                obj, state.held, False, state.transfer_target, False,
+                state.cap_installed,
+            )
         if obj == 'cap':
-            return _State(state.mounted, 'cap', False, state.transfer_target)
+            return _State(
+                state.mounted, 'cap', False, state.transfer_target, False, False,
+            )
         if obj and facts.components.get(obj) == 'screw':
-            return _State(state.mounted, obj, False, state.transfer_target)
+            return _State(
+                state.mounted, obj, False, state.transfer_target, False,
+                state.cap_installed,
+            )
         return state
     if skill == 'release':
         if obj in facts.tools:
-            return _State(None, state.held, False, state.transfer_target)
+            return _State(
+                None, state.held, False, state.transfer_target, False,
+                state.cap_installed,
+            )
+        if obj == 'cap':
+            return _State(
+                state.mounted, None, False, state.transfer_target, False, True,
+            )
         if obj:
-            return _State(state.mounted, None, False, state.transfer_target)
+            return _State(
+                state.mounted, None, False, state.transfer_target, False,
+                state.cap_installed,
+            )
         return state
     if skill == 'dock_tool':
-        return _State(None, state.held, False, state.transfer_target)
+        return _State(
+            None, state.held, False, state.transfer_target, False,
+            state.cap_installed,
+        )
     if skill == 'handoff_screw':
-        return _State(state.mounted, None, False, state.transfer_target)
+        return _State(
+            state.mounted, None, False, state.transfer_target, False,
+            state.cap_installed,
+        )
     if skill == 'transfer':
         return _State(
-            state.mounted, state.held, False, node.target or state.transfer_target,
+            state.mounted,
+            state.held,
+            False,
+            node.target or state.transfer_target,
+            False,
+            state.cap_installed,
         )
     return state
 
@@ -564,6 +664,12 @@ def _ownership_checks(graph: PlanGraph, facts: _Facts) -> ValidationResult | Non
         visited_states[node.id].add(state)
         for transition in node.transitions:
             if transition.next not in graph.ids:
+                continue
+            if (
+                not _inspect_event_feasible(node, state, transition.event, facts)
+            ):
+                # Known empty state: only "empty" is physically possible.
+                # Unknown state remains conservative and allows every branch.
                 continue
             if (
                 transition.event in PROGRESS_EVENTS

@@ -362,7 +362,8 @@ class SkillRegistry:
             context.mark_lifted()
         work = context.geometry.safe_poses['work']
         if not (context.at_work and context.phase == 'free'):
-            self._move(context, work, 'transfer')
+            phase = 'transfer_lin' if context.phase != 'free' else 'transfer'
+            self._move(context, work, phase)
         context.reset_phase()
         context.at_work = True
         if context.capture_frame('top') is None:
@@ -406,7 +407,7 @@ class SkillRegistry:
             )
             return state != 'delivered'
         try:
-            context.catalog.destination_kind(effective, context.spec)
+            self.catalog.destination_kind(effective, context.spec)
             return True
         except Exception:
             return False
@@ -850,6 +851,11 @@ class SkillRegistry:
         del node
         try:
             self.motion.stop('graph stop node')
+            # A stop node is a graph decision, not a terminal safety latch:
+            # a verified inspect_state may deliberately retry afterwards.
+            reset = getattr(self.motion, 'reset_stop', None)
+            if reset is not None:
+                reset()
         except Exception as error:
             return SkillOutcome('failed', {'reason': str(error)})
         return SkillOutcome('success', {

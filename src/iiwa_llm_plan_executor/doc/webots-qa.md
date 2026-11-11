@@ -17,7 +17,7 @@ colcon test --base-paths src --packages-select \
 colcon test-result --verbose
 ```
 
-Result: build of 10 packages succeeded; `359 tests, 0 errors, 0 failures,
+Result: build of 10 packages succeeded; `361 tests, 0 errors, 0 failures,
 0 skipped`.
 
 `git diff --check` is clean.
@@ -117,3 +117,52 @@ ros2 service call /iiwa_scene_context/get_scene std_srvs/srv/Trigger {}
 ros2 topic echo /iiwa_llm_plan_executor/plan --qos-durability transient_local
 ros2 topic echo /iiwa_llm_plan_executor/status
 ```
+
+## Full Qwen cap graph (`qwen_cap_full_graph.json`)
+
+The complete graph from the external Qwen run was added as a test fixture and
+checked in scene 20.
+
+### Empty patron
+
+The integration test uses the real `GraphEngine`, real `SkillRegistry` and the
+full 20-node graph, with fake motion/supervisor adapters that forbid supervisor
+commands.  The executed node sequence is:
+
+```
+a_find_part → a_find_target → a_approach → a_pick(grasp_failed)
+→ a_stop_recover → a_state(empty) → a_retry_find_part → a_retry_approach
+→ a_retry_pick(grasp_failed) → stop_operator → notify → operator_required
+```
+
+The halt reasons are `required tool vacuum is not mounted`; no supervisor
+command is issued, no `lower`/`contact` phase is planned, the hatch stays
+`free`, and `mounted_tool`/`held_object` stay `null`.
+
+In Webots the full graph reached the requested actual branch:
+
+```
+a_pick(grasp_failed) → a_stop_recover → a_state(empty)
+→ a_retry_find_part → a_retry_approach → a_retry_pick(grasp_failed)
+→ stop_operator → notify → operator_required
+```
+
+The halt reasons were `required tool vacuum is not mounted`; the supervisor
+stayed at version 0, `mounted_tool`/`held_object` were `null`, the hatch stayed
+`free`, and no `grab_cap`/`attach_tool`/`place_cap` command appeared in the log.
+
+### Vacuum mounted
+
+With `vacuum` mounted, the graph's nominal success route is:
+
+```
+a_inspect(ok) → a_state(placed) → a_inspect(ok) → ...
+```
+
+It is a cycle and the graph contains no `completed` transition at all, so a
+nominal successful run cannot finish.  The full graph also has a conservative
+recovery issue: `grasp_failed` leads through `inspect_state: holding` to
+`a_retry_pick`, which would pick the hatch while already holding it.  The
+validator therefore rejects that recovery branch with its own ownership reason
+(`a_retry_pick ... while holding 'cap'`); this does not repair the model graph.
+Completion must not be claimed for this graph.

@@ -1,0 +1,430 @@
+{
+  "status": "ready",
+  "entry": "a_find_part",
+  "plan": [
+    {
+      "id": "a_find_part",
+      "skill": "detect",
+      "object": "cap",
+      "target": "",
+      "transitions": [
+        {
+          "event": "found",
+          "next": "a_find_target"
+        },
+        {
+          "event": "not_found",
+          "next": "replan_required"
+        },
+        {
+          "event": "failed",
+          "next": "replan_required"
+        }
+      ]
+    },
+    {
+      "id": "a_find_target",
+      "skill": "detect",
+      "object": "hatch_seat",
+      "target": "",
+      "transitions": [
+        {
+          "event": "found",
+          "next": "a_approach"
+        },
+        {
+          "event": "not_found",
+          "next": "replan_required"
+        },
+        {
+          "event": "failed",
+          "next": "replan_required"
+        }
+      ]
+    },
+    {
+      "id": "a_approach",
+      "skill": "approach",
+      "object": "cap",
+      "target": "",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "a_pick"
+        },
+        {
+          "event": "human_in_scene",
+          "next": "a_stop_human"
+        },
+        {
+          "event": "collision",
+          "next": "stop_collision"
+        },
+        {
+          "event": "failed",
+          "next": "stop_operator"
+        }
+      ]
+    },
+    {
+      "id": "a_pick",
+      "skill": "pick",
+      "object": "cap",
+      "target": "",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "a_transfer"
+        },
+        {
+          "event": "grasp_failed",
+          "next": "a_stop_recover"
+        },
+        {
+          "event": "human_in_scene",
+          "next": "a_stop_human"
+        },
+        {
+          "event": "collision",
+          "next": "stop_collision"
+        },
+        {
+          "event": "failed",
+          "next": "stop_operator"
+        }
+      ]
+    },
+    {
+      "id": "a_transfer",
+      "skill": "move_to_storage",
+      "object": "cap",
+      "target": "hatch_seat",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "a_release"
+        },
+        {
+          "event": "human_in_scene",
+          "next": "a_stop_human"
+        },
+        {
+          "event": "collision",
+          "next": "stop_collision"
+        },
+        {
+          "event": "failed",
+          "next": "stop_operator"
+        }
+      ]
+    },
+    {
+      "id": "a_release",
+      "skill": "release",
+      "object": "cap",
+      "target": "hatch_seat",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "a_inspect"
+        },
+        {
+          "event": "human_in_scene",
+          "next": "a_stop_human"
+        },
+        {
+          "event": "collision",
+          "next": "stop_collision"
+        },
+        {
+          "event": "failed",
+          "next": "stop_operator"
+        }
+      ]
+    },
+    {
+      "id": "a_inspect",
+      "skill": "inspect",
+      "object": "cap",
+      "target": "hatch_seat",
+      "transitions": [
+        {
+          "event": "ok",
+          "next": "a_state"
+        },
+        {
+          "event": "not_ok",
+          "next": "stop_operator"
+        },
+        {
+          "event": "failed",
+          "next": "stop_operator"
+        }
+      ]
+    },
+    {
+      "id": "a_stop_human",
+      "skill": "stop",
+      "object": "robot",
+      "target": "",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "a_wait_clear"
+        },
+        {
+          "event": "failed",
+          "next": "notify"
+        }
+      ]
+    },
+    {
+      "id": "a_wait_clear",
+      "skill": "wait_scene_clear",
+      "object": "workspace",
+      "target": "",
+      "transitions": [
+        {
+          "event": "clear",
+          "next": "a_state"
+        },
+        {
+          "event": "timeout",
+          "next": "notify"
+        },
+        {
+          "event": "failed",
+          "next": "notify"
+        }
+      ]
+    },
+    {
+      "id": "a_stop_recover",
+      "skill": "stop",
+      "object": "robot",
+      "target": "",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "a_state"
+        },
+        {
+          "event": "failed",
+          "next": "notify"
+        }
+      ]
+    },
+    {
+      "id": "a_state",
+      "skill": "inspect_state",
+      "object": "cap",
+      "target": "hatch_seat",
+      "transitions": [
+        {
+          "event": "empty",
+          "next": "a_retry_find_part"
+        },
+        {
+          "event": "holding",
+          "next": "a_retry_find_part"
+        },
+        {
+          "event": "placed",
+          "next": "a_inspect"
+        },
+        {
+          "event": "unknown",
+          "next": "notify"
+        }
+      ]
+    },
+    {
+      "id": "a_retry_find_part",
+      "skill": "detect",
+      "object": "cap",
+      "target": "",
+      "transitions": [
+        {
+          "event": "found",
+          "next": "a_retry_approach"
+        },
+        {
+          "event": "not_found",
+          "next": "replan_required"
+        },
+        {
+          "event": "failed",
+          "next": "replan_required"
+        }
+      ]
+    },
+    {
+      "id": "a_retry_approach",
+      "skill": "approach",
+      "object": "cap",
+      "target": "",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "a_retry_pick"
+        },
+        {
+          "event": "human_in_scene",
+          "next": "stop_operator"
+        },
+        {
+          "event": "collision",
+          "next": "stop_collision"
+        },
+        {
+          "event": "failed",
+          "next": "stop_operator"
+        }
+      ]
+    },
+    {
+      "id": "a_retry_pick",
+      "skill": "pick",
+      "object": "cap",
+      "target": "",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "a_retry_find_target"
+        },
+        {
+          "event": "grasp_failed",
+          "next": "stop_operator"
+        },
+        {
+          "event": "human_in_scene",
+          "next": "stop_operator"
+        },
+        {
+          "event": "collision",
+          "next": "stop_collision"
+        },
+        {
+          "event": "failed",
+          "next": "stop_operator"
+        }
+      ]
+    },
+    {
+      "id": "a_retry_find_target",
+      "skill": "detect",
+      "object": "hatch_seat",
+      "target": "",
+      "transitions": [
+        {
+          "event": "found",
+          "next": "a_retry_transfer"
+        },
+        {
+          "event": "not_found",
+          "next": "replan_required"
+        },
+        {
+          "event": "failed",
+          "next": "replan_required"
+        }
+      ]
+    },
+    {
+      "id": "a_retry_transfer",
+      "skill": "move_to_storage",
+      "object": "cap",
+      "target": "hatch_seat",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "a_retry_release"
+        },
+        {
+          "event": "human_in_scene",
+          "next": "stop_operator"
+        },
+        {
+          "event": "collision",
+          "next": "stop_collision"
+        },
+        {
+          "event": "failed",
+          "next": "stop_operator"
+        }
+      ]
+    },
+    {
+      "id": "a_retry_release",
+      "skill": "release",
+      "object": "cap",
+      "target": "hatch_seat",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "a_inspect"
+        },
+        {
+          "event": "human_in_scene",
+          "next": "stop_operator"
+        },
+        {
+          "event": "collision",
+          "next": "stop_collision"
+        },
+        {
+          "event": "failed",
+          "next": "stop_operator"
+        }
+      ]
+    },
+    {
+      "id": "stop_collision",
+      "skill": "stop",
+      "object": "robot",
+      "target": "",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "notify"
+        },
+        {
+          "event": "failed",
+          "next": "notify"
+        }
+      ]
+    },
+    {
+      "id": "stop_operator",
+      "skill": "stop",
+      "object": "robot",
+      "target": "",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "notify"
+        },
+        {
+          "event": "failed",
+          "next": "notify"
+        }
+      ]
+    },
+    {
+      "id": "notify",
+      "skill": "notify_operator",
+      "object": "robot",
+      "target": "",
+      "transitions": [
+        {
+          "event": "success",
+          "next": "operator_required"
+        },
+        {
+          "event": "failed",
+          "next": "operator_required"
+        }
+      ]
+    }
+  ]
+}
