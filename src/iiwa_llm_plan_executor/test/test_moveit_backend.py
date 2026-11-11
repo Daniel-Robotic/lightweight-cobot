@@ -112,17 +112,56 @@ def test_safe_plan_is_executed_once_and_the_final_pose_is_verified():
     assert len(planner.execute_calls) == 1
 
 
-def test_intermediate_out_of_corridor_point_never_reaches_execution():
+def test_safe_joint7_beyond_the_old_corridor_reaches_execution():
     planner = FakePlanner(planned=planned(
-        [point(-1.0), point(-1.8), point(-1.0)],
+        [point(-1.5), point(-1.7), point(-1.5)],
         [BASE_GOAL, BASE_GOAL, BASE_GOAL],
     ))
     result = backend(planner).plan_and_execute(GOAL, 'transfer')
+    assert result.success is True
+    assert len(planner.execute_calls) == 1
+
+
+def test_motion_phase_selection_is_ptp_for_working_points_and_lin_for_axes():
+    from iiwa_llm_plan_executor.moveit_backend import MoveItPyPlanner
+
+    phases = MoveItPyPlanner.PHASES
+    for phase in ('transfer', 'approach', 'align', 'observe', 'escape'):
+        assert phases[phase][0] == 'pilz_industrial_motion_planner'
+        assert phases[phase][1] == 'PTP'
+    for phase in ('contact', 'lower', 'retreat', 'dispense'):
+        assert phases[phase][0] == 'pilz_industrial_motion_planner'
+        assert phases[phase][1] == 'LIN'
+
+
+def test_dense_resampling_covers_steps_between_waypoints():
+    from iiwa_llm_plan_executor.moveit_backend import MoveItPyPlanner
+
+    samples = MoveItPyPlanner._densify(
+        [(0.0,) * 7, (0.05,) * 7], 0.01,
+    )
+    assert len(samples) == 6
+    assert samples[0] == (0.0,) * 7
+    assert samples[-1] == (0.05,) * 7
+    assert max(
+        abs(a - b) for a, b in zip(samples[1], samples[0])
+    ) <= 0.01 + 1e-12
+
+
+def test_camera_self_collision_is_rejected_before_execution():
+    planner = FakePlanner(planned=planned([point(0.0)], [BASE_GOAL]))
+    result = backend(
+        planner,
+        collision_checker=lambda planned_motion: (
+            'collision/clearance failure: camera_hand <-> link6; '
+            'minimum distance 0.0005 m, required 0.0030 m'
+        ),
+    ).plan_and_execute(GOAL, 'transfer')
     assert result.success is False
-    assert result.code == 'motion_limit'
-    assert 'joint7' in result.message
+    assert result.code == 'collision'
+    assert 'camera_hand' in result.message
+    assert 'link6' in result.message
     assert planner.execute_calls == []
-    assert planner.stopped >= 1
 
 
 def test_excessive_tilt_and_jump_are_rejected_without_execution():

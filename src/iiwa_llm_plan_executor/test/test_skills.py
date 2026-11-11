@@ -440,6 +440,28 @@ def test_release_lifts_axially_before_any_lateral_motion():
     assert motion.calls[-1][0].xyz[2] > contact.xyz[2]
 
 
+def test_transfer_from_contact_lifts_axially_before_lateral_ptp():
+    registry, context, motion, supervisor = make_registry()
+    context.mounted_tool = 'vacuum'
+    context.held_object = 'cap'
+    supervisor.state['mounted_tool'] = 'vacuum'
+    supervisor.state['held_object'] = 'cap'
+    supervisor.state['cap']['state'] = 'held'
+    seat = world_target(context.spec, context.geometry, 'cap_seat')
+    from iiwa_experement.geometry import tcp_goal
+    from iiwa_llm_plan_executor.skills import _above
+    contact = tcp_goal(seat, context.geometry.cap_tcp_to_node)
+    safe = _above(contact, context.geometry.approach_gap)
+    context.mark_approach(safe, ('cap', 'hatch_seat'))
+    context.mark_contact(contact)
+    result = registry.execute(
+        node('t', 'transfer', 'cap', 'hatch_seat'), context,
+    )
+    assert result.event == 'success'
+    assert phases(motion) == ['retreat', 'transfer']
+    assert motion.calls[0][1] == 'retreat'
+
+
 def test_dispense_moves_along_the_segment_without_changing_ownership():
     registry, context, motion, supervisor = make_registry()
     context.mounted_tool = 'sealant_tool'
@@ -490,7 +512,7 @@ def test_detect_withdraws_axially_then_uses_fresh_frames():
     result = registry.execute(node('d', 'detect', 'cap'), context)
     assert result.event == 'found'
     assert phases(motion)[0] == 'retreat'
-    assert phases(motion)[1] == 'transfer_lin'
+    assert phases(motion)[1] == 'transfer'
     assert context.phase == 'free'
 
     context.frame_provider = lambda name: None

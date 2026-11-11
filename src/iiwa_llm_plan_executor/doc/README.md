@@ -94,12 +94,14 @@ The JSONL log with every event is written to
 
 ## Safety scope
 
-The executor checks J7 (±90° around `work`) and the downward TCP tilt (≤10°)
-on **every** planned point, seeds IK from current joints, enforces these as
-MoveIt path constraints, checks scene/joint freshness and verifies the final
-pose.  The only logged exception is the initial empty-gripper reorientation
-from home to the downward `work` posture; J7 and the final orientation are
-still enforced and a reorientation with a held object is rejected.  The
-executor never falls back to an unconstrained `MoveToPose` goal.  This is a
-Webots verification, not a physical-robot validation and not a Qwen3 quality
-evaluation.
+The executor uses Pilz PTP for free-space working-point moves and Pilz LIN for
+axial contact/retreat and the dispense contour.  Every plan is densely
+resampled and checked for real joint limits, self-collision (including the
+camera assembly), scene collision, camera clearance, downward TCP tilt (≤10°)
+and joint jumps before execution.  J7 may use its full safe joint range; the
+`work` value is only a preference.  A lateral PTP from a contact pose is
+preceded by an axial LIN retreat.  The only logged orientation exception is
+the initial empty-gripper reorientation from home to the downward `work`
+posture.  The executor never falls back to an unconstrained `MoveToPose` goal.
+This is a Webots verification, not a physical-robot validation and not a
+Qwen3 quality evaluation.

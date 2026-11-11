@@ -166,6 +166,25 @@ class SkillRegistry:
         goal: Transform,
         phase: str,
     ) -> Any:
+        lateral = phase in ('transfer', 'approach', 'align', 'observe', 'escape')
+        if (
+            lateral
+            and context.phase == 'contact'
+            and context.approach_pose is not None
+        ):
+            # A lateral PTP must never start at contact depth: first move
+            # straight up along the tool axis to the saved safe height.
+            retreat = self.motion.plan_and_execute(
+                context.approach_pose, 'retreat', context.held_object,
+            )
+            if not getattr(retreat, 'success', False):
+                raise SkillError(
+                    'failed',
+                    f'axial retreat before lateral motion failed: '
+                    f'{getattr(retreat, "message", "motion failed")}',
+                )
+            context.last_verified_pose = context.approach_pose
+            context.mark_lifted()
         carried = context.held_object or context.mounted_tool
         outcome = self.motion.plan_and_execute(goal, phase, carried)
         if not getattr(outcome, 'success', False):
@@ -362,8 +381,7 @@ class SkillRegistry:
             context.mark_lifted()
         work = context.geometry.safe_poses['work']
         if not (context.at_work and context.phase == 'free'):
-            phase = 'transfer_lin' if context.phase != 'free' else 'transfer'
-            self._move(context, work, phase)
+            self._move(context, work, 'transfer')
         context.reset_phase()
         context.at_work = True
         if context.capture_frame('top') is None:
@@ -601,8 +619,7 @@ class SkillRegistry:
             return SkillOutcome('failed', {'reason': f'{obj!r} cannot be transferred'})
         goal = self._destination_goal(context, obj, target)
         safe = _above(goal, context.geometry.transfer_gap)
-        phase = 'transfer' if obj in context.spec.tool_names else 'transfer_lin'
-        self._move(context, safe, phase)
+        self._move(context, safe, 'transfer')
         context.transfer_target = target
         context.mark_approach(safe, (obj, target))
         return SkillOutcome('success', {

@@ -40,34 +40,46 @@ def down_pose(tilt_deg: float = 0.0, xyz=(0.4, 0.0, 1.2)) -> Transform:
     )
 
 
-def test_work_joint7_is_zero_and_corridor_is_inclusive():
+def test_work_joint7_is_the_preference_not_a_hard_corridor():
     limits = load_limits(LIMITS)
     assert limits.work_joint7_rad == 0.0
-    assert limits.joint7_min_rad == -math.pi / 2
-    assert limits.joint7_max_rad == math.pi / 2
     checker = MotionPolicy(limits)
-    for boundary in (-math.pi / 2, math.pi / 2):
+
+
+def test_safe_joint7_beyond_the_old_ninety_degree_band_is_accepted():
+    checker = policy()
+    for value in (-2.0, 2.0):
         result = checker.validate_trajectory(
-            [point(boundary)], [down_pose()],
+            [point(value)], [down_pose()],
         )
         assert result.ok, result.reason
-
-
-def test_point_outside_the_corridor_is_rejected():
-    result = policy().validate_trajectory(
-        [point(-math.pi / 2 - 0.01)], [down_pose()],
-    )
-    assert result.ok is False
-    assert 'joint7' in result.reason
-
-
-def test_intermediate_point_outside_the_corridor_rejects_the_whole_path():
-    result = policy().validate_trajectory(
-        [point(-1.2), point(-1.6), point(-1.2)],
+    result = checker.validate_trajectory(
+        [point(-1.8), point(-2.0), point(-1.8)],
         [down_pose(), down_pose(), down_pose()],
     )
+    assert result.ok, result.reason
+    assert result.details['max_j7_deviation_rad'] == pytest.approx(2.0)
+
+
+def test_real_joint_limit_is_still_enforced():
+    checker = MotionPolicy(
+        load_limits(LIMITS),
+        joint_limits={
+            'joint1': (-2.967, 2.967),
+            'joint2': (-2.09, 2.09),
+            'joint3': (-2.967, 2.967),
+            'joint4': (-2.09, 2.09),
+            'joint5': (-2.967, 2.967),
+            'joint6': (-2.0027, 2.0027),
+            'joint7': (-3.05, 3.05),
+        },
+    )
+    result = checker.validate_trajectory(
+        [point(3.2)], [down_pose()],
+    )
     assert result.ok is False
     assert 'joint7' in result.reason
+    assert 'joint limit' in result.reason
 
 
 def test_near_pi_joint_jump_is_rejected():
@@ -170,3 +182,4 @@ def test_details_report_the_checked_extremes():
     assert result.details['min_j7'] == pytest.approx(-0.2)
     assert result.details['max_j7'] == pytest.approx(0.1)
     assert result.details['max_tilt_deg'] == pytest.approx(4.0, abs=1e-6)
+    assert result.details['preferred_j7_rad'] == pytest.approx(0.0)

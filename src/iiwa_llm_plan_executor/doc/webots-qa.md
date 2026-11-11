@@ -17,8 +17,11 @@ colcon test --base-paths src --packages-select \
 colcon test-result --verbose
 ```
 
-Result: build of 10 packages succeeded; `361 tests, 0 errors, 0 failures,
-0 skipped`.
+Result: build of 10 packages succeeded; `365 tests, 0 errors, 0 failures,
+0 skipped` for the four runtime packages.  The new camera/tool geometry tests
+in `iiwa_utils` pass separately (`7 passed`); four pre-existing
+`test_body_hatch_worlds.py` cases still fail because their `.wbt`/`.proto`
+files are absent from this checkout.
 
 `git diff --check` is clean.
 
@@ -166,3 +169,48 @@ recovery issue: `grasp_failed` leads through `inspect_state: holding` to
 validator therefore rejects that recovery branch with its own ownership reason
 (`a_retry_pick ... while holding 'cap'`); this does not repair the model graph.
 Completion must not be claimed for this graph.
+
+## Motion planning fix (PTP/LIN, camera collision model)
+
+### Reproduction before the change
+
+The failing `approach(cap)` request was captured with diagnostics:
+
+```text
+phase=approach
+effective_phase=transfer_lin
+pipeline=pilz_industrial_motion_planner
+planner_id=LIN
+goal_xyz=(0.6, -0.22, 0.206667)          # base_link
+goal_quat=(-0.382683, 0.92388, 0, 0)
+start=(~0, ~0, ~0, ~0, ~0, ~0, ~0)
+MoveIt error: NO_IK_SOLUTION
+```
+
+All three attempts failed in IK.  The old error text about the J7 corridor was
+therefore misleading: the failing planner was LIN and the actual cause was
+`NO_IK_SOLUTION`, not a joint-7 boundary.
+
+### After the change
+
+* `detect(cap) → approach(cap)` in Webots: both nodes succeeded.  Transfers
+  and approaches used `pilz_industrial_motion_planner/PTP`; the measured
+  minimum sampled clearance was **0.0288 m** (required 0.003 m), maximum J7
+  was 0.875 rad.
+* A separate J7-rotation probe moved the arm to the `work` posture with
+  `joint7 = 2.0 rad` and then executed `approach(cap)`.  The accepted sampled
+  trajectory covered `joint7 = -1.225 … 2.000 rad`, i.e. well beyond the old
+  ±90 deg boundary, with no joint-limit, self-collision or clearance failure;
+  measured clearance was again **0.0288 m**.
+* Camera geometry: `camera_corner` and `camera_hand` keep at least **35 mm**
+  AABB clearance to `link6`/`link7` at `home` and `work`.  The D455 collision
+  box now matches its visible bounds.  Only constructive fixed contact pairs
+  are disabled in `tools.yaml` and the regenerated SRDF; all camera-to-robot
+  pairs remain checked.
+* Tests: `pytest src/iiwa_llm_plan_executor/test` → **122 passed**; camera /
+  tool collision + TCP tests in `iiwa_utils` → **7 passed**.  The existing
+  unrelated
+  `test_body_hatch_worlds.py` still fails because its world files are absent
+  from this checkout; it is not part of the motion change.
+
+Physical robot was not tested.

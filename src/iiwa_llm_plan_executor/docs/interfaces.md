@@ -160,22 +160,41 @@ is required; RGB/D is used for liveness only.
 
 ## Constrained motion adapter
 
-`MotionPolicy` (`config/motion_limits.yaml`) checks every point before the
-controller sees a plan:
+`MotionPolicy` (`config/motion_limits.yaml`) checks every sampled point before
+the controller sees a plan:
 
-* `joint_7` must stay inside `work_reference_rad +/- corridor_rad`
-  (0 +/- 90 deg; boundaries inclusive).
+* Every joint stays inside the real per-joint position limits
+  (`iiwa_config/config/moveit/joint_limits.yaml`, soft limits included).
+  Joint 7 keeps the neutral `work` value as a documented preference, but the
+  former +/-90 deg hard corridor is no longer a rejection boundary; safe paths
+  may use the full joint range.
 * The tcp local +Z (working direction) must point down within
   `max_tilt_deg` (10 deg).
 * Consecutive points may not jump more than `max_joint_jump_rad` (0.6 rad) or
   `max_cartesian_jump_m` (0.15 m); the first point must match the measured
   joints used as IK seed.
+* The planned trajectory is resampled in joint space at
+  `trajectory.max_sample_step_rad` (0.01 rad).  Every sample is checked for
+  joint limits, self-collision, scene collision, camera clearance and tcp
+  orientation before execution.
 * `joint_states` and the planning scene freshness are checked before planning.
+
+Motion selection:
+
+| Purpose | Motion |
+| --- | --- |
+| between `work`/`home`, to an object, tool or placement point, part transfer, safe alignment | Pilz PTP |
+| axial contact, axial lift/retreat, dispense contour | Pilz LIN |
+
+If a lateral PTP would start in a contact pose, the skill first performs the
+axial LIN retreat to the saved approach height.  The `dispense` contour itself
+stays a continuous LIN contour; only its approach and retreat use PTP/axial
+rules.
 
 One explicit exception is recorded: if the measured start posture is not yet the
 downward working posture (the calibrated home pose points the tip up) and the
-gripper is empty, the first reorientation to `work` is allowed to pass through
-larger tilt angles.  Joint 7, joint jumps, Cartesian jumps and the final
+gripper is empty, the first reorientation to `work` may pass through larger
+tilt angles.  Joint limits, joint jumps, Cartesian jumps and the final
 downward orientation are still checked, and the event records
 `reorientation: true`.  A reorientation with a held object is always rejected.
 
@@ -183,26 +202,32 @@ downward orientation are still checked, and the event records
 
 ```python
 arm.set_start_state(robot_state=clamped_robot_state)  # measured joints as IK seed
-arm.set_path_constraints(constraints)                 # hard joint_7 corridor
+arm.set_path_constraints(empty_constraints)           # no artificial J7 corridor
 arm.set_goal_state(pose_stamped_msg=..., pose_link='tcp')
 result = arm.plan(single_plan_parameters=params)
-result.trajectory.get_robot_trajectory_msg()          # every point checked
+result.trajectory.get_robot_trajectory_msg()
+# resample + joint/self/world/camera checks, then:
 moveit.execute(result.trajectory, controllers=[])
 ```
 
-The path constraint is a `JointConstraint` on `joint7` with
-`tolerance_below/above = corridor_rad`.  The planner applies it on OMPL
-transfers.  In this MoveIt/Pilz installation the orientation path constraint is
-not honored reliably, so the 10 deg working-tilt limit is enforced **after**
-planning by `MotionPolicy` on every returned point; the planner also gets a
-wider internal orientation tolerance for its goal sampling.  Tool transits use
-OMPL with the J7 corridor, part transits and approaches use Cartesian LIN, and
-short contact moves use LIN.  A plan that cannot be produced or that violates
-the point-wise checks is stopped; there is no unconstrained `MoveToPose`
-fallback.
+The planner never falls back to an unconstrained `MoveToPose` action.  If a
+plan is missing, the status names the phase, pipeline, planner id, target tcp
+pose, start joints and MoveIt error code (for example `NO_IK_SOLUTION`).  If
+our validation rejects a plan, the status names the real cause: joint limit,
+jump, orientation or the colliding link pair with the measured minimum
+distance and required clearance.
 
 The measured start state is clamped to the same soft joint limits used by
 MoveIt (`soft_min_position`/`soft_max_position`) before it becomes the IK
 seed.  Without that clamp a Webots-controller overshoot of ~0.00003 rad makes
 `CheckStartStateBounds` abort every following plan.
+
+Camera collision model: the generated SRDF disables only constructive
+contact pairs (`link7-camera_holder`, `camera_holder-patron`,
+`camera_holder-camera_corner`, `camera_corner-camera_hand`,
+`camera_holder-camera_hand`).  Every camera-to-robot pair, including
+`camera_hand-link6` and `camera_corner-link6`, remains checked.  The D455
+collision box matches its visible bounds; the measured AABB clearance from the
+camera corner/hand to link6/link7 is at least 35 mm at `home` and `work`, and
+the planner requires a non-zero minimum sampled clearance of 3 mm.
 

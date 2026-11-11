@@ -86,26 +86,49 @@ def _matrix_transform(matrix, parent: str, child: str) -> Transform:
     )
 
 
+def _error_code_name(value: int | None) -> str:
+    if value is None:
+        return 'unknown'
+    from moveit_msgs.msg import MoveItErrorCodes
+
+    for name in dir(MoveItErrorCodes):
+        if name.isupper() and getattr(MoveItErrorCodes, name) == value:
+            return f'{name}({value})'
+    return f'code {value}'
+
+
+def _format_contacts(result: Any) -> str:
+    contacts = getattr(result, 'contacts', None)
+    pairs: list[str] = []
+    try:
+        for key in contacts.keys():
+            pairs.append(str(key))
+    except Exception:
+        try:
+            for item in contacts:
+                pairs.append(str(item))
+        except Exception:
+            pass
+    return ', '.join(sorted(set(pairs))) if pairs else 'unknown pair'
+
+
 class MoveItPyPlanner:
     """Thin wrapper around MoveItPy with the constrained plan request."""
 
     PHASES = {
-        # Pilz does not honor MoveIt path constraints, while ValidateSolution
-        # rejects trajectories that leave the joint-7 corridor.  Transfers and
-        # approaches therefore use the constraint-aware OMPL pipeline.
-        'transfer': ('ompl', 'RRTConnectkConfigDefault', 0.20, 10.0),
-        'approach': ('ompl', 'RRTConnectkConfigDefault', 0.18, 10.0),
-        'retreat': ('pilz_industrial_motion_planner', 'LIN', 0.18, 2.0),
-        'observe': ('ompl', 'RRTConnectkConfigDefault', 0.18, 10.0),
-        'ptp_transfer': ('pilz_industrial_motion_planner', 'PTP', 0.25, 2.0),
-        'transfer_lin': ('pilz_industrial_motion_planner', 'LIN', 0.15, 2.0),
-        # Short axial segments keep the working orientation; LIN remains the
-        # deterministic choice and is still checked point by point.
+        # PTP: free-space changes between working points, objects, tools,
+        # placement points and safe alignments.  No J7 path constraint; the
+        # full sampled trajectory is checked afterwards.
+        'transfer': ('pilz_industrial_motion_planner', 'PTP', 0.25, 2.0),
+        'approach': ('pilz_industrial_motion_planner', 'PTP', 0.18, 2.0),
+        'observe': ('pilz_industrial_motion_planner', 'PTP', 0.18, 2.0),
+        'align': ('pilz_industrial_motion_planner', 'PTP', 0.10, 2.0),
+        'escape': ('pilz_industrial_motion_planner', 'PTP', 0.15, 2.0),
+        # LIN: axial contact/retreat and the continuous dispense contour.
         'contact': ('pilz_industrial_motion_planner', 'LIN', 0.06, 2.0),
         'lower': ('pilz_industrial_motion_planner', 'LIN', 0.06, 2.0),
-        'align': ('pilz_industrial_motion_planner', 'LIN', 0.06, 2.0),
+        'retreat': ('pilz_industrial_motion_planner', 'LIN', 0.12, 2.0),
         'dispense': ('pilz_industrial_motion_planner', 'LIN', 0.09, 2.0),
-        'escape': ('ompl', 'RRTConnectkConfigDefault', 0.20, 10.0),
     }
 
     def __init__(
@@ -130,6 +153,7 @@ class MoveItPyPlanner:
         self._arm = None
         self._model = None
         self._group = None
+        self._scene_monitor = None
         self._stopped = False
 
     # ------------------------------------------------------------------ setup
@@ -149,6 +173,7 @@ class MoveItPyPlanner:
             self._model = self._moveit.get_robot_model()
             self._arm = self._moveit.get_planning_component(self.planning_group)
             self._group = self._model.get_joint_model_group(self.planning_group)
+            self._scene_monitor = self._moveit.get_planning_scene_monitor()
         except Exception as error:
             raise PlannerError(f'MoveItPy is unavailable: {error}') from error
 
@@ -162,41 +187,10 @@ class MoveItPyPlanner:
         )
 
     def _constraints(self, goal: Transform, *, include_orientation: bool = True):
-        from moveit_msgs.msg import Constraints, JointConstraint, OrientationConstraint
+        del goal, include_orientation
+        from moveit_msgs.msg import Constraints
 
-        limits = self.policy.limits
-        constraints = Constraints()
-        joint = JointConstraint()
-        joint.joint_name = 'joint7'
-        joint.position = float(limits.work_joint7_rad)
-        joint.tolerance_above = float(limits.joint7_corridor_rad)
-        joint.tolerance_below = float(limits.joint7_corridor_rad)
-        joint.weight = 1.0
-        constraints.joint_constraints.append(joint)
-
-        # The model uses the same joint order as the Webots controller.  With
-        # a hard joint-7 corridor, this constraint prevents the IK branch that
-        # would flip joint 7 by about -180 degrees.
-        if not include_orientation:
-            return constraints
-        orientation = OrientationConstraint()
-        orientation.header.frame_id = self.pose_frame
-        orientation.link_name = self.pose_link
-        quaternion = Rotation.from_matrix(goal.matrix).as_quat()
-        orientation.orientation.x = float(quaternion[0])
-        orientation.orientation.y = float(quaternion[1])
-        orientation.orientation.z = float(quaternion[2])
-        orientation.orientation.w = float(quaternion[3])
-        # Keep the planner inside a stricter band than the final policy check
-        # (10 deg).  OMPL interpolation can otherwise drift a fraction of a
-        # degree above the policy boundary and reject an otherwise valid path.
-        tilt = math.radians(float(limits.max_tilt_deg) * 2.0)
-        orientation.absolute_x_axis_tolerance = tilt
-        orientation.absolute_y_axis_tolerance = tilt
-        orientation.absolute_z_axis_tolerance = tilt
-        orientation.weight = 1.0
-        constraints.orientation_constraints.append(orientation)
-        return constraints
+        return Constraints()
 
     def _parameters(self, phase: str):
         from moveit.planning import PlanRequestParameters
@@ -224,6 +218,13 @@ class MoveItPyPlanner:
         if self._stopped:
             raise PlannerError('planner is stopped')
         base_goal = self._goal_in_pose_frame(goal)
+        effective_phase = phase
+        print(
+            '[iiwa_llm_plan_executor] plan request '
+            f'phase={phase!r} goal_xyz={tuple(round(float(v), 6) for v in base_goal.xyz)} '
+            f'goal_quat={tuple(round(float(v), 6) for v in Rotation.from_matrix(base_goal.matrix).as_quat())}',
+            flush=True,
+        )
         try:
             self._arm.set_start_state_to_current_state()
             start_state = self._arm.get_start_state()
@@ -266,6 +267,12 @@ class MoveItPyPlanner:
             self._arm.set_start_state(robot_state=clamped_state)
             start_state = self._arm.get_start_state()
             current = tuple(clamped)
+            print(
+                '[iiwa_llm_plan_executor] plan start '
+                f'measured={tuple(round(float(v), 6) for v in measured)} '
+                f'clamped={tuple(round(float(v), 6) for v in current)}',
+                flush=True,
+            )
             start_matrix = start_state.get_global_link_transform(self.pose_link)
             start_tcp = _matrix_transform(
                 start_matrix, self.pose_frame, self.pose_link,
@@ -275,22 +282,20 @@ class MoveItPyPlanner:
                 and held_object is None
             )
             effective_phase = phase
-            if phase == 'approach':
-                # Short approach segments are Cartesian and keep the tip down.
-                effective_phase = 'transfer_lin'
-            # Tool transfers use OMPL with the J7 corridor; part transfers
-            # use the explicit transfer_lin phase from the skill.  Working
-            # tilt is always checked point by point by MotionPolicy.
-            if effective_phase in (
-                'contact', 'lower', 'align', 'dispense', 'retreat',
-                'transfer_lin',
-            ):
-                from moveit_msgs.msg import Constraints
-                self._arm.set_path_constraints(Constraints())
-            else:
-                self._arm.set_path_constraints(self._constraints(
-                    base_goal, include_orientation=False,
-                ))
+            # J7 has no artificial +/-90 deg corridor and PTP/LIN goal IK is
+            # allowed to use the whole joint range.  Safety comes from the
+            # dense post-plan joint/self/world/orientation checks below.
+            from moveit_msgs.msg import Constraints
+            self._arm.set_path_constraints(Constraints())
+            phase_params = self.PHASES.get(
+                effective_phase, self.PHASES['transfer'],
+            )
+            print(
+                '[iiwa_llm_plan_executor] plan pipeline '
+                f'phase={phase!r} pipeline={phase_params[0]!r} '
+                f'planner_id={phase_params[1]!r} planning_time={phase_params[3]}',
+                flush=True,
+            )
             self._arm.set_goal_state(
                 pose_stamped_msg=_pose_message(base_goal, self.pose_frame),
                 pose_link=self.pose_link,
@@ -301,12 +306,30 @@ class MoveItPyPlanner:
         except PlannerError:
             raise
         except Exception as error:
+            print(
+                '[iiwa_llm_plan_executor] plan exception '
+                f'phase={phase!r} effective_phase={effective_phase!r} '
+                f'error={error!r}',
+                flush=True,
+            )
             raise PlannerError(f'constrained planning failed: {error}') from error
-        if not result or result.trajectory is None:
+        if result is None or result.trajectory is None:
+            error_code = (
+                None if result is None
+                else getattr(result.error_code, 'val', None)
+            )
+            error_name = _error_code_name(error_code)
+            print(
+                '[iiwa_llm_plan_executor] plan empty '
+                f'phase={phase!r} pipeline={effective_phase!r} '
+                f'error_code={error_name} goal_xyz={base_goal.xyz}',
+                flush=True,
+            )
             raise PlannerError(
-                f'no constrained trajectory for phase {phase!r} '
-                f'(joint7 corridor {self.policy.limits.joint7_min_rad:.3f}..'
-                f'{self.policy.limits.joint7_max_rad:.3f} rad)'
+                f'planning failed for phase {phase!r} '
+                f'({effective_phase}, error {error_name}); '
+                f'goal_xyz={tuple(round(float(v), 6) for v in base_goal.xyz)} '
+                f'start={tuple(round(float(v), 6) for v in current)}'
             )
         message = result.trajectory.get_robot_trajectory_msg()
         names = list(message.joint_trajectory.joint_names)
@@ -316,20 +339,24 @@ class MoveItPyPlanner:
                 f'planned trajectory misses joints {sorted(set(expected) - set(names))}'
             )
         index = {name: position for position, name in enumerate(names)}
-        points: list[tuple[float, ...]] = []
+        raw_points: list[tuple[float, ...]] = []
+        for waypoint in message.joint_trajectory.points:
+            raw_points.append(tuple(
+                float(waypoint.positions[index[name]]) for name in expected
+            ))
+        points = self._densify(
+            raw_points, self.policy.limits.max_sample_step_rad,
+        )
         poses: list[Transform] = []
         from moveit.core.robot_state import RobotState
 
         state = RobotState(self._model)
-        for waypoint in message.joint_trajectory.points:
-            ordered = tuple(
-                float(waypoint.positions[index[name]]) for name in expected
-            )
-            points.append(ordered)
+        for ordered in points:
             state.set_joint_group_positions(self.planning_group, ordered)
             state.update()
             matrix = state.get_global_link_transform(self.pose_link)
             poses.append(_matrix_transform(matrix, self.pose_frame, self.pose_link))
+        clearance = self._check_collisions(points)
         return PlannedMotion(
             points=points,
             tcp_poses=poses,
@@ -343,8 +370,109 @@ class MoveItPyPlanner:
                     effective_phase, self.PHASES['transfer'],
                 )[:2],
                 'reorientation': reorientation,
+                'raw_points': len(raw_points),
+                'sampled_points': len(points),
+                'min_clearance_m': self.policy.limits.min_clearance_m,
+                'measured_clearance_m': clearance,
             },
         )
+
+    @staticmethod
+    def _densify(
+        points: list[tuple[float, ...]],
+        max_step: float,
+    ) -> list[tuple[float, ...]]:
+        if not points:
+            return []
+        result = [points[0]]
+        for previous, current_point in zip(points, points[1:]):
+            delta = max(
+                abs(a - b) for a, b in zip(current_point, previous)
+            )
+            steps = max(1, int(math.ceil(delta / max_step)))
+            for step in range(1, steps + 1):
+                fraction = step / steps
+                result.append(tuple(
+                    a + (b - a) * fraction
+                    for a, b in zip(previous, current_point)
+                ))
+        return result
+
+    def _check_collisions(self, points: list[tuple[float, ...]]) -> float | None:
+        if self._scene_monitor is None:
+            raise PlannerError('planning scene monitor is unavailable')
+        from moveit.core.collision_detection import (
+            CollisionRequest,
+            CollisionResult,
+        )
+        from moveit.core.robot_state import RobotState
+
+        requirement = float(self.policy.limits.min_clearance_m)
+        measured_min: float | None = None
+        state = RobotState(self._model)
+        with self._scene_monitor.read_only() as scene:
+            acm = getattr(scene, 'allowed_collision_matrix', None)
+            for index, sample in enumerate(points):
+                state.set_joint_group_positions(self.planning_group, sample)
+                state.update()
+                request = CollisionRequest()
+                request.distance = True
+                request.contacts = True
+                request.max_contacts = 20
+                request.max_contacts_per_pair = 2
+                collided = False
+                checked = False
+                last_error = None
+                distances: list[float] = []
+                contacts: list[str] = []
+                for function in (
+                    'check_collision_unpadded', 'check_self_collision',
+                ):
+                    for arguments in (
+                        (request, CollisionResult(), state, acm),
+                        (request, CollisionResult(), state),
+                    ):
+                        if acm is None and len(arguments) == 4:
+                            continue
+                        try:
+                            result = arguments[1]
+                            hit = bool(getattr(scene, function)(*arguments))
+                            checked = True
+                            collided = collided or hit
+                        except TypeError as error:
+                            last_error = error
+                            continue
+                        try:
+                            distances.append(float(result.distance))
+                        except Exception:
+                            pass
+                        formatted = _format_contacts(result)
+                        if formatted != 'unknown pair':
+                            contacts.append(formatted)
+                if not checked:
+                    raise PlannerError(
+                        'collision checking is unavailable: '
+                        f'{last_error}'
+                    )
+                distance = min(distances) if distances else None
+                if distance is not None:
+                    measured_min = (
+                        distance if measured_min is None
+                        else min(measured_min, distance)
+                    )
+                if collided or (
+                    distance is not None and distance < requirement
+                ):
+                    pairs = ', '.join(sorted(set(contacts))) or 'unknown pair'
+                    measured = (
+                        'unknown' if distance is None else f'{distance:.4f} m'
+                    )
+                    raise PlannerError(
+                        f'collision/clearance failure at sample {index}: '
+                        f'{pairs}; minimum distance {measured}, '
+                        f'required {requirement:.4f} m'
+                    )
+        return measured_min
 
     def execute(self, planned: PlannedMotion) -> bool:
         self._ensure()
@@ -382,6 +510,7 @@ class MoveItBackend:
         scene_guard: Callable[[], tuple[bool, str]] | None = None,
         current_joints: Callable[[], tuple[float, ...] | None] | None = None,
         before_plan: Callable[[], None] | None = None,
+        collision_checker: Callable[[Any], str | None] | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.geometry = geometry
@@ -391,6 +520,7 @@ class MoveItBackend:
         self._scene_guard = scene_guard
         self._current_joints = current_joints
         self._before_plan = before_plan
+        self._collision_checker = collision_checker
         self._on_event = on_event
         self.stopped = False
         self.stop_reason: str | None = None
@@ -482,9 +612,20 @@ class MoveItBackend:
             except Exception:
                 pass
             return self._fail(
-                f'motion policy rejected every constrained trajectory: {last_error}',
+                f'motion policy rejected every planned trajectory: {last_error}',
                 'motion_limit',
             )
+        if self._collision_checker is not None:
+            try:
+                collision_reason = self._collision_checker(planned)
+            except Exception as error:
+                collision_reason = f'collision check failed: {error}'
+            if collision_reason:
+                try:
+                    self.planner.stop()
+                except Exception:
+                    pass
+                return self._fail(collision_reason, 'collision')
         target = (
             goal
             if goal.parent == 'base_link'
@@ -505,7 +646,7 @@ class MoveItBackend:
             )
         self._emit(
             event='motion_planned', phase=phase, held_object=held_object,
-            **check.details,
+            planner_details=dict(planned.details), **check.details,
         )
         try:
             executed = self.planner.execute(planned)

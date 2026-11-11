@@ -321,7 +321,9 @@ class PlannerExecutorNode(Node):
         self.limits = load_limits(
             str(self.get_parameter('motion_limits_path').value),
         )
-        self.policy = MotionPolicy(self.limits)
+        self.policy = MotionPolicy(
+            self.limits, self._read_joint_limits(),
+        )
         self.close_inspection = frozenset(
             str(value) for value in self.get_parameter(
                 'close_inspection_objects',
@@ -458,10 +460,8 @@ class PlannerExecutorNode(Node):
         )
 
     # ------------------------------------------------------------------ setup
-    def _make_planner(self):
+    def _read_joint_limits(self) -> dict[str, tuple[float, float]]:
         import yaml
-
-        from .moveit_backend import MoveItPyPlanner
 
         limits_path = Path(str(self.get_parameter('joint_limits_path').value))
         joint_limits = {}
@@ -482,12 +482,17 @@ class PlannerExecutorNode(Node):
             self.get_logger().warning(
                 f'falling back to model joint bounds: {error}'
             )
+        return joint_limits
+
+    def _make_planner(self):
+        from .moveit_backend import MoveItPyPlanner
+
         return MoveItPyPlanner(
             self.geometry,
             self.policy,
             planning_group=str(self.get_parameter('planning_group').value),
             pose_link=str(self.get_parameter('pose_link').value),
-            joint_limits=joint_limits,
+            joint_limits=self._read_joint_limits(),
         )
 
     def _now(self) -> float:

@@ -4,8 +4,8 @@
 schema_version: 1
 
 joint7:
-  # The neutral work pose has joint_7 = 0 rad.  The first-stage hard corridor
-  # is +/-90 degrees around it; the -180 degree IK branch is forbidden.
+  # Preferred value is the neutral work pose (joint_7 = 0).  This is a
+  # preference only; the real per-joint limits below remain authoritative.
   work_reference_rad: 0.0
   corridor_rad: 1.5707963267948966
 
@@ -19,7 +19,14 @@ trajectory:
   max_cartesian_jump_m: 0.15
   # The planned first point must match the measured joints used as IK seed.
   start_tolerance_rad: 0.35
+  # Dense joint-space resampling used for collision/orientation validation.
+  max_sample_step_rad: 0.01
 
 freshness:
   joint_state_max_age_sec: 1.0
   scene_max_age_sec: 2.0
+
+collision:
+  # Minimum accepted collision distance (metres) for every sampled state.
+  # Camera-vs-robot pairs are enabled in the generated SRDF.
+  min_clearance_m: 0.003

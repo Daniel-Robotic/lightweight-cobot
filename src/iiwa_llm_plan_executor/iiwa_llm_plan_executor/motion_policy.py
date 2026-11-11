@@ -1,8 +1,8 @@
-"""Trajectory-level TCP/J7 limits applied before anything reaches the controller.
+"""Trajectory-level checks applied before anything reaches the controller.
 
-The MoveToPose action cannot express a joint-7 corridor or a working tilt
-limit, so every plan produced by the planner adapter is checked here, point
-by point, before execution.
+Every PTP/LIN plan is resampled and checked for joint limits, self/world
+collision, working orientation and joint jumps.  The old hard +/-90 deg joint-7
+corridor is only a preference; real joint limits remain authoritative.
 """
 from __future__ import annotations
 
@@ -31,9 +31,14 @@ class MotionLimits:
     joint_state_max_age_sec: float
     scene_max_age_sec: float
     start_tolerance_rad: float = 0.35
+    min_clearance_m: float = 0.003
+    max_sample_step_rad: float = 0.01
 
     @property
     def joint7_min_rad(self) -> float:
+        # Kept for diagnostics/compatibility only.  It is no longer a hard
+        # rejection boundary: safe paths may leave the preferred +/-90 deg
+        # band while remaining inside the real joint limits.
         return self.work_joint7_rad - self.joint7_corridor_rad
 
     @property
@@ -79,10 +84,23 @@ def load_limits(path: Path | str) -> MotionLimits:
     scene_age = _finite(
         freshness.get('scene_max_age_sec'), 'freshness.scene_max_age_sec',
     )
+    collision = raw.get('collision') or {}
+    min_clearance = _finite(
+        collision.get('min_clearance_m', 0.003),
+        'collision.min_clearance_m',
+    )
     if corridor <= 0 or tilt <= 0 or jump <= 0 or cartesian <= 0:
         raise MotionPolicyError('motion limits must be positive')
     if joint_age <= 0 or scene_age <= 0:
         raise MotionPolicyError('freshness limits must be positive')
+    if min_clearance < 0:
+        raise MotionPolicyError('collision.min_clearance_m must be non-negative')
+    sample_step = _finite(
+        trajectory.get('max_sample_step_rad', 0.01),
+        'trajectory.max_sample_step_rad',
+    )
+    if sample_step <= 0:
+        raise MotionPolicyError('trajectory.max_sample_step_rad must be positive')
     return MotionLimits(
         work_joint7_rad=_finite(
             joint7.get('work_reference_rad'), 'joint7.work_reference_rad',
@@ -97,6 +115,8 @@ def load_limits(path: Path | str) -> MotionLimits:
             trajectory.get('start_tolerance_rad', 0.35),
             'trajectory.start_tolerance_rad',
         ),
+        min_clearance_m=min_clearance,
+        max_sample_step_rad=sample_step,
     )
 
 
@@ -119,8 +139,16 @@ def tcp_tilt_deg(pose: Transform) -> float:
 
 
 class MotionPolicy:
-    def __init__(self, limits: MotionLimits) -> None:
+    def __init__(
+        self,
+        limits: MotionLimits,
+        joint_limits: dict[str, tuple[float, float]] | None = None,
+    ) -> None:
         self.limits = limits
+        self.joint_limits = dict(joint_limits or {})
+        self.joint_names = tuple(
+            f'joint{index}' for index in range(1, 8)
+        )
 
     @property
     def work_joint7(self) -> float:
@@ -189,19 +217,29 @@ class MotionPolicy:
 
         min_j7 = min(point[6] for point in parsed)
         max_j7 = max(point[6] for point in parsed)
+        j7_deviation = max(
+            abs(value - self.limits.work_joint7_rad) for value in (min_j7, max_j7)
+        )
         epsilon = 1e-9
-        if (
-            min_j7 < self.limits.joint7_min_rad - epsilon
-            or max_j7 > self.limits.joint7_max_rad + epsilon
-        ):
-            return MotionCheck(
-                False,
-                'joint7 leaves the hard corridor '
-                f'[{self.limits.joint7_min_rad:.3f}, '
-                f'{self.limits.joint7_max_rad:.3f}] rad '
-                f'(trajectory {min_j7:.3f}..{max_j7:.3f})',
-                {'min_j7': min_j7, 'max_j7': max_j7},
-            )
+        for index, values in enumerate(parsed):
+            for joint_index, value in enumerate(values):
+                name = self.joint_names[joint_index]
+                bounds = self.joint_limits.get(name)
+                if bounds is None:
+                    continue
+                low, high = float(bounds[0]), float(bounds[1])
+                if value < low - epsilon or value > high + epsilon:
+                    return MotionCheck(
+                        False,
+                        f'{name} at point {index} is {value:.4f} rad, '
+                        f'outside the joint limit [{low:.4f}, {high:.4f}]',
+                        {
+                            'joint': name,
+                            'value': value,
+                            'limit': [low, high],
+                            'point': index,
+                        },
+                    )
 
         max_tilt = 0.0
         start_tilt = (
@@ -281,6 +319,8 @@ class MotionPolicy:
                 'points': len(parsed),
                 'min_j7': min_j7,
                 'max_j7': max_j7,
+                'max_j7_deviation_rad': j7_deviation,
+                'preferred_j7_rad': self.limits.work_joint7_rad,
                 'max_tilt_deg': max_tilt,
                 'reorientation': reorientation,
                 'max_joint_jump_rad': max_jump,
