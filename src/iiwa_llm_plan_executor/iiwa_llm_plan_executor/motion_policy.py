@@ -218,9 +218,9 @@ class MotionPolicy:
             start_tilt > self.limits.max_tilt_deg + epsilon
             and held_object is None
         )
-        # 0.1 deg is the measurement/numerical band of the FK check; the
-        # planner is constrained to a stricter 8 deg band.
-        tilt_epsilon_deg = 0.25
+        # Allow only floating-point roundoff; a planned path must obey the
+        # configured tilt limit rather than widening it by a visible angle.
+        tilt_epsilon_deg = 1e-6
         tilt_limit_deg = self.limits.max_tilt_deg + tilt_epsilon_deg
         for index, pose in enumerate(tcp_poses):
             if not isinstance(pose, Transform):

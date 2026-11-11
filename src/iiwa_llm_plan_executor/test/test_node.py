@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from iiwa_experement.geometry import load_geometry
 from iiwa_experement.scenario import load_scenario
 from iiwa_llm_plan_executor.engine import AdmissionResult, RunStatus
@@ -78,6 +80,15 @@ def test_plan_qos_is_transient_local_depth_one():
     assert qos.depth == 1
 
 
+def test_stationary_wait_rejects_a_robot_that_keeps_moving():
+    node = object.__new__(PlannerExecutorNode)
+    node._last_joint_velocity = (0.2,) * 7
+    with pytest.raises(RuntimeError, match='did not become stationary'):
+        PlannerExecutorNode._wait_stationary(
+            node, timeout_sec=0.02, tolerance=0.01,
+        )
+
+
 def test_safe_name_and_run_log_are_machine_readable(tmp_path):
     assert _safe_name('run/one 1') == 'run_one_1'
     log = RunLog(str(tmp_path))
@@ -133,6 +144,17 @@ def test_rejected_submit_returns_false_and_publishes_the_reason():
     assert response.success is False
     assert published[-1]['state'] == 'rejected'
     assert 'replan_required' in published[-1]['reason']
+
+
+def test_replan_scene_status_keeps_the_run_id():
+    node = fake_node()
+    node._last_status = {'run_id': 'run-42', 'state': 'running'}
+    envelope = {'scene_revision': 7, 'scene_json': {'components': []}}
+    PlannerExecutorNode._on_replan(node, envelope)
+    payload = json.loads(node._status_publisher.messages[-1])
+    assert payload['run_id'] == 'run-42'
+    assert payload['scene_revision'] == 7
+    assert payload['scene'] == envelope
 
 
 def test_invalid_submit_json_is_rejected_without_calling_the_engine():

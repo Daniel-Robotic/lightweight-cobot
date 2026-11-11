@@ -88,11 +88,13 @@ bounds.  Out-of-corridor and stale-state graphs stopped without execution.
    part transits/approaches/contact, and enforces all tilt/J7/jump limits after
    planning. This is a planning limitation, not a fallback to an unconstrained
    `MoveToPose` action.
-3. **Tilt numerical band.** A few OMPL/LIN paths were returned with 10.03–10.16
-   deg tilt against the 10 deg policy; the policy uses a 0.25 deg numerical
-   band and rejects larger values. Some approach paths reached 11–12 deg and
-   were rejected safely. A clean solution requires a planner/adapter that
-   honors the orientation constraint end-to-end.
+3. **Tilt limit.** The original Webots runs returned some OMPL/LIN paths at
+   10.03–10.16 deg tilt against the 10 deg limit; the previous 0.25 deg
+   allowance accepted them. The review on 2026-11-11 replaced that allowance
+   with floating-point roundoff only, so those paths are now rejected before
+   execution. This stricter policy passed package tests but has not yet been
+   rechecked in Webots. A planner/adapter that honors the orientation
+   constraint end-to-end is still needed for reliable execution.
 4. **Controller start overshoot.** Webots can settle a joint ~3e-5 rad outside
    MoveIt's soft limit; the start state is now clamped to the same
    `soft_min_position`/`soft_max_position` band before planning.

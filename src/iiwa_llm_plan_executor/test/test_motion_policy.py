@@ -91,7 +91,7 @@ def test_tcp_tilt_above_ten_degrees_is_rejected():
     assert 'tilt' in rejected.reason
     assert checker.validate_trajectory(
         [point(0.0)], [down_pose(10.05)],
-    ).ok
+    ).ok is False
 
 
 def test_an_empty_gripper_may_reorient_to_the_working_posture():

@@ -149,7 +149,8 @@ class SkillRegistry:
         goal: Transform,
         phase: str,
     ) -> Any:
-        outcome = self.motion.plan_and_execute(goal, phase, context.held_object)
+        carried = context.held_object or context.mounted_tool
+        outcome = self.motion.plan_and_execute(goal, phase, carried)
         if not getattr(outcome, 'success', False):
             code = getattr(outcome, 'code', 'failed')
             event = 'collision' if code == 'collision' else 'failed'
@@ -205,16 +206,12 @@ class SkillRegistry:
             )
             if pose is not None:
                 return pose
-        if object_id == 'cap':
-            return world_target(context.spec, context.geometry, 'cap')
-        if object_id.startswith('screw_'):
-            return world_target(
-                context.spec, context.geometry, f'screw:{object_id}',
+            pose = _state_pose(
+                (state.get('tools') or {}).get(object_id, {}).get('pose'),
+                object_id,
             )
-        if object_id in context.spec.tool_names:
-            return world_target(
-                context.spec, context.geometry, f'tool:{object_id}',
-            )
+            if pose is not None:
+                return pose
         raise SkillError('failed', f'no live pose for {object_id!r}')
 
     def _object_contact_goal(
@@ -457,9 +454,16 @@ class SkillRegistry:
             return SkillOutcome('success', {'reused': True, 'tool': tool})
         adapter = self._adapter(context)
         prepare = getattr(adapter, 'prepare_grab_tool', None)
+        self._ensure_approach(context, node)
         if prepare is not None:
             prepare(tool)
-        self._ensure_contact(context, node)
+        try:
+            self._ensure_contact(context, node)
+        except Exception:
+            restore = getattr(adapter, 'restore_tool', None)
+            if prepare is not None and restore is not None:
+                restore(tool)
+            raise
         try:
             self._command(
                 context, 'attach_tool', tool, event='grasp_failed',
@@ -500,9 +504,16 @@ class SkillRegistry:
             prepare = getattr(adapter, 'prepare_grab_cap', None)
         else:
             prepare = getattr(adapter, 'prepare_grab_screw', None)
+        self._ensure_approach(context, node)
         if prepare is not None:
             prepare(node.object)
-        contact = self._ensure_contact(context, node)
+        try:
+            contact = self._ensure_contact(context, node)
+        except Exception:
+            restore = getattr(adapter, 'restore_part', None)
+            if prepare is not None and restore is not None:
+                restore(node.object)
+            raise
         try:
             self._command(context, command, node.object, event='grasp_failed')
         except SkillError as error:

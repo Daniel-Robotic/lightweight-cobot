@@ -203,6 +203,69 @@ def test_approach_goes_above_the_target_and_saves_the_height():
     assert phases(motion) == ['approach']
 
 
+def test_mounted_tool_is_reported_as_carried_during_motion():
+    registry, context, motion, _ = make_registry()
+    context.mounted_tool = 'vacuum'
+    result = registry.execute(node('a', 'approach', 'cap'), context)
+    assert result.event == 'success'
+    assert motion.calls[0][2] == 'vacuum'
+
+
+def test_approach_refuses_to_use_manifest_pose_when_supervisor_pose_is_missing():
+    registry, context, motion, supervisor = make_registry()
+    supervisor.state['cap']['pose'] = None
+    result = registry.execute(node('a', 'approach', 'cap'), context)
+    assert result.event == 'failed'
+    assert motion.calls == []
+
+
+def test_grab_keeps_target_in_collision_scene_during_approach():
+    class RecordingScene(FakeScene):
+        def prepare_grab_cap(self, object_id):
+            self.events.append(('prepare_grab_cap', object_id))
+
+    adapter = RecordingScene()
+    registry, context, motion, _ = make_registry(
+        motion=FakeMotion(success=False), adapter=adapter,
+    )
+    context.mounted_tool = 'vacuum'
+    result = registry.execute(node('g', 'grab', 'cap'), context)
+    assert result.event == 'failed'
+    assert phases(motion) == ['approach']
+    assert adapter.events == []
+
+
+def test_grab_restores_target_when_lowering_fails():
+    class RecordingScene(FakeScene):
+        def prepare_grab_cap(self, object_id):
+            self.events.append(('prepare_grab_cap', object_id))
+
+        def restore_part(self, object_id):
+            self.events.append(('restore_part', object_id))
+
+    class FailOnLower(FakeMotion):
+        def plan_and_execute(self, goal, phase, held_object):
+            self.calls.append((goal, phase, held_object))
+            return MotionOutcome(
+                phase != 'lower',
+                'ok' if phase != 'lower' else 'motion_limit',
+                'ok' if phase != 'lower' else 'rejected by policy',
+            )
+
+    adapter = RecordingScene()
+    registry, context, motion, _ = make_registry(
+        motion=FailOnLower(), adapter=adapter,
+    )
+    context.mounted_tool = 'vacuum'
+    result = registry.execute(node('g', 'grab', 'cap'), context)
+    assert result.event == 'failed'
+    assert phases(motion) == ['approach', 'lower']
+    assert adapter.events == [
+        ('prepare_grab_cap', 'cap'),
+        ('restore_part', 'cap'),
+    ]
+
+
 def test_grab_cap_runs_missing_phases_and_lifts_to_saved_height():
     registry, context, motion, supervisor = make_registry()
     context.mounted_tool = 'vacuum'

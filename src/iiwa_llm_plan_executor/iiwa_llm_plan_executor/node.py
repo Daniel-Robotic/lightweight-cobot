@@ -580,6 +580,9 @@ class PlannerExecutorNode(Node):
             else:
                 stable_since = None
             time.sleep(0.05)
+        raise RuntimeError(
+            f'robot did not become stationary within {timeout_sec:.2f} s'
+        )
 
     def _scene_guard(self) -> tuple[bool, str]:
         if not self._bridge_ready:
@@ -694,16 +697,15 @@ class PlannerExecutorNode(Node):
         self.log.write(payload)
 
     def _on_replan(self, envelope: dict[str, Any] | None) -> None:
-        if envelope is not None:
-            self._last_status = dict(envelope)
+        run_id = (self._last_status or {}).get('run_id')
         self.log.write({
-            'run_id': (self._last_status or {}).get('run_id'),
+            'run_id': run_id,
             'event': 'replan_required',
             'scene_revision': None if envelope is None else envelope.get('scene_revision'),
         })
         if envelope is not None:
             self._publish_status({
-                'run_id': (self._last_status or {}).get('run_id'),
+                'run_id': run_id,
                 'state': 'replan_scene',
                 'reason': 'fresh scene snapshot for the external planner',
                 'scene_revision': envelope.get('scene_revision'),
