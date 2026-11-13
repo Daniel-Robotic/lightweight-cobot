@@ -13,6 +13,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
+from iiwa_experement.geometry import GeometrySpec, load_geometry
 from iiwa_experement.scenario import ScenarioSpec, load_scenario
 
 from .catalog import SkillCatalog, DEFAULT_CATALOG
@@ -48,9 +49,11 @@ class SceneStore:
         catalog: SkillCatalog = DEFAULT_CATALOG,
         *,
         freshness_sec: float = DEFAULT_FRESHNESS_SEC,
+        geometry: GeometrySpec | None = None,
     ) -> None:
         self.spec = spec
         self.catalog = catalog
+        self.geometry = geometry
         self.freshness_sec = float(freshness_sec)
         self.scene_ready = False
         self.ready_message = 'scene not ready'
@@ -103,8 +106,13 @@ class SceneStore:
         assert self.state is not None and self.received_at is not None
         assert self._last_version is not None
         envelope = build_envelope(
-            build_scene(self.spec, self.state, self.catalog),
-            scene_revision=self.scene_revision,
+            build_scene(
+                self.spec,
+                self.state,
+                self.catalog,
+                self.geometry,
+                stamp=float(self.received_at),
+            ),
             state_version=self._last_version,
             stamp=float(self.received_at),
             experiment_id=self.spec.experiment_id,
@@ -125,19 +133,24 @@ class SceneContextNode(Node):
         self.declare_parameter(
             'scene_config', str(package_share / 'config' / 'scenes.yaml'),
         )
+        self.declare_parameter(
+            'geometry_path', str(package_share / 'config' / 'geometry.yaml'),
+        )
         self.declare_parameter('freshness_sec', DEFAULT_FRESHNESS_SEC)
         self.declare_parameter('publish_period_sec', 0.5)
         self.declare_parameter('ready_poll_period_sec', 1.0)
 
         experiment_id = int(self.get_parameter('experiment_id').value)
         scene_config = Path(str(self.get_parameter('scene_config').value))
+        geometry_path = Path(str(self.get_parameter('geometry_path').value))
         self.spec = load_scenario(experiment_id, scene_config)
         self.store = SceneStore(
             self.spec,
             DEFAULT_CATALOG,
             freshness_sec=float(self.get_parameter('freshness_sec').value),
+            geometry=load_geometry(geometry_path),
         )
-        self._last_published: tuple[int, int] | None = None
+        self._last_published: tuple[int, ...] | None = None
         self._last_publish_time = -1.0
         self._ready_client = self.create_client(Trigger, READY_SERVICE)
         self._ready_request_pending = False
@@ -199,7 +212,7 @@ class SceneContextNode(Node):
         envelope, _ = self.store.snapshot(self._now())
         if envelope is None:
             return
-        key = (int(envelope['scene_revision']), int(envelope['state_version']))
+        key = (int(envelope['state_version']),)
         now = self._now()
         period = max(
             0.05, float(self.get_parameter('publish_period_sec').value),

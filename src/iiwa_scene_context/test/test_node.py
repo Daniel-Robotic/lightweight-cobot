@@ -1,10 +1,11 @@
-"""Readiness, freshness and scene_revision rules of the snapshot node."""
+"""Readiness, freshness and internal scene version rules of the snapshot node."""
 from __future__ import annotations
 
 from pathlib import Path
 
 from std_srvs.srv import Trigger
 
+from iiwa_experement.geometry import load_geometry
 from iiwa_experement.scenario import load_scenario
 from iiwa_scene_context.node import SceneStore, SceneContextNode, scene_qos
 from iiwa_scene_context.snapshot import build_scene
@@ -12,6 +13,7 @@ from iiwa_scene_context.snapshot import build_scene
 
 PACKAGE = Path(__file__).resolve().parents[1]
 SCENES = PACKAGE.parent / 'iiwa_experement' / 'config' / 'scenes.yaml'
+GEOMETRY = load_geometry(PACKAGE.parent / 'iiwa_experement' / 'config' / 'geometry.yaml')
 
 
 def state(version: int, *, mounted=None, held=None):
@@ -29,7 +31,7 @@ def state(version: int, *, mounted=None, held=None):
 
 def make_store():
     spec = load_scenario(1, SCENES)
-    return SceneStore(spec, freshness_sec=2.0)
+    return SceneStore(spec, freshness_sec=2.0, geometry=GEOMETRY)
 
 
 def test_snapshot_requires_scene_ready_and_fresh_state():
@@ -49,22 +51,23 @@ def test_snapshot_requires_scene_ready_and_fresh_state():
     assert 'stale' in reason
 
 
-def test_revision_advances_on_state_version_but_not_on_pose_updates():
+def test_internal_version_advances_on_state_version_but_not_on_pose_updates():
     store = make_store()
     store.set_scene_ready(True)
     store.update(state(1), received_at=10.0)
-    assert store.snapshot(10.1)[0]['scene_revision'] == 1
+    assert store.scene_revision == 1
+    assert 'scene_revision' not in store.snapshot(10.1)[0]
 
     # A pose-only publish of the same held object carries the same version.
     store.update(state(1, mounted='vacuum', held='cap'), received_at=10.5)
-    assert store.snapshot(10.6)[0]['scene_revision'] == 1
+    assert store.scene_revision == 1
 
     # A confirmed ownership change increments the supervisor version.
     store.update(state(2, mounted='vacuum', held='cap'), received_at=11.0)
-    assert store.snapshot(11.1)[0]['scene_revision'] == 2
+    assert store.scene_revision == 2
 
     store.update(state(3, mounted='vacuum', held=None), received_at=11.5)
-    assert store.snapshot(11.6)[0]['scene_revision'] == 3
+    assert store.scene_revision == 3
 
 
 def test_late_subscriber_qos_is_transient_local_and_depth_one():
@@ -91,7 +94,8 @@ def test_scene_service_returns_json_or_a_reason():
     result = SceneContextNode._handle_get_scene(node, None, response)
     assert result.success is True
     assert '"scene_json"' in result.message
-    assert '"scene_revision": 1' in result.message
+    assert '"scene_revision"' not in result.message
+    assert '"pose_conventions"' in result.message
 
 
 def test_snapshot_scene_is_the_catalog_scene_not_the_state():
@@ -99,9 +103,12 @@ def test_snapshot_scene_is_the_catalog_scene_not_the_state():
     store.set_scene_ready(True)
     store.update(state(1), received_at=10.0)
     envelope, _ = store.snapshot(10.1)
-    expected = build_scene(store.spec, store.state, store.catalog)
+    expected = build_scene(
+        store.spec, store.state, store.catalog, store.geometry,
+        stamp=store.received_at,
+    )
     assert envelope['scene_json'] == expected
-    assert 'pose' not in envelope['scene_json']
+    assert 'objects' not in envelope['scene_json']
 
 
 def test_scene_topic_is_republished_to_keep_the_timestamp_fresh():

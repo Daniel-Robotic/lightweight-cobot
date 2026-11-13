@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
@@ -38,7 +38,7 @@ from iiwa_experement.planning_scene import (
     screw_object_id,
 )
 from iiwa_experement.scenario import ScenarioSpec, load_scenario
-from iiwa_msgs.srv import GetRunStatus
+from iiwa_msgs.srv import GetRunStatus, SubmitPlan
 from iiwa_scene_context.catalog import DEFAULT_CATALOG
 from iiwa_scene_context.node import SCENE_TOPIC
 
@@ -53,6 +53,7 @@ COMMAND_SERVICE = '/iiwa_experement/object_command'
 STATE_TOPIC = '/iiwa_experement/object_state'
 SCENE_SERVICE = '/iiwa_scene_context/get_scene'
 SUBMIT_SERVICE = '/iiwa_llm_plan_executor/submit'
+SUBMIT_PLAN_SERVICE = '/iiwa_llm_plan_executor/submit_plan'
 CANCEL_SERVICE = '/iiwa_llm_plan_executor/cancel'
 STATUS_SERVICE = '/iiwa_llm_plan_executor/get_status'
 PLAN_TOPIC = '/iiwa_llm_plan_executor/plan'
@@ -94,8 +95,15 @@ class RunLog:
 class SupervisorFacade:
     """Thread-safe supervisor client that never spins its own node."""
 
-    def __init__(self, node: Node, callback_group) -> None:
+    def __init__(
+        self,
+        node: Node,
+        callback_group,
+        *,
+        on_timing: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         self.node = node
+        self.on_timing = on_timing
         self._lock = threading.Condition()
         self._latest: dict[str, Any] | None = None
         self._client = node.create_client(
@@ -138,9 +146,12 @@ class SupervisorFacade:
         target=None,
         target_name: str = '',
     ) -> dict[str, Any]:
+        request_started = time.monotonic()
+        service_wait_started = time.monotonic()
         if not self._client.service_is_ready():
             if not self._client.wait_for_service(timeout_sec=5.0):
                 raise RuntimeError(f'{COMMAND_SERVICE} is unavailable')
+        service_wait_sec = time.monotonic() - service_wait_started
         request_id = uuid.uuid4().hex
         payload: dict[str, Any] = {
             'request_id': request_id,
@@ -157,17 +168,21 @@ class SupervisorFacade:
             }
         request = webots_ros2_msgs.srv.SetString.Request()
         request.value = json.dumps(payload)
+        call_started = time.monotonic()
         future = self._client.call_async(request)
         done = threading.Event()
         future.add_done_callback(lambda _: done.set())
         if not done.wait(timeout=15.0):
             raise RuntimeError(f'supervisor command {op} timed out')
+        service_call_sec = time.monotonic() - call_started
         try:
             response = future.result()
         except Exception as error:
             raise RuntimeError(f'supervisor command {op} failed: {error}') from error
         accepted = bool(response.success)
+        result_started = time.monotonic()
         state = self._wait_for_result(request_id, timeout=3.0)
+        result_wait_sec = time.monotonic() - result_started
         last = (state or {}).get('last_command_result') or {}
         if last.get('request_id') != request_id:
             raise RuntimeError(
@@ -177,6 +192,21 @@ class SupervisorFacade:
             raise RuntimeError(
                 last.get('error') or f'supervisor rejected {op}'
             )
+        if self.on_timing is not None:
+            try:
+                self.on_timing({
+                    'stage': 'supervisor_command',
+                    'op': op,
+                    'object': object_id,
+                    'started_at': request_started,
+                    'finished_at': time.monotonic(),
+                    'duration_sec': time.monotonic() - request_started,
+                    'service_wait_sec': service_wait_sec,
+                    'service_call_sec': service_call_sec,
+                    'result_wait_sec': result_wait_sec,
+                })
+            except Exception:
+                pass
         return state
 
     def _wait_for_result(self, request_id: str, timeout: float) -> dict[str, Any]:
@@ -201,13 +231,27 @@ class SceneAdapter:
         bridge: PlanningSceneBridge,
         spec: ScenarioSpec,
         geometry: GeometrySpec,
+        *,
+        on_timing: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.bridge = bridge
         self.spec = spec
         self.geometry = geometry
+        self.on_timing = on_timing
 
     def _sync(self) -> None:
+        started = time.monotonic()
         self.bridge.assert_synchronized(*self.bridge.expected_sets())
+        if self.on_timing is not None:
+            try:
+                self.on_timing({
+                    'stage': 'planning_scene_sync',
+                    'started_at': started,
+                    'finished_at': time.monotonic(),
+                    'duration_sec': time.monotonic() - started,
+                })
+            except Exception:
+                pass
 
     def attach_tool(self, tool: str) -> None:
         self.bridge.attach(attached_tool(tool, self.geometry))
@@ -368,6 +412,12 @@ class PlannerExecutorNode(Node):
             callback_group=self.callback_group,
         )
         self.create_service(
+            SubmitPlan,
+            SUBMIT_PLAN_SERVICE,
+            self._handle_submit_plan,
+            callback_group=self.callback_group,
+        )
+        self.create_service(
             webots_ros2_msgs.srv.SetString,
             CANCEL_SERVICE,
             self._handle_cancel,
@@ -402,7 +452,9 @@ class PlannerExecutorNode(Node):
                 callback_group=self.callback_group,
             )
 
-        self.supervisor = SupervisorFacade(self, self.callback_group)
+        self.supervisor = SupervisorFacade(
+            self, self.callback_group, on_timing=self._on_timing,
+        )
         self._scene_client = self.create_client(
             Trigger, SCENE_SERVICE, callback_group=self.callback_group,
         )
@@ -415,8 +467,11 @@ class PlannerExecutorNode(Node):
             node=self,
             use_sim_time=True,
             spin_fn=lambda timeout: time.sleep(max(0.0, float(timeout))),
+            on_timing=self._on_timing,
         )
-        self.adapter = SceneAdapter(self.bridge, self.spec, self.geometry)
+        self.adapter = SceneAdapter(
+            self.bridge, self.spec, self.geometry, on_timing=self._on_timing,
+        )
         self.motion = MoveItBackend(
             self.geometry,
             self.policy,
@@ -592,12 +647,20 @@ class PlannerExecutorNode(Node):
     def _scene_guard(self) -> tuple[bool, str]:
         if not self._bridge_ready:
             return False, 'planning scene bridge is not initialized'
+        started = time.monotonic()
         try:
             self.bridge.assert_synchronized(
                 *self.bridge.expected_sets(), timeout_sec=2.0,
             )
         except Exception as error:
             return False, f'planning scene is not synchronized: {error}'
+        finally:
+            self._on_timing({
+                'stage': 'planning_scene_check',
+                'started_at': started,
+                'finished_at': time.monotonic(),
+                'duration_sec': time.monotonic() - started,
+            })
         return True, 'ok'
 
     def _ensure_motion_ready(self) -> None:
@@ -653,14 +716,32 @@ class PlannerExecutorNode(Node):
         condition = self._frame_conditions.get(topic)
         if condition is None:
             return None
-        deadline = time.monotonic() + self.frame_timeout
+        started = time.monotonic()
+        deadline = started + self.frame_timeout
         with condition:
             baseline = self._frame_counts[topic]
             while self._frame_counts[topic] <= baseline:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0.0:
+                    self._on_timing({
+                        'stage': 'frame_capture',
+                        'camera': name,
+                        'started_at': started,
+                        'finished_at': time.monotonic(),
+                        'duration_sec': time.monotonic() - started,
+                        'captured': False,
+                    })
                     return None
                 condition.wait(timeout=remaining)
+            self._on_timing({
+                'stage': 'frame_capture',
+                'camera': name,
+                'started_at': started,
+                'finished_at': time.monotonic(),
+                'duration_sec': time.monotonic() - started,
+                'captured': True,
+                'stamp': self._frame_stamps.get(topic),
+            })
             return self._frame_stamps.get(topic)
 
     # ------------------------------------------------------------------ engine
@@ -669,7 +750,7 @@ class PlannerExecutorNode(Node):
         context = SkillContext(
             spec=self.spec,
             geometry=self.geometry,
-            scene_revision=int(envelope.get('scene_revision', 0)),
+            scene_revision=int(envelope.get('state_version', 0)),
         )
         context.frame_provider = self._frame_provider
         context.scene_clear_provider = lambda: True
@@ -680,18 +761,24 @@ class PlannerExecutorNode(Node):
 
     def _publish_plan(self, payload: dict[str, Any]) -> None:
         self._last_plan = dict(payload)
+        # Bind the timing/log context to the new run immediately; otherwise
+        # the first motion events of a run can be labelled with the previous
+        # run id until the first status message arrives.
+        self._last_status = {
+            'run_id': payload.get('run_id'),
+            'state': 'accepted',
+            'reason': '',
+        }
         message = String()
         message.data = json.dumps(payload, ensure_ascii=False)
         self._plan_publisher.publish(message)
         self.log.write({
             'run_id': payload.get('run_id'),
             'event': 'plan_accepted',
-            'scene_revision': payload.get('scene_revision'),
             'response': payload.get('response'),
         })
         self.get_logger().info(
-            f"accepted graph for run {payload.get('run_id')} "
-            f"(scene_revision={payload.get('scene_revision')})"
+            f"accepted graph for run {payload.get('run_id')}"
         )
 
     def _publish_status(self, payload: dict[str, Any]) -> None:
@@ -706,14 +793,12 @@ class PlannerExecutorNode(Node):
         self.log.write({
             'run_id': run_id,
             'event': 'replan_required',
-            'scene_revision': None if envelope is None else envelope.get('scene_revision'),
         })
         if envelope is not None:
             self._publish_status({
                 'run_id': run_id,
                 'state': 'replan_scene',
                 'reason': 'fresh scene snapshot for the external planner',
-                'scene_revision': envelope.get('scene_revision'),
                 'scene': envelope,
                 'timestamp': self._now(),
             })
@@ -721,8 +806,27 @@ class PlannerExecutorNode(Node):
     def _on_stop(self, reason: str) -> None:
         self.motion.stop(reason)
 
+    def _current_run_id(self) -> str | None:
+        return (
+            (self._last_status or {}).get('run_id')
+            or (self._last_plan or {}).get('run_id')
+        )
+
+    def _on_timing(self, payload: dict[str, Any]) -> None:
+        """Write monotonic stage timings to the run JSONL log."""
+        self.log.write({
+            **payload,
+            'event': 'timing',
+            'run_id': self._current_run_id(),
+            'timestamp': self._now(),
+        })
+
     def _on_motion_event(self, payload: dict[str, Any]) -> None:
-        self.log.write({**payload, 'event': payload.get('event', 'motion')})
+        self.log.write({
+            **payload,
+            'event': payload.get('event', 'motion'),
+            'run_id': self._current_run_id(),
+        })
 
     def _notify_operator(self, reason: str, details: dict[str, Any]) -> bool:
         self.get_logger().warning(f'operator required: {reason}')
@@ -736,22 +840,9 @@ class PlannerExecutorNode(Node):
         return True
 
     # ------------------------------------------------------------------ services
-    def _handle_submit(self, request, response):
-        try:
-            payload = json.loads(request.value)
-            if not isinstance(payload, dict):
-                raise ValueError('submit payload must be a JSON object')
-            run_id = str(payload.get('run_id', '')).strip()
-            scene_revision = int(payload.get('scene_revision'))
-            graph = payload.get('response')
-            if not isinstance(graph, (str, dict)):
-                raise ValueError('response must be a JSON string or object')
-        except Exception as error:
-            response.success = False
-            self.get_logger().error(f'invalid submit request: {error}')
-            return response
-        result = self.engine.submit(run_id, graph, scene_revision)
-        response.success = bool(result.accepted)
+    def _submit_payload(self, run_id: str, graph):
+        """Shared admission path for both submit services."""
+        result = self.engine.submit(run_id, graph)
         if result.accepted:
             self.get_logger().info(
                 f'run {run_id}: {result.code} ({result.message})'
@@ -760,16 +851,53 @@ class PlannerExecutorNode(Node):
             self.get_logger().warning(
                 f'run {run_id} rejected: {result.code}: {result.message}'
             )
-            self._publish_status({
-                'run_id': run_id,
-                'state': 'rejected',
-                'reason': f'{result.code}: {result.message}',
-                'terminal': result.code,
-                'mounted_tool': None,
-                'held_object': None,
-                'scene_revision': scene_revision,
-                'timestamp': self._now(),
-            })
+        return result
+
+    def _handle_submit(self, request, response):
+        """Legacy webots_ros2_msgs/SetString submission.
+
+        It is kept for compatibility and routes into the same admission path.
+        A legacy ``scene_revision`` field is ignored: admission always uses the
+        executor's own fresh snapshot.
+        """
+        try:
+            payload = json.loads(request.value)
+            if not isinstance(payload, dict):
+                raise ValueError('submit payload must be a JSON object')
+            run_id = str(payload.get('run_id', '')).strip()
+            graph = payload.get('response')
+            if not isinstance(graph, (str, dict)):
+                raise ValueError('response must be a JSON string or object')
+        except Exception as error:
+            response.success = False
+            self.get_logger().error(f'invalid submit request: {error}')
+            return response
+        result = self._submit_payload(run_id, graph)
+        response.success = bool(result.accepted)
+        return response
+
+    def _handle_submit_plan(self, request, response):
+        try:
+            run_id = str(request.run_id or '').strip()
+            graph = request.response
+            if not isinstance(graph, str) or not graph.strip():
+                raise ValueError('response must be a non-empty JSON string')
+        except Exception as error:
+            response.accepted = False
+            response.code = 'invalid'
+            response.reason = str(error)
+            response.status_json = ''
+            self.get_logger().error(f'invalid submit_plan request: {error}')
+            return response
+        result = self._submit_payload(run_id, graph)
+        response.accepted = bool(result.accepted)
+        response.code = result.code
+        response.reason = result.message
+        response.status_json = ''
+        if result.accepted:
+            status = self.engine.get_status(run_id)
+            if status.found:
+                response.status_json = status.to_json()
         return response
 
     def _handle_cancel(self, request, response):

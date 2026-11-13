@@ -466,8 +466,10 @@ class PlanningSceneBridge:
         use_sim_time: bool = True,
         srdf_path: str | None = None,
         spin_fn: Callable[[float], None] | None = None,
+        on_timing: Callable[[dict], None] | None = None,
     ) -> None:
         self._owns_node = node is None
+        self._on_timing = on_timing
         if node is None:
             node = Node('planning_scene_bridge')
             node.set_parameters([Parameter(
@@ -571,7 +573,10 @@ class PlanningSceneBridge:
         self._seen_world.clear()
         self._seen_attached.clear()
         self._publisher.publish(scene)
-        self._spin()
+        # A short non-blocking turn lets rclpy deliver the message to local
+        # subscribers.  The authoritative synchronization check happens in
+        # assert_synchronized() through /get_planning_scene.
+        self._spin_once(0.0)
 
     def _fetch_acm(self) -> None:
         if getattr(self, '_get_scene', None) is None or self.node is None:
@@ -632,31 +637,20 @@ class PlanningSceneBridge:
         return scene
 
     def _refresh_joint_state(self) -> None:
-        """Wait for the next /joint_states sample before a full scene update.
+        """Make sure a measured joint sample exists before a full scene update.
 
-        A full PlanningScene carries a robot state.  Using a sample captured
-        before a preceding motion would make the MoveItPy planner start from
-        an old pose on the next trajectory.
+        The full scene is published with ``robot_state.is_diff=True`` so it
+        never overwrites MoveIt's current state.  Waiting for the *next*
+        sample on every scene update added a fixed delay between motions
+        without improving that guarantee; the executor already checks joint
+        state freshness immediately before every plan.
         """
-        if self.node is None:
+        if self.node is None or self._latest_joint_state is not None:
             return
-        previous = None
-        if self._latest_joint_state is not None:
-            previous = (
-                self._latest_joint_state.header.stamp.sec,
-                self._latest_joint_state.header.stamp.nanosec,
-            )
-        end = time.monotonic() + 0.5
+        end = time.monotonic() + 0.1
         while time.monotonic() < end:
-            self._spin_once(0.02)
-            current = self._latest_joint_state
-            if current is None:
-                continue
-            stamp = (
-                current.header.stamp.sec,
-                current.header.stamp.nanosec,
-            )
-            if previous is None or stamp != previous:
+            self._spin_once(0.01)
+            if self._latest_joint_state is not None:
                 return
 
     def _relay_full_scene(self) -> None:
@@ -667,11 +661,30 @@ class PlanningSceneBridge:
         move_group and republishing it once keeps both planners identical
         without a feedback loop.
         """
+        started = time.monotonic()
+        relayed = False
+        try:
+            relayed = self._relay_full_scene_impl()
+        finally:
+            on_timing = getattr(self, '_on_timing', None)
+            if on_timing is not None:
+                try:
+                    on_timing({
+                        'stage': 'planning_scene_relay',
+                        'started_at': started,
+                        'finished_at': time.monotonic(),
+                        'duration_sec': time.monotonic() - started,
+                        'relayed': relayed,
+                    })
+                except Exception:
+                    pass
+
+    def _relay_full_scene_impl(self) -> bool:
         if getattr(self, '_get_scene', None) is None or self.node is None:
-            return
+            return False
         if not self._get_scene.service_is_ready():
             if not self._get_scene.wait_for_service(timeout_sec=1.0):
-                return
+                return False
         expected_world = set(self._world_objects)
         expected_attached = set(self._attached)
         deadline = time.monotonic() + 3.0
@@ -715,10 +728,10 @@ class PlanningSceneBridge:
                 scene.robot_state.is_diff = True
                 self._publisher.publish(scene)
                 self._spin()
-                return
+                return True
         # Never relay a stale scene: that would wipe the objects from the
         # MoveItPy monitor and make the next motion unverified.
-        return
+        return False
 
     def _publish_full(self) -> None:
         self._refresh_joint_state()
@@ -913,8 +926,9 @@ class PlanningSceneBridge:
                 last_world, last_attached = snapshot
                 if world_expected <= last_world and attached_expected <= last_attached:
                     if not served:
-                        # The service proves move_group; still let the next
-                        # monitored message confirm the second monitor.
+                        # move_group already has the scene, but MoveItPy's
+                        # monitor also needs to have seen the same ids before
+                        # the next plan is allowed.
                         continue
                     return
             elif served:

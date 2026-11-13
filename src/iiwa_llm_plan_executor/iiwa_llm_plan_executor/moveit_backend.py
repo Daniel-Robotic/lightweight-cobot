@@ -9,6 +9,8 @@ to run it.
 from __future__ import annotations
 
 import math
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
@@ -48,6 +50,23 @@ class MotionOutcome:
             'message': self.message,
             'details': dict(self.details),
         }
+
+
+@contextmanager
+def _stage(timings: list[dict[str, Any]], name: str, **details):
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        finished = time.monotonic()
+        entry = {
+            'stage': name,
+            'started_at': started,
+            'finished_at': finished,
+            'duration_sec': finished - started,
+        }
+        entry.update(details)
+        timings.append(entry)
 
 
 _POSE_TO_MATRIX = None
@@ -524,6 +543,7 @@ class MoveItBackend:
         self._on_event = on_event
         self.stopped = False
         self.stop_reason: str | None = None
+        self._last_motion_end: float | None = None
 
     def _emit(self, **payload) -> None:
         if self._on_event is not None:
@@ -560,12 +580,49 @@ class MoveItBackend:
         phase: str = 'transfer',
         held_object: str | None = None,
     ) -> MotionOutcome:
-        blocked = self._guard()
+        started = time.monotonic()
+        since_previous = (
+            None if self._last_motion_end is None
+            else max(0.0, started - self._last_motion_end)
+        )
+        timings: list[dict[str, Any]] = []
+        outcome: MotionOutcome | None = None
+        try:
+            outcome = self._plan_and_execute_impl(
+                goal, phase, held_object, timings,
+            )
+            return outcome
+        finally:
+            finished = time.monotonic()
+            self._emit(
+                event='motion_timing',
+                phase=phase,
+                held_object=held_object,
+                success=bool(outcome is not None and outcome.success),
+                started_at=started,
+                finished_at=finished,
+                total_duration_sec=finished - started,
+                since_previous_trajectory_sec=since_previous,
+                stages=timings,
+            )
+            if outcome is not None and outcome.success:
+                self._last_motion_end = finished
+
+    def _plan_and_execute_impl(
+        self,
+        goal: Transform,
+        phase: str,
+        held_object: str | None,
+        timings: list[dict[str, Any]],
+    ) -> MotionOutcome:
+        with _stage(timings, 'state_guard'):
+            blocked = self._guard()
         if blocked is not None:
             return blocked
         if self._before_plan is not None:
             try:
-                self._before_plan()
+                with _stage(timings, 'wait_stationary'):
+                    self._before_plan()
             except Exception as error:
                 return self._fail(f'settle wait failed: {error}', 'stale_state')
         planned = None
@@ -573,12 +630,14 @@ class MoveItBackend:
         last_error = ''
         for attempt in range(3):
             try:
-                candidate = self.planner.plan(goal, phase, held_object)
+                with _stage(timings, 'moveit_plan', attempt=attempt):
+                    candidate = self.planner.plan(goal, phase, held_object)
             except Exception as error:
                 last_error = str(error)
                 if attempt + 1 < 3:
                     try:
-                        self._before_plan and self._before_plan()
+                        with _stage(timings, 'wait_stationary', attempt=attempt):
+                            self._before_plan and self._before_plan()
                     except Exception:
                         pass
                     continue
@@ -591,11 +650,12 @@ class MoveItBackend:
                     current = None
             if current is None:
                 current = candidate.current_joints
-            candidate_check = self.policy.validate_trajectory(
-                candidate.points, candidate.tcp_poses, current,
-                start_tcp_pose=candidate.start_tcp_pose,
-                held_object=held_object,
-            )
+            with _stage(timings, 'trajectory_check', attempt=attempt):
+                candidate_check = self.policy.validate_trajectory(
+                    candidate.points, candidate.tcp_poses, current,
+                    start_tcp_pose=candidate.start_tcp_pose,
+                    held_object=held_object,
+                )
             if candidate_check.ok:
                 planned = candidate
                 check = candidate_check
@@ -603,7 +663,8 @@ class MoveItBackend:
             last_error = candidate_check.reason
             if attempt + 1 < 3:
                 try:
-                    self._before_plan and self._before_plan()
+                    with _stage(timings, 'wait_stationary', attempt=attempt):
+                        self._before_plan and self._before_plan()
                 except Exception:
                     pass
         if planned is None or check is None:
@@ -617,7 +678,8 @@ class MoveItBackend:
             )
         if self._collision_checker is not None:
             try:
-                collision_reason = self._collision_checker(planned)
+                with _stage(timings, 'collision_check'):
+                    collision_reason = self._collision_checker(planned)
             except Exception as error:
                 collision_reason = f'collision check failed: {error}'
             if collision_reason:
@@ -649,7 +711,8 @@ class MoveItBackend:
             planner_details=dict(planned.details), **check.details,
         )
         try:
-            executed = self.planner.execute(planned)
+            with _stage(timings, 'controller_execution'):
+                executed = self.planner.execute(planned)
         except Exception as error:
             return self._fail(str(error), 'execution_failed')
         if not executed:

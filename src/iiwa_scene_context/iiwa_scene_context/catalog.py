@@ -13,9 +13,9 @@ from typing import Any
 from iiwa_experement.scenario import Tool, ScenarioSpec
 
 
-SCENE_SCHEMA_VERSION = 1
-CONTRACT_VERSION = 1
-CATALOG_VERSION = 1
+SCENE_SCHEMA_VERSION = 2
+CONTRACT_VERSION = 2
+CATALOG_VERSION = 2
 
 NATIVE_SKILLS = (
     'detect', 'approach', 'lower', 'grab', 'lift', 'transfer', 'align',
@@ -41,6 +41,7 @@ TOOL_KINDS = {
 _TOOL_SOCKET_SUFFIX = '_socket'
 _ALLOWED_HOLE_IDS = ('hole_1', 'hole_2', 'hole_3', 'hole_4')
 _ALLOWED_SEALANT_SIDES = ('side_1', 'side_2', 'side_3', 'side_4')
+CAMERA_IDS = ('top', 'hand')
 
 
 class CatalogError(ValueError):
@@ -206,10 +207,9 @@ class SkillContract:
     outcomes: dict[str, str]
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            'description': self.description,
-            'outcomes': dict(self.outcomes),
-        }
+        # Descriptions live once in action_rules; the contract only needs the
+        # event names so the graph and the validator agree on the edges.
+        return {'outcomes': dict(self.outcomes)}
 
 
 @dataclass(frozen=True)
@@ -220,15 +220,29 @@ class SkillCatalog:
     catalog_version: int = CATALOG_VERSION
     profile: str = 'grant'
 
-    def skill_names(self) -> tuple[str, ...]:
-        return AVAILABLE_SKILLS
+    def skill_names(self, spec: ScenarioSpec | None = None) -> tuple[str, ...]:
+        """Skills that the real executor can run in this selected scene."""
+        names = list(AVAILABLE_SKILLS)
+        if spec is not None:
+            if not spec.sealant_sides or 'sealant_tool' not in spec.tool_names:
+                names.remove('dispense')
+            if not spec.tools:
+                names.remove('dock_tool')
+            if not spec.screws:
+                names.remove('handoff_screw')
+            if spec.cap_state == 'absent' and not spec.screws:
+                names.remove('move_to_storage')
+        return tuple(names)
 
-    def skill_contracts(self) -> dict[str, dict[str, Any]]:
+    def skill_contracts(
+        self,
+        spec: ScenarioSpec | None = None,
+    ) -> dict[str, dict[str, Any]]:
         return {
             name: SkillContract(
                 name, SKILL_DESCRIPTIONS[name], SKILL_OUTCOMES[name],
             ).as_dict()
-            for name in AVAILABLE_SKILLS
+            for name in self.skill_names(spec)
         }
 
     def outcomes(self, skill: str) -> dict[str, str]:
@@ -321,6 +335,261 @@ class SkillCatalog:
         for side in spec.sealant_sides:
             if side not in targets:
                 raise CatalogError(f'sealant side {side!r} is not a destination')
+
+    # ------------------------------------------------------------------ rules
+    def _socket_ids(self, spec: ScenarioSpec) -> list[str]:
+        return [self.tool_socket_id(tool.name) for tool in spec.tools]
+
+    def _screw_ids(self, spec: ScenarioSpec) -> list[str]:
+        return [screw.name for screw in spec.screws]
+
+    def _component_kinds(self, spec: ScenarioSpec) -> list[str]:
+        return sorted({
+            self.component_kind(object_id, spec)
+            for object_id in self.component_ids(spec)
+        })
+
+    def _destination_kinds(self, spec: ScenarioSpec) -> list[str]:
+        return sorted({
+            self.destination_kind(destination_id, spec)
+            for destination_id in self.destination_ids(spec)
+        })
+
+    def action_rules(self, spec: ScenarioSpec) -> dict[str, dict[str, Any]]:
+        """Compact machine-readable action rules for the selected scene.
+
+        The lists contain only ids that are present in this experiment, so the
+        external planner cannot advertise an action on a missing object.
+        """
+        components = list(self.component_ids(spec))
+        tools = list(self.tool_ids(spec))
+        destinations = list(self.destination_ids(spec))
+        screws = self._screw_ids(spec)
+        sockets = self._socket_ids(spec)
+        holes = [name for name in _ALLOWED_HOLE_IDS if name in destinations]
+        sides = list(spec.sealant_sides)
+        cap_present = spec.cap_state != 'absent'
+        object_components = components + tools
+
+        def rule(
+            object_types: list[str],
+            target_types: list[str],
+            objects: list[str],
+            targets: list[str],
+            *,
+            required_tools: list[str] | None = None,
+            required_tool_by_kind: dict[str, str] | None = None,
+            preconditions: list[str] | None = None,
+            result: str = '',
+            targets_by_object_kind: dict[str, list[str]] | None = None,
+            forbidden_targets: list[str] | None = None,
+        ) -> dict[str, Any]:
+            entry: dict[str, Any] = {
+                'object_types': object_types,
+                'target_types': target_types,
+                'objects': objects,
+                'targets': targets,
+                'required_tools': required_tools or [],
+                'preconditions': preconditions or [],
+                'result': result,
+            }
+            if required_tool_by_kind:
+                entry['required_tool_by_kind'] = required_tool_by_kind
+            if targets_by_object_kind:
+                entry['targets_by_object_kind'] = targets_by_object_kind
+            if forbidden_targets:
+                entry['forbidden_targets'] = forbidden_targets
+            return entry
+
+        rules: dict[str, dict[str, Any]] = {
+            'detect': rule(
+                self._component_kinds(spec) + ['tool'],
+                self._destination_kinds(spec),
+                object_components,
+                destinations,
+                result='fresh pose of a present object or destination',
+            ),
+            'approach': rule(
+                self._component_kinds(spec) + ['tool'],
+                self._destination_kinds(spec) + ['component', 'tool'],
+                object_components,
+                destinations + components + tools,
+                result='tcp above the target at approach height',
+            ),
+            'lower': rule(
+                self._component_kinds(spec) + ['tool'],
+                self._destination_kinds(spec) + ['component', 'tool'],
+                object_components,
+                destinations + components + tools,
+                result='tcp at the axial contact pose',
+            ),
+            'lift': rule(
+                self._component_kinds(spec) + ['tool'],
+                self._destination_kinds(spec) + ['component', 'tool'],
+                object_components,
+                destinations + components + tools,
+                result='tcp at the saved approach height',
+            ),
+            'retreat': rule(
+                self._component_kinds(spec) + ['tool'],
+                self._destination_kinds(spec) + ['component', 'tool'],
+                object_components,
+                destinations + components + tools,
+                result='tcp at work after an axial withdrawal',
+            ),
+            'grab': rule(
+                ['hatch', 'screw', 'tool'], [],
+                (['cap'] if cap_present else []) + screws + tools,
+                [],
+                required_tool_by_kind={
+                    'hatch': 'vacuum',
+                    'screw': 'magnetic_tool',
+                },
+                preconditions=[
+                    'tool socket is free for a tool',
+                    'gripper is empty',
+                ],
+                result='tool mounted or part attached to the mounted tool',
+            ),
+            'pick': rule(
+                ['hatch', 'screw', 'tool'], [],
+                (['cap'] if cap_present else []) + screws + tools,
+                [],
+                required_tool_by_kind={
+                    'hatch': 'vacuum',
+                    'screw': 'magnetic_tool',
+                },
+                preconditions=[
+                    'tool socket is free for a tool',
+                    'gripper is empty',
+                ],
+                result='alias of grab',
+            ),
+            'transfer': rule(
+                self._component_kinds(spec) + ['tool'],
+                self._destination_kinds(spec),
+                object_components,
+                destinations,
+                preconditions=['object is held or tool is mounted'],
+                result='tcp above the destination at transfer height',
+                targets_by_object_kind={
+                    'tool': ['work'] + sockets,
+                    'hatch': ['work', 'hatch_seat'],
+                    'screw': ['work'] + holes,
+                },
+            ),
+            'move_to_storage': rule(
+                ['hatch', 'screw'],
+                ['workspace', 'seat', 'hole'],
+                (['cap'] if cap_present else []) + screws,
+                ['work'] + (['hatch_seat'] if cap_present else []) + holes,
+                preconditions=[
+                    'a hatch or screw is held',
+                    'this alias is not valid for a tool',
+                ],
+                result='held part lowered at work, hatch_seat or a hole',
+                forbidden_targets=['hatch_seat'] if 'sealant_tool' in tools else [],
+            ),
+            'align': rule(
+                self._component_kinds(spec) + ['tool'],
+                self._destination_kinds(spec),
+                object_components,
+                destinations,
+                preconditions=['a part is held or a tool is mounted'],
+                result='orientation aligned above the target',
+            ),
+            'release': rule(
+                ['hatch', 'screw', 'tool'],
+                ['seat', 'hole', 'tool_socket'],
+                (['cap'] if cap_present else []) + screws + tools,
+                (['hatch_seat'] if cap_present else []) + holes + sockets,
+                preconditions=[
+                    'release(tool) requires the matching <tool>_socket',
+                    'an explicit transfer to the socket precedes dock_tool',
+                ],
+                result=(
+                    'screw handed to the virtual operator at a hole; '
+                    'no insertion or tightening'
+                ),
+            ),
+            'capture': rule(
+                ['camera'], [], list(CAMERA_IDS), [],
+                result='a fresh frame is available',
+            ),
+            'verify': rule(
+                ['hatch', 'screw'],
+                ['seat', 'hole'],
+                (['cap'] if cap_present else []) + screws,
+                (['hatch_seat'] if cap_present else []) + holes,
+                result='measured object state matches the expected target',
+            ),
+            'inspect': rule(
+                ['hatch', 'screw'],
+                ['seat', 'hole'],
+                (['cap'] if cap_present else []) + screws,
+                (['hatch_seat'] if cap_present else []) + holes,
+                result='alias of verify',
+            ),
+            'stop': rule(['service_object'], [], ['robot'], [],
+                         result='motion stopped, grasp preserved'),
+            'wait_scene_clear': rule(
+                ['service_object'], [], ['workspace'], [],
+                result='continue only after a bounded clear condition',
+            ),
+            'inspect_state': rule(
+                self._component_kinds(spec) + ['tool'], [],
+                object_components, [],
+                result='empty, holding, placed or unknown ownership',
+            ),
+            'notify_operator': rule(
+                ['service_object'], [], ['operator'], [],
+                result='operator notified; no motion',
+            ),
+        }
+        if sides and 'sealant_tool' in tools:
+            rules['dispense'] = rule(
+                ['tool'],
+                ['contour'],
+                ['sealant_tool'],
+                sides,
+                required_tools=['sealant_tool'],
+                preconditions=[
+                    'sealant_tool is mounted',
+                    'target is an existing contour side_i',
+                ],
+                result='continuous LIN segment along the named contour side',
+            )
+        if tools:
+            rules['dock_tool'] = rule(
+                ['tool'],
+                ['tool_socket'],
+                tools,
+                sockets,
+                preconditions=[
+                    'the named tool is mounted',
+                    'transfer(<tool>, <tool>_socket) precedes dock_tool',
+                    "target is that tool's own socket",
+                ],
+                result='tool returned to its own socket',
+            )
+        if screws:
+            rules['handoff_screw'] = rule(
+                ['screw'],
+                ['hole'],
+                screws,
+                holes,
+                required_tools=['magnetic_tool'],
+                preconditions=['the screw is held by the magnetic tool'],
+                result=(
+                    'screw handed to the virtual operator at the hole; '
+                    'the hole stays empty, no insertion or tightening'
+                ),
+            )
+        return {
+            name: rules[name]
+            for name in self.skill_names(spec)
+            if name in rules
+        }
 
 
 DEFAULT_CATALOG = SkillCatalog()

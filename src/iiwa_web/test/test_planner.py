@@ -14,7 +14,6 @@ from iiwa_web import main, planner
 def envelope():
     return {
         'experiment_id': 20,
-        'scene_revision': 4,
         'state_version': 2,
         'timestamp': 10.0,
         'scene_json': {'experiment_id': 20, 'components': []},
@@ -24,7 +23,9 @@ def envelope():
 class FakeBridge:
     def __init__(self):
         self.calls = []
-        self.submit_success = True
+        self.submit_accepted = True
+        self.submit_code = 'accepted'
+        self.submit_reason = 'graph admitted'
         self.cancel_success = True
         self.scene_success = True
         self.status_payload = {
@@ -45,7 +46,12 @@ class FakeBridge:
                 message=json.dumps(envelope()) if self.scene_success else 'scene not ready',
             )
         if srv_name == planner.SUBMIT_SERVICE:
-            return SimpleNamespace(success=self.submit_success)
+            return SimpleNamespace(
+                accepted=self.submit_accepted,
+                code=self.submit_code,
+                reason=self.submit_reason,
+                status_json='{}',
+            )
         if srv_name == planner.CANCEL_SERVICE:
             return SimpleNamespace(success=self.cancel_success)
         if srv_name == planner.STATUS_SERVICE:
@@ -68,11 +74,12 @@ def bridge(monkeypatch):
     return fake, TestClient(app)
 
 
-def test_scene_returns_the_envelope(bridge):
+def test_scene_returns_the_envelope_without_scene_revision(bridge):
     fake, client = bridge
     response = client.get('/planner/scene')
     assert response.status_code == 200
-    assert response.json()['scene_revision'] == 4
+    assert response.json()['state_version'] == 2
+    assert 'scene_revision' not in response.json()
     assert fake.calls[0][0] == planner.SCENE_SERVICE
 
 
@@ -84,11 +91,10 @@ def test_scene_not_ready_and_service_failure(bridge):
     assert client.get('/planner/scene').status_code == 503
 
 
-def test_submit_accepts_without_waiting_for_completion(bridge):
+def test_submit_accepts_without_scene_revision_or_waiting_for_completion(bridge):
     fake, client = bridge
     response = client.post('/planner/runs', json={
         'run_id': 'r1',
-        'scene_revision': 4,
         'response': {
             'status': 'ready',
             'entry': 'a',
@@ -97,39 +103,55 @@ def test_submit_accepts_without_waiting_for_completion(bridge):
     })
     assert response.status_code == 200
     assert response.json()['status'] == 'accepted'
+    assert 'scene_revision' not in response.json()
     service, request = fake.calls[0]
     assert service == planner.SUBMIT_SERVICE
-    payload = json.loads(request.value)
-    assert payload['run_id'] == 'r1'
-    assert payload['scene_revision'] == 4
-    assert payload['response']['entry'] == 'a'
+    assert request.run_id == 'r1'
+    assert json.loads(request.response)['entry'] == 'a'
     assert planner._active_run_id == 'r1'
 
 
-def test_submit_conflict_and_not_ready_mapping(bridge):
+def test_duplicate_submit_does_not_start_a_second_motion(bridge):
     fake, client = bridge
-    fake.submit_success = False
-    fake.status_payload = {
-        'found': True, 'run_id': 'r1', 'state': 'rejected',
-        'reason': 'busy: another run is active',
-    }
+    fake.submit_code = 'duplicate'
     response = client.post('/planner/runs', json={
-        'run_id': 'r1', 'scene_revision': 4,
+        'run_id': 'r1',
+        'response': {'status': 'ready', 'entry': 'a', 'plan': []},
+    })
+    assert response.status_code == 200
+    assert response.json()['status'] == 'duplicate'
+
+
+@pytest.mark.parametrize('code,http_status', [
+    ('busy', 409),
+    ('conflict', 409),
+    ('stale_scene', 409),
+    ('not_ready', 503),
+    ('invalid', 422),
+    ('rejected', 422),
+    ('replan_required', 422),
+])
+def test_submit_errors_include_the_exact_code_and_reason(bridge, code, http_status):
+    fake, client = bridge
+    fake.submit_accepted = False
+    fake.submit_code = code
+    fake.submit_reason = f'{code} because of a concrete reason'
+    response = client.post('/planner/runs', json={
+        'run_id': 'r1',
         'response': {'status': 'blocked', 'entry': '', 'plan': []},
     })
-    assert response.status_code == 409
-    assert 'busy' in response.json()['detail']
+    assert response.status_code == http_status
+    detail = response.json()['detail']
+    assert detail['code'] == code
+    assert detail['reason'] == f'{code} because of a concrete reason'
+    assert detail['run_id'] == 'r1'
 
-    fake.status_payload['reason'] = 'not_ready: scene is not ready'
-    response = client.post('/planner/runs', json={
-        'run_id': 'r2', 'scene_revision': 4,
-        'response': {'status': 'blocked', 'entry': '', 'plan': []},
-    })
-    assert response.status_code == 503
 
+def test_submit_service_failure_is_503(bridge):
+    fake, client = bridge
     fake.raise_on.add(planner.SUBMIT_SERVICE)
     assert client.post('/planner/runs', json={
-        'run_id': 'r3', 'scene_revision': 4,
+        'run_id': 'r3',
         'response': {'status': 'blocked', 'entry': '', 'plan': []},
     }).status_code == 503
 
@@ -139,6 +161,7 @@ def test_status_returns_404_for_unknown_run(bridge):
     response = client.get('/planner/runs/r1')
     assert response.status_code == 200
     assert response.json()['state'] == 'running'
+    assert 'scene_revision' not in response.json()
     fake.status_payload = None
     assert client.get('/planner/runs/nope').status_code == 404
 

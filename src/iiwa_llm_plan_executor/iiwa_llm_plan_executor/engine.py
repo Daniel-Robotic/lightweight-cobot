@@ -44,8 +44,9 @@ class RunRecord:
     run_id: str
     state: str = 'new'
     reason: str = ''
-    scene_revision: int = 0
+    state_version: int = 0
     response: str = ''
+    canonical_response: str = ''
     node_id: str | None = None
     skill: str | None = None
     event: str | None = None
@@ -71,14 +72,13 @@ class RunStatus:
     skill: str | None
     event: str | None
     next: str | None
-    scene_revision: int
     terminal: str | None
     mounted_tool: str | None
     held_object: str | None
     events: tuple[dict[str, Any], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
-        payload = {
+        return {
             'found': self.found,
             'run_id': self.run_id,
             'state': self.state,
@@ -87,13 +87,11 @@ class RunStatus:
             'skill': self.skill,
             'event': self.event,
             'next': self.next,
-            'scene_revision': self.scene_revision,
             'terminal': self.terminal,
             'mounted_tool': self.mounted_tool,
             'held_object': self.held_object,
             'events': list(self.events),
         }
-        return payload
 
     def to_json(self) -> str:
         return json.dumps(self.as_dict(), ensure_ascii=False)
@@ -104,6 +102,13 @@ class CancelResult:
     accepted: bool
     message: str
     run_id: str
+
+
+def _canonical(graph: PlanGraph) -> str:
+    return json.dumps(
+        graph.as_dict(), sort_keys=True, ensure_ascii=False,
+        separators=(',', ':'),
+    )
 
 
 class GraphEngine:
@@ -182,117 +187,89 @@ class GraphEngine:
         self,
         run_id: str,
         response_json: str | Mapping[str, Any],
-        scene_revision: int,
     ) -> AdmissionResult:
+        """Admit one graph against a fresh scene snapshot.
+
+        Nothing is registered until the format, readiness, freshness and
+        ownership checks have all passed and the accepted graph has been
+        published.  A rejected request therefore never occupies its run_id.
+        """
         run_id = str(run_id).strip()
         if not run_id:
-            return AdmissionResult(False, 'rejected', 'run_id must not be empty', '')
+            return AdmissionResult(False, 'invalid', 'run_id must not be empty', '')
         raw_response = (
             response_json
             if isinstance(response_json, str)
             else json.dumps(response_json, ensure_ascii=False)
         )
+        try:
+            graph = parse_response(raw_response)
+        except PlanSchemaError as error:
+            return AdmissionResult(False, 'invalid', str(error), run_id)
+        canonical = _canonical(graph)
+
         with self._lock:
             existing = self._runs.get(run_id)
             if existing is not None:
-                if existing.state in ACTIVE_STATES:
+                if existing.canonical_response == canonical:
                     return AdmissionResult(
                         True, 'duplicate',
-                        f'run {run_id!r} is already active; no second motion',
+                        f'run {run_id!r} was already admitted; no second motion',
                         run_id,
                     )
-                if existing.state == 'rejected':
-                    return AdmissionResult(
-                        False, existing.reason.split(':', 1)[0] or 'rejected',
-                        existing.reason, run_id,
-                    )
                 return AdmissionResult(
-                    True, 'duplicate',
-                    f'run {run_id!r} was already admitted; no second motion',
+                    False, 'conflict',
+                    f'run {run_id!r} is already bound to a different graph',
                     run_id,
                 )
             active = [
                 record for record in self._runs.values()
                 if record.state in ACTIVE_STATES
             ]
-            now = self._clock()
-            record = RunRecord(
-                run_id=run_id,
-                response=raw_response,
-                scene_revision=int(scene_revision),
-            )
-            self._runs[run_id] = record
             if active:
-                record.state = 'rejected'
-                record.reason = 'busy: another run is active'
                 return AdmissionResult(
                     False, 'busy', 'another graph is already active', run_id,
                 )
+            now = self._clock()
             reason = self._not_ready(now)
             if reason is not None:
-                record.state = 'rejected'
-                record.reason = f'not_ready: {reason}'
                 return AdmissionResult(False, 'not_ready', reason, run_id)
             envelope = self._envelope()
             if envelope is None:
-                record.state = 'rejected'
-                record.reason = 'not_ready: no fresh scene snapshot'
                 return AdmissionResult(
                     False, 'not_ready', 'no fresh scene snapshot', run_id,
                 )
-            envelope_revision = int(envelope.get('scene_revision', -1))
-            if envelope_revision != int(scene_revision):
-                record.state = 'rejected'
-                record.reason = (
-                    f'stale_scene: submitted revision {scene_revision} does not '
-                    f'match current revision {envelope_revision}'
-                )
-                return AdmissionResult(
-                    False, 'stale_scene',
-                    f'submitted scene_revision {scene_revision} does not match '
-                    f'the current revision {envelope_revision}',
-                    run_id,
-                )
             stale = self._scene_age(envelope, now)
             if stale is not None:
-                record.state = 'rejected'
-                record.reason = f'stale_scene: {stale}'
                 return AdmissionResult(False, 'stale_scene', stale, run_id)
-            try:
-                graph = parse_response(raw_response)
-            except PlanSchemaError as error:
-                record.state = 'rejected'
-                record.reason = f'rejected: {error}'
-                return AdmissionResult(False, 'rejected', str(error), run_id)
             validation: ValidationResult = validate_graph(
                 graph,
                 envelope,
                 self.catalog,
-                expected_scene_revision=scene_revision,
             )
             if not validation.ok:
-                record.state = 'rejected'
-                record.reason = f'{validation.code}: {validation.reason}'
-                record.details = validation.details
                 return AdmissionResult(
                     False, validation.code, validation.reason, run_id,
                 )
-            record.state = 'admitted'
-            record.scene_revision = envelope_revision
             try:
                 if self.on_plan is not None:
                     self.on_plan({
                         'run_id': run_id,
-                        'scene_revision': envelope_revision,
                         'response': raw_response,
                     })
             except Exception as error:
-                record.state = 'rejected'
-                record.reason = f'rejected: plan publication failed: {error}'
                 return AdmissionResult(
                     False, 'rejected',
                     f'plan publication failed: {error}', run_id,
                 )
+            record = RunRecord(
+                run_id=run_id,
+                state='admitted',
+                response=canonical,
+                canonical_response=canonical,
+                state_version=int(envelope.get('state_version', 0)),
+            )
+            self._runs[run_id] = record
             if self.threaded:
                 thread = threading.Thread(
                     target=self._execute,
@@ -301,7 +278,16 @@ class GraphEngine:
                     daemon=True,
                 )
                 record.thread = thread
-                thread.start()
+                try:
+                    thread.start()
+                except Exception as error:
+                    # Startup failed before any motion: do not keep the run id
+                    # bound to a request that was never executed.
+                    self._runs.pop(run_id, None)
+                    return AdmissionResult(
+                        False, 'rejected',
+                        f'could not start the worker: {error}', run_id,
+                    )
             return AdmissionResult(True, 'accepted', 'graph admitted', run_id)
 
     # ------------------------------------------------------------------ helpers
@@ -314,7 +300,7 @@ class GraphEngine:
             return None
         if not isinstance(envelope.get('scene_json'), Mapping):
             return None
-        if 'scene_revision' not in envelope:
+        if 'state_version' not in envelope:
             return None
         return envelope
 
@@ -338,7 +324,8 @@ class GraphEngine:
         if hasattr(context, 'held_object'):
             context.held_object = initial.get('held_object') or None
         if hasattr(context, 'scene_revision'):
-            context.scene_revision = int(envelope.get('scene_revision', 0))
+            # Internal only: the executor never exposes this counter.
+            context.scene_revision = int(envelope.get('state_version', 0))
         run.context = context
         return context
 
@@ -357,7 +344,6 @@ class GraphEngine:
             'skill': run.skill,
             'event': run.event,
             'next': run.next,
-            'scene_revision': run.scene_revision,
             'terminal': run.terminal,
             'mounted_tool': run.mounted_tool,
             'held_object': run.held_object,
@@ -381,6 +367,8 @@ class GraphEngine:
         event: str,
         next_id: str,
         outcome: Any,
+        *,
+        timing: dict[str, Any] | None = None,
     ) -> None:
         context = run.context
         if context is not None:
@@ -396,12 +384,13 @@ class GraphEngine:
             'event': event,
             'reason': details.get('reason', ''),
             'next': next_id,
-            'scene_revision': run.scene_revision,
             'mounted_tool': run.mounted_tool,
             'held_object': run.held_object,
             'details': details,
             'timestamp': self._clock(),
         }
+        if timing:
+            entry['timing'] = timing
         run.events.append(entry)
         self._emit_status(run, event_detail=entry)
 
@@ -433,6 +422,17 @@ class GraphEngine:
         if envelope is None:
             self._terminal(run, 'failed', 'scene snapshot is unavailable')
             return
+        age = self._scene_age(envelope, self._clock())
+        if age is not None:
+            self._terminal(run, 'failed', age)
+            return
+        if int(envelope.get('state_version', -1)) != run.state_version:
+            self._terminal(
+                run, 'failed',
+                'scene changed before the first motion '
+                f'({run.state_version} -> {envelope.get("state_version")})',
+            )
+            return
         self._execute(run.run_id, graph, envelope)
 
     def _execute(self, run_id: str, graph: PlanGraph, first_envelope: Mapping[str, Any]) -> None:
@@ -440,11 +440,31 @@ class GraphEngine:
             run = self._runs[run_id]
             run.state = 'running'
         try:
-            context = self._context(run, first_envelope)
-            envelope = first_envelope
+            # Recheck immediately before any motion: the graph was admitted
+            # against this state version, and the worker must not start on a
+            # scene that changed or became stale in between.
+            now = self._clock()
+            current = self._envelope()
+            if current is None:
+                self._terminal(run, 'failed', 'fresh scene snapshot is unavailable')
+                return
+            age = self._scene_age(current, now)
+            if age is not None:
+                self._terminal(run, 'failed', age)
+                return
+            if int(current.get('state_version', -1)) != run.state_version:
+                self._terminal(
+                    run, 'failed',
+                    'scene changed before the first motion '
+                    f'({run.state_version} -> {current.get("state_version")})',
+                )
+                return
+            context = self._context(run, current)
+            envelope = current
             node_id = graph.entry
             steps = 0
             while True:
+                step_started = time.monotonic()
                 if run.cancel_requested:
                     self._terminal(run, 'canceled', 'cancel requested')
                     return
@@ -454,7 +474,7 @@ class GraphEngine:
                         f'executed step limit of {self.max_steps} reached',
                     )
                     return
-                now = self._clock()
+                robot_started = time.monotonic()
                 if self.robot_fresh is not None:
                     try:
                         fresh, message = self.robot_fresh()
@@ -463,6 +483,9 @@ class GraphEngine:
                     if not fresh:
                         self._terminal(run, 'failed', f'robot state: {message}')
                         return
+                robot_check_sec = time.monotonic() - robot_started
+                now = self._clock()
+                scene_started = time.monotonic()
                 current = self._envelope()
                 if current is None:
                     self._terminal(run, 'failed', 'fresh scene snapshot is unavailable')
@@ -471,28 +494,38 @@ class GraphEngine:
                 if age is not None:
                     self._terminal(run, 'failed', age)
                     return
-                revision = int(current.get('scene_revision', -1))
-                if revision != run.scene_revision:
+                version = int(current.get('state_version', -1))
+                if version != run.state_version:
                     previous_node = graph.node(node_id) if node_id in graph.ids else None
                     acknowledged = (
                         run.skill in OWNERSHIP_SKILLS
                         and run.event == 'success'
                         and previous_node is not None
-                        and revision > run.scene_revision
+                        and version > run.state_version
                     )
                     if not acknowledged:
                         self._terminal(
                             run, 'failed',
-                            'scene_revision changed externally '
-                            f'({run.scene_revision} -> {revision}); motion stopped',
+                            'scene state changed externally '
+                            f'({run.state_version} -> {version}); motion stopped',
                         )
                         return
-                    run.scene_revision = revision
+                    run.state_version = version
                     if hasattr(context, 'scene_revision'):
-                        context.scene_revision = revision
+                        context.scene_revision = version
                     envelope = current
+                scene_check_sec = time.monotonic() - scene_started
                 node = graph.node(node_id)
+                skill_started = time.monotonic()
                 outcome = self.skills.execute(node, context)
+                skill_sec = time.monotonic() - skill_started
+                timing = {
+                    'step': steps,
+                    'robot_check_sec': robot_check_sec,
+                    'scene_check_sec': scene_check_sec,
+                    'skill_sec': skill_sec,
+                    'step_sec': time.monotonic() - step_started,
+                }
                 event = str(outcome.event)
                 transitions = {
                     transition.event: transition.next for transition in node.transitions
@@ -502,7 +535,9 @@ class GraphEngine:
                 run.event = event
                 if event not in transitions:
                     run.next = None
-                    self._record_event(run, node, event, '', outcome)
+                    self._record_event(
+                        run, node, event, '', outcome, timing=timing,
+                    )
                     self._terminal(
                         run, 'failed',
                         f'unknown skill outcome {event!r} for node {node.id!r}',
@@ -510,7 +545,9 @@ class GraphEngine:
                     return
                 next_id = transitions[event]
                 run.next = next_id
-                self._record_event(run, node, event, next_id, outcome)
+                self._record_event(
+                    run, node, event, next_id, outcome, timing=timing,
+                )
                 steps += 1
                 if run.cancel_requested:
                     self._terminal(run, 'canceled', 'cancel requested')
@@ -525,11 +562,6 @@ class GraphEngine:
                                 )
                             except Exception:
                                 pass
-                    if next_id == 'completed' and hasattr(context, 'held_object'):
-                        if context.held_object is not None:
-                            # The graph deliberately leaves an object in the
-                            # gripper only if it never asked to release it.
-                            pass
                     self._terminal(run, next_id, f'graph reached {next_id}')
                     return
                 node_id = next_id
@@ -544,7 +576,7 @@ class GraphEngine:
             if run is None:
                 return RunStatus(
                     False, run_id, 'unknown', 'run_id was not submitted',
-                    None, None, None, None, 0, None, None, None, (),
+                    None, None, None, None, None, None, None, (),
                 )
             return RunStatus(
                 True,
@@ -555,7 +587,6 @@ class GraphEngine:
                 run.skill,
                 run.event,
                 run.next,
-                run.scene_revision,
                 run.terminal,
                 run.mounted_tool,
                 run.held_object,

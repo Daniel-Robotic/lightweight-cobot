@@ -1,10 +1,11 @@
-"""Graph admission: structure, safe branches, ownership and scene revision."""
+"""Graph admission: structure, safe branches and ownership."""
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
+from iiwa_experement.geometry import load_geometry
 from iiwa_experement.scenario import load_scenario
 from iiwa_llm_plan_executor.schema import PlanSchemaError, parse_response
 from iiwa_llm_plan_executor.validator import validate_graph
@@ -14,6 +15,7 @@ from iiwa_scene_context.snapshot import build_envelope, build_scene
 
 PACKAGE = Path(__file__).resolve().parents[1]
 SCENES = PACKAGE.parent / 'iiwa_experement' / 'config' / 'scenes.yaml'
+GEOMETRY = load_geometry(PACKAGE.parent / 'iiwa_experement' / 'config' / 'geometry.yaml')
 SAFE_DEFAULTS = {
     'collision': 'operator_required',
     'grasp_failed': 'operator_required',
@@ -33,6 +35,7 @@ def spec_for(experiment_id: int = 1):
 
 def scene_for(experiment_id: int = 1, *, mounted=None, held=None,
               cap_state=None, revision=1):
+    del revision
     spec = spec_for(experiment_id)
     tools = {tool.name: {'state': 'docked'} for tool in spec.tools}
     if mounted:
@@ -50,10 +53,11 @@ def scene_for(experiment_id: int = 1, *, mounted=None, held=None,
             'holes': {},
         },
         DEFAULT_CATALOG,
+        GEOMETRY,
+        stamp=10.0,
     )
     return build_envelope(
         scene,
-        scene_revision=revision,
         state_version=1,
         stamp=10.0,
         experiment_id=experiment_id,
@@ -93,13 +97,8 @@ def graph(entry_id, *nodes):
     })
 
 
-def expect(graph_value, scene, *, expected_revision=None):
-    return validate_graph(
-        graph_value,
-        scene,
-        DEFAULT_CATALOG,
-        expected_scene_revision=expected_revision,
-    )
+def expect(graph_value, scene):
+    return validate_graph(graph_value, scene, DEFAULT_CATALOG)
 
 
 def test_blocked_status_never_reaches_execution():
@@ -356,13 +355,6 @@ def test_cycles_are_bounded_and_must_keep_a_recovery_branch():
              next_on={'clear': 'a'}),
     )
     assert expect(recovering_cycle, scene_for(1)).ok is True
-
-
-def test_wrong_scene_revision_is_rejected():
-    value = graph('a', node('a', 'detect', 'cap'))
-    result = expect(value, scene_for(1, revision=3), expected_revision=2)
-    assert result.ok is False
-    assert result.code == 'stale_scene'
 
 
 def test_aliases_for_pick_move_to_storage_and_inspect_are_supported():

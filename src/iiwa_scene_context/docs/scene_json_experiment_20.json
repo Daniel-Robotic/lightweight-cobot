@@ -1,0 +1,2391 @@
+{
+  "schema_version": 2,
+  "contract_version": 2,
+  "catalog_version": 2,
+  "profile": "grant",
+  "experiment_id": 20,
+  "domain": "grant_assembly",
+  "pose_conventions": {
+    "frame_id": "world",
+    "length_unit": "m",
+    "orientation": "quaternion_xyzw"
+  },
+  "components": [
+    {
+      "id": "fixture",
+      "name": "оснастка",
+      "attributes": {
+        "kind": "fixture",
+        "movable": false
+      },
+      "dependencies": [],
+      "destination": "",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.3,
+          "y": 0.12,
+          "z": 0.803
+        },
+        "orientation": {
+          "x": 0.6532814824381882,
+          "y": 0.27059805007309845,
+          "z": 0.2705980500730985,
+          "w": 0.6532814824381884
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "body",
+      "name": "корпус",
+      "attributes": {
+        "kind": "body",
+        "movable": false
+      },
+      "dependencies": [],
+      "destination": "",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.3,
+          "y": 0.12,
+          "z": 0.823
+        },
+        "orientation": {
+          "x": 0.6532814824381882,
+          "y": 0.27059805007309845,
+          "z": 0.2705980500730985,
+          "w": 0.6532814824381884
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "cap",
+      "name": "люк",
+      "attributes": {
+        "kind": "hatch",
+        "movable": true
+      },
+      "dependencies": [],
+      "destination": "hatch_seat",
+      "state": "free",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.35,
+          "y": -0.22,
+          "z": 0.790667
+        },
+        "orientation": {
+          "x": 0.6532814824381882,
+          "y": 0.27059805007309845,
+          "z": 0.2705980500730985,
+          "w": 0.6532814824381884
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "tray",
+      "name": "лоток с винтами",
+      "attributes": {
+        "kind": "tray",
+        "movable": true
+      },
+      "dependencies": [],
+      "destination": "",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.2,
+          "y": 0.46,
+          "z": 0.793
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "screw_1",
+      "name": "винт 1",
+      "attributes": {
+        "kind": "screw",
+        "movable": true,
+        "allowed_destinations": [
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      },
+      "dependencies": [],
+      "destination": "",
+      "state": "tray",
+      "hole": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.16,
+          "y": 0.445,
+          "z": 0.7954
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "screw_2",
+      "name": "винт 2",
+      "attributes": {
+        "kind": "screw",
+        "movable": true,
+        "allowed_destinations": [
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      },
+      "dependencies": [],
+      "destination": "",
+      "state": "tray",
+      "hole": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.24000000000000002,
+          "y": 0.445,
+          "z": 0.7954
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "screw_3",
+      "name": "винт 3",
+      "attributes": {
+        "kind": "screw",
+        "movable": true,
+        "allowed_destinations": [
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      },
+      "dependencies": [],
+      "destination": "",
+      "state": "tray",
+      "hole": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.16,
+          "y": 0.47500000000000003,
+          "z": 0.7954
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "screw_4",
+      "name": "винт 4",
+      "attributes": {
+        "kind": "screw",
+        "movable": true,
+        "allowed_destinations": [
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      },
+      "dependencies": [],
+      "destination": "",
+      "state": "tray",
+      "hole": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.24000000000000002,
+          "y": 0.47500000000000003,
+          "z": 0.7954
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "screw_5",
+      "name": "винт 5",
+      "attributes": {
+        "kind": "screw",
+        "movable": true,
+        "allowed_destinations": [
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      },
+      "dependencies": [],
+      "destination": "",
+      "state": "tray",
+      "hole": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.18000000000000002,
+          "y": 0.445,
+          "z": 0.7954
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "screw_6",
+      "name": "винт 6",
+      "attributes": {
+        "kind": "screw",
+        "movable": true,
+        "allowed_destinations": [
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      },
+      "dependencies": [],
+      "destination": "",
+      "state": "tray",
+      "hole": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.2,
+          "y": 0.445,
+          "z": 0.7954
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "screw_7",
+      "name": "винт 7",
+      "attributes": {
+        "kind": "screw",
+        "movable": true,
+        "allowed_destinations": [
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      },
+      "dependencies": [],
+      "destination": "",
+      "state": "tray",
+      "hole": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.22,
+          "y": 0.445,
+          "z": 0.7954
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "screw_8",
+      "name": "винт 8",
+      "attributes": {
+        "kind": "screw",
+        "movable": true,
+        "allowed_destinations": [
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      },
+      "dependencies": [],
+      "destination": "",
+      "state": "tray",
+      "hole": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.18000000000000002,
+          "y": 0.47500000000000003,
+          "z": 0.7954
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "screw_9",
+      "name": "винт 9",
+      "attributes": {
+        "kind": "screw",
+        "movable": true,
+        "allowed_destinations": [
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      },
+      "dependencies": [],
+      "destination": "",
+      "state": "tray",
+      "hole": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.2,
+          "y": 0.47500000000000003,
+          "z": 0.7954
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "screw_10",
+      "name": "винт 10",
+      "attributes": {
+        "kind": "screw",
+        "movable": true,
+        "allowed_destinations": [
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      },
+      "dependencies": [],
+      "destination": "",
+      "state": "tray",
+      "hole": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.22,
+          "y": 0.47500000000000003,
+          "z": 0.7954
+        },
+        "orientation": {
+          "x": 0.7071067811865475,
+          "y": 0.0,
+          "z": 0.0,
+          "w": 0.7071067811865477
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    }
+  ],
+  "destinations": [
+    {
+      "id": "work",
+      "name": "рабочая позиция",
+      "kind": "workspace",
+      "capacity": 1,
+      "state": "available",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.1496,
+          "y": 0.0,
+          "z": 1.3139
+        },
+        "orientation": {
+          "x": 6.123233995736766e-17,
+          "y": 1.0,
+          "z": 6.123233995736766e-17,
+          "w": 3.749399456654644e-33
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "tcp_pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.1496,
+          "y": 0.0,
+          "z": 1.3139
+        },
+        "orientation": {
+          "x": 6.123233995736766e-17,
+          "y": 1.0,
+          "z": 6.123233995736766e-17,
+          "w": 3.749399456654644e-33
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "hatch_seat",
+      "name": "посадочное место люка на корпусе",
+      "kind": "seat",
+      "capacity": 1,
+      "state": "empty",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.3,
+          "y": 0.12,
+          "z": 0.82594
+        },
+        "orientation": {
+          "x": 0.6532814824381882,
+          "y": 0.27059805007309845,
+          "z": 0.2705980500730985,
+          "w": 0.6532814824381884
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "tcp_pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.29999999999999993,
+          "y": 0.12000000000000004,
+          "z": 0.97194
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650897,
+          "z": 7.252881433641315e-17,
+          "w": 1.9269848858034314e-16
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "hole_1",
+      "name": "отверстие 1",
+      "kind": "hole",
+      "capacity": 1,
+      "state": "empty",
+      "screw": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.2243,
+          "y": 0.10519999999999999,
+          "z": 0.8339399999999999
+        },
+        "orientation": {
+          "x": 0.6532814824381882,
+          "y": 0.27059805007309845,
+          "z": 0.2705980500730985,
+          "w": 0.6532814824381884
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "tcp_pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.22429999999999997,
+          "y": 0.10520000000000003,
+          "z": 0.9829399999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650897,
+          "z": 7.252881433641315e-17,
+          "w": 1.9269848858034314e-16
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "hole_2",
+      "name": "отверстие 2",
+      "kind": "hole",
+      "capacity": 1,
+      "state": "empty",
+      "screw": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.2852,
+          "y": 0.04429999999999999,
+          "z": 0.8339399999999999
+        },
+        "orientation": {
+          "x": 0.6532814824381882,
+          "y": 0.27059805007309845,
+          "z": 0.2705980500730985,
+          "w": 0.6532814824381884
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "tcp_pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.28519999999999995,
+          "y": 0.044300000000000034,
+          "z": 0.9829399999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650897,
+          "z": 7.252881433641315e-17,
+          "w": 1.9269848858034314e-16
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "hole_3",
+      "name": "отверстие 3",
+      "kind": "hole",
+      "capacity": 1,
+      "state": "empty",
+      "screw": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.3757,
+          "y": 0.1348,
+          "z": 0.8339399999999999
+        },
+        "orientation": {
+          "x": 0.6532814824381882,
+          "y": 0.27059805007309845,
+          "z": 0.2705980500730985,
+          "w": 0.6532814824381884
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "tcp_pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.3756999999999999,
+          "y": 0.13480000000000003,
+          "z": 0.9829399999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650897,
+          "z": 7.252881433641315e-17,
+          "w": 1.9269848858034314e-16
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "hole_4",
+      "name": "отверстие 4",
+      "kind": "hole",
+      "capacity": 1,
+      "state": "empty",
+      "screw": null,
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.31479999999999997,
+          "y": 0.19569999999999999,
+          "z": 0.8339399999999999
+        },
+        "orientation": {
+          "x": 0.6532814824381882,
+          "y": 0.27059805007309845,
+          "z": 0.2705980500730985,
+          "w": 0.6532814824381884
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "tcp_pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.3147999999999999,
+          "y": 0.1957,
+          "z": 0.9829399999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650897,
+          "z": 7.252881433641315e-17,
+          "w": 1.9269848858034314e-16
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "vacuum_socket",
+      "name": "гнездо vacuum",
+      "kind": "tool_socket",
+      "capacity": 1,
+      "state": "occupied",
+      "tool": "vacuum",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.255,
+          "y": -0.42,
+          "z": 0.803
+        },
+        "orientation": {
+          "x": 4.3297802811774664e-17,
+          "y": 0.7071067811865475,
+          "z": 0.7071067811865477,
+          "w": 4.329780281177467e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "tcp_pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.255,
+          "y": -0.42000000000000004,
+          "z": 0.9430000000000001
+        },
+        "orientation": {
+          "x": 6.123233995736766e-17,
+          "y": 1.0,
+          "z": 2.220446049250313e-16,
+          "w": 1.2961131189273611e-32
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "magnetic_tool_socket",
+      "name": "гнездо magnetic_tool",
+      "kind": "tool_socket",
+      "capacity": 1,
+      "state": "occupied",
+      "tool": "magnetic_tool",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.165,
+          "y": -0.42,
+          "z": 0.803
+        },
+        "orientation": {
+          "x": 4.3297802811774664e-17,
+          "y": 0.7071067811865475,
+          "z": 0.7071067811865477,
+          "w": 4.329780281177467e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "tcp_pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.165,
+          "y": -0.42000000000000004,
+          "z": 0.9430000000000001
+        },
+        "orientation": {
+          "x": 6.123233995736766e-17,
+          "y": 1.0,
+          "z": 2.220446049250313e-16,
+          "w": 1.2961131189273611e-32
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "sealant_tool_socket",
+      "name": "гнездо sealant_tool",
+      "kind": "tool_socket",
+      "capacity": 1,
+      "state": "occupied",
+      "tool": "sealant_tool",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.075,
+          "y": -0.42,
+          "z": 0.803
+        },
+        "orientation": {
+          "x": 4.3297802811774664e-17,
+          "y": 0.7071067811865475,
+          "z": 0.7071067811865477,
+          "w": 4.329780281177467e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "tcp_pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.075,
+          "y": -0.42000000000000004,
+          "z": 0.9430000000000001
+        },
+        "orientation": {
+          "x": 6.123233995736766e-17,
+          "y": 1.0,
+          "z": 2.220446049250313e-16,
+          "w": 1.2961131189273611e-32
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "torque_tool_socket",
+      "name": "гнездо torque_tool",
+      "kind": "tool_socket",
+      "capacity": 1,
+      "state": "occupied",
+      "tool": "torque_tool",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": -0.015,
+          "y": -0.42,
+          "z": 0.803
+        },
+        "orientation": {
+          "x": 4.3297802811774664e-17,
+          "y": 0.7071067811865475,
+          "z": 0.7071067811865477,
+          "w": 4.329780281177467e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "tcp_pose": {
+        "frame_id": "world",
+        "position": {
+          "x": -0.015,
+          "y": -0.42000000000000004,
+          "z": 0.9430000000000001
+        },
+        "orientation": {
+          "x": 6.123233995736766e-17,
+          "y": 1.0,
+          "z": 2.220446049250313e-16,
+          "w": 1.2961131189273611e-32
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "side_1",
+      "name": "участок герметика side_1",
+      "kind": "contour",
+      "capacity": 1,
+      "state": "available",
+      "start": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.23281999999999997,
+          "y": 0.10515,
+          "z": 0.8297699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "end": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.28515,
+          "y": 0.05281999999999999,
+          "z": 0.8297699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "start_tcp": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.23281999999999997,
+          "y": 0.10515000000000001,
+          "z": 0.9697699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "end_tcp": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.28515,
+          "y": 0.052820000000000006,
+          "z": 0.9697699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "side_2",
+      "name": "участок герметика side_2",
+      "kind": "contour",
+      "capacity": 1,
+      "state": "available",
+      "start": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.28515,
+          "y": 0.05281999999999999,
+          "z": 0.8297699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "end": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.36718,
+          "y": 0.13485,
+          "z": 0.8297699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "start_tcp": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.28515,
+          "y": 0.052820000000000006,
+          "z": 0.9697699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "end_tcp": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.36718,
+          "y": 0.13485,
+          "z": 0.9697699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "side_3",
+      "name": "участок герметика side_3",
+      "kind": "contour",
+      "capacity": 1,
+      "state": "available",
+      "start": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.36718,
+          "y": 0.13485,
+          "z": 0.8297699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "end": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.31484999999999996,
+          "y": 0.18718,
+          "z": 0.8297699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "start_tcp": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.36718,
+          "y": 0.13485,
+          "z": 0.9697699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "end_tcp": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.31484999999999996,
+          "y": 0.18718,
+          "z": 0.9697699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "side_4",
+      "name": "участок герметика side_4",
+      "kind": "contour",
+      "capacity": 1,
+      "state": "available",
+      "start": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.31484999999999996,
+          "y": 0.18718,
+          "z": 0.8297699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "end": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.23281999999999997,
+          "y": 0.10515,
+          "z": 0.8297699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "start_tcp": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.31484999999999996,
+          "y": 0.18718,
+          "z": 0.9697699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      },
+      "end_tcp": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.23281999999999997,
+          "y": 0.10515000000000001,
+          "z": 0.9697699999999999
+        },
+        "orientation": {
+          "x": 0.9238795325112867,
+          "y": 0.3826834323650898,
+          "z": 2.343260202663149e-17,
+          "w": 5.6571305614385e-17
+        },
+        "source": "executor_geometry",
+        "stamp": 42.0
+      }
+    }
+  ],
+  "tools": [
+    {
+      "id": "vacuum",
+      "name": "вакуумная присоска",
+      "kind": "suction_cup",
+      "socket": "vacuum_socket",
+      "state": "docked",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.255,
+          "y": -0.42,
+          "z": 0.803
+        },
+        "orientation": {
+          "x": 4.3297802811774664e-17,
+          "y": 0.7071067811865475,
+          "z": 0.7071067811865477,
+          "w": 4.329780281177467e-17
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "magnetic_tool",
+      "name": "магнитный инструмент",
+      "kind": "magnet",
+      "socket": "magnetic_tool_socket",
+      "state": "docked",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.165,
+          "y": -0.42,
+          "z": 0.803
+        },
+        "orientation": {
+          "x": 4.3297802811774664e-17,
+          "y": 0.7071067811865475,
+          "z": 0.7071067811865477,
+          "w": 4.329780281177467e-17
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "sealant_tool",
+      "name": "инструмент нанесения герметика",
+      "kind": "dispenser",
+      "socket": "sealant_tool_socket",
+      "state": "docked",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": 0.075,
+          "y": -0.42,
+          "z": 0.803
+        },
+        "orientation": {
+          "x": 4.3297802811774664e-17,
+          "y": 0.7071067811865475,
+          "z": 0.7071067811865477,
+          "w": 4.329780281177467e-17
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    },
+    {
+      "id": "torque_tool",
+      "name": "моментный инструмент",
+      "kind": "torque_wrench",
+      "socket": "torque_tool_socket",
+      "state": "docked",
+      "pose": {
+        "frame_id": "world",
+        "position": {
+          "x": -0.015,
+          "y": -0.42,
+          "z": 0.803
+        },
+        "orientation": {
+          "x": 4.3297802811774664e-17,
+          "y": 0.7071067811865475,
+          "z": 0.7071067811865477,
+          "w": 4.329780281177467e-17
+        },
+        "source": "scenario_manifest",
+        "stamp": 42.0
+      }
+    }
+  ],
+  "initial_state": {
+    "tool_mounted": null,
+    "held_object": null,
+    "flags": [
+      "tool_docked",
+      "gripper_empty",
+      "hatch_free"
+    ],
+    "components": {
+      "fixture": "present",
+      "body": "present",
+      "cap": "free",
+      "tray": "present",
+      "screw_1": "tray",
+      "screw_2": "tray",
+      "screw_3": "tray",
+      "screw_4": "tray",
+      "screw_5": "tray",
+      "screw_6": "tray",
+      "screw_7": "tray",
+      "screw_8": "tray",
+      "screw_9": "tray",
+      "screw_10": "tray"
+    },
+    "tools": {
+      "vacuum": "docked",
+      "magnetic_tool": "docked",
+      "sealant_tool": "docked",
+      "torque_tool": "docked"
+    },
+    "holes": {
+      "hole_1": {
+        "state": "empty",
+        "screw": null
+      },
+      "hole_2": {
+        "state": "empty",
+        "screw": null
+      },
+      "hole_3": {
+        "state": "empty",
+        "screw": null
+      },
+      "hole_4": {
+        "state": "empty",
+        "screw": null
+      }
+    },
+    "scene_ready": true,
+    "stamp": 42.0
+  },
+  "cameras": {
+    "top": {
+      "topic": "/d455_top/image_raw/image_color",
+      "role": "overview",
+      "required_for": [
+        "detect"
+      ]
+    },
+    "hand": {
+      "topic": "/camera/color/image_color",
+      "role": "close_inspection",
+      "required_for": [
+        "detect",
+        "capture"
+      ]
+    }
+  },
+  "available_skills": [
+    "detect",
+    "approach",
+    "lower",
+    "grab",
+    "lift",
+    "transfer",
+    "align",
+    "release",
+    "retreat",
+    "capture",
+    "verify",
+    "stop",
+    "wait_scene_clear",
+    "inspect_state",
+    "notify_operator",
+    "dispense",
+    "dock_tool",
+    "handoff_screw",
+    "pick",
+    "move_to_storage",
+    "inspect"
+  ],
+  "skill_contracts": {
+    "detect": {
+      "outcomes": {
+        "found": "Объект найден, актуальная локализация получена.",
+        "not_found": "Объект не найден, движение не выполнялось.",
+        "failed": "Наблюдение недоступно."
+      }
+    },
+    "approach": {
+      "outcomes": {
+        "success": "Движение в безопасную точку над целью выполнено.",
+        "human_in_scene": "Шаг прерван из-за человека в зоне движения.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Иная ошибка движения."
+      }
+    },
+    "lower": {
+      "outcomes": {
+        "success": "Осевое опускание к контакту выполнено.",
+        "human_in_scene": "Шаг прерван из-за человека в зоне движения.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Иная ошибка движения."
+      }
+    },
+    "grab": {
+      "outcomes": {
+        "success": "Захват или установка инструмента подтверждены.",
+        "grasp_failed": "Захват не подтверждён; состояние нужно проверить.",
+        "human_in_scene": "Шаг прерван из-за человека в зоне движения.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Иная ошибка захвата."
+      }
+    },
+    "lift": {
+      "outcomes": {
+        "success": "Осевой подъём выполнен.",
+        "human_in_scene": "Шаг прерван из-за человека в зоне движения.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Иная ошибка движения."
+      }
+    },
+    "transfer": {
+      "outcomes": {
+        "success": "Перенос к цели на безопасной высоте выполнен.",
+        "human_in_scene": "Шаг прерван из-за человека в зоне движения.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Иная ошибка движения."
+      }
+    },
+    "align": {
+      "outcomes": {
+        "success": "Ориентация совмещена на безопасной высоте.",
+        "failed": "Совмещение не подтверждено."
+      }
+    },
+    "release": {
+      "outcomes": {
+        "success": "Объект отпущен в разрешённом месте.",
+        "human_in_scene": "Шаг прерван из-за человека в зоне движения.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Отпускание не подтверждено."
+      }
+    },
+    "retreat": {
+      "outcomes": {
+        "success": "Осевой отвод выполнен.",
+        "human_in_scene": "Шаг прерван из-за человека в зоне движения.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Иная ошибка движения."
+      }
+    },
+    "capture": {
+      "outcomes": {
+        "success": "Свежий кадр получен.",
+        "failed": "Кадр не получен."
+      }
+    },
+    "verify": {
+      "outcomes": {
+        "ok": "Результат в допуске.",
+        "not_ok": "Результат вне допуска.",
+        "failed": "Невозможно измерить результат."
+      }
+    },
+    "stop": {
+      "outcomes": {
+        "success": "Остановка подтверждена, состояние захвата сохранено.",
+        "failed": "Остановку подтвердить не удалось."
+      }
+    },
+    "wait_scene_clear": {
+      "outcomes": {
+        "clear": "Зона свободна, продолжение разрешено.",
+        "timeout": "Условие не наступило за отведённое время.",
+        "failed": "Невозможно подтвердить условие."
+      }
+    },
+    "inspect_state": {
+      "outcomes": {
+        "empty": "Захват пуст, деталь доступна для новой попытки.",
+        "holding": "Нужная деталь удерживается.",
+        "placed": "Деталь на месте, захват пуст.",
+        "unknown": "Состояние владения не подтверждено."
+      }
+    },
+    "notify_operator": {
+      "outcomes": {
+        "success": "Уведомление оператору отправлено.",
+        "failed": "Доставка уведомления не подтверждена."
+      }
+    },
+    "dispense": {
+      "outcomes": {
+        "success": "Участок герметика пройден.",
+        "human_in_scene": "Шаг прерван из-за человека в зоне движения.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Иная ошибка нанесения."
+      }
+    },
+    "dock_tool": {
+      "outcomes": {
+        "success": "Инструмент возвращён в своё гнездо.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Стыковка не подтверждена."
+      }
+    },
+    "handoff_screw": {
+      "outcomes": {
+        "success": "Винт передан виртуальному оператору у отверстия.",
+        "grasp_failed": "Передача не подтверждена; состояние нужно проверить.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Иная ошибка передачи."
+      }
+    },
+    "pick": {
+      "outcomes": {
+        "success": "Захват подтверждён.",
+        "grasp_failed": "Захват не подтверждён; состояние нужно проверить.",
+        "human_in_scene": "Шаг прерван из-за человека в зоне движения.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Иная ошибка захвата."
+      }
+    },
+    "move_to_storage": {
+      "outcomes": {
+        "success": "Деталь установлена на опору, захват сохранён.",
+        "human_in_scene": "Шаг прерван из-за человека в зоне движения.",
+        "collision": "Исполнитель сообщил о столкновении.",
+        "failed": "Иная ошибка переноса."
+      }
+    },
+    "inspect": {
+      "outcomes": {
+        "ok": "Результат в допуске.",
+        "not_ok": "Результат вне допуска.",
+        "failed": "Невозможно измерить результат."
+      }
+    }
+  },
+  "action_rules": {
+    "detect": {
+      "object_types": [
+        "body",
+        "fixture",
+        "hatch",
+        "screw",
+        "tray",
+        "tool"
+      ],
+      "target_types": [
+        "contour",
+        "hole",
+        "seat",
+        "tool_socket",
+        "workspace"
+      ],
+      "objects": [
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [
+        "work",
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4",
+        "vacuum_socket",
+        "magnetic_tool_socket",
+        "sealant_tool_socket",
+        "torque_tool_socket",
+        "side_1",
+        "side_2",
+        "side_3",
+        "side_4"
+      ],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "fresh pose of a present object or destination"
+    },
+    "approach": {
+      "object_types": [
+        "body",
+        "fixture",
+        "hatch",
+        "screw",
+        "tray",
+        "tool"
+      ],
+      "target_types": [
+        "contour",
+        "hole",
+        "seat",
+        "tool_socket",
+        "workspace",
+        "component",
+        "tool"
+      ],
+      "objects": [
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [
+        "work",
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4",
+        "vacuum_socket",
+        "magnetic_tool_socket",
+        "sealant_tool_socket",
+        "torque_tool_socket",
+        "side_1",
+        "side_2",
+        "side_3",
+        "side_4",
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "tcp above the target at approach height"
+    },
+    "lower": {
+      "object_types": [
+        "body",
+        "fixture",
+        "hatch",
+        "screw",
+        "tray",
+        "tool"
+      ],
+      "target_types": [
+        "contour",
+        "hole",
+        "seat",
+        "tool_socket",
+        "workspace",
+        "component",
+        "tool"
+      ],
+      "objects": [
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [
+        "work",
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4",
+        "vacuum_socket",
+        "magnetic_tool_socket",
+        "sealant_tool_socket",
+        "torque_tool_socket",
+        "side_1",
+        "side_2",
+        "side_3",
+        "side_4",
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "tcp at the axial contact pose"
+    },
+    "grab": {
+      "object_types": [
+        "hatch",
+        "screw",
+        "tool"
+      ],
+      "target_types": [],
+      "objects": [
+        "cap",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [],
+      "required_tools": [],
+      "preconditions": [
+        "tool socket is free for a tool",
+        "gripper is empty"
+      ],
+      "result": "tool mounted or part attached to the mounted tool",
+      "required_tool_by_kind": {
+        "hatch": "vacuum",
+        "screw": "magnetic_tool"
+      }
+    },
+    "lift": {
+      "object_types": [
+        "body",
+        "fixture",
+        "hatch",
+        "screw",
+        "tray",
+        "tool"
+      ],
+      "target_types": [
+        "contour",
+        "hole",
+        "seat",
+        "tool_socket",
+        "workspace",
+        "component",
+        "tool"
+      ],
+      "objects": [
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [
+        "work",
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4",
+        "vacuum_socket",
+        "magnetic_tool_socket",
+        "sealant_tool_socket",
+        "torque_tool_socket",
+        "side_1",
+        "side_2",
+        "side_3",
+        "side_4",
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "tcp at the saved approach height"
+    },
+    "transfer": {
+      "object_types": [
+        "body",
+        "fixture",
+        "hatch",
+        "screw",
+        "tray",
+        "tool"
+      ],
+      "target_types": [
+        "contour",
+        "hole",
+        "seat",
+        "tool_socket",
+        "workspace"
+      ],
+      "objects": [
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [
+        "work",
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4",
+        "vacuum_socket",
+        "magnetic_tool_socket",
+        "sealant_tool_socket",
+        "torque_tool_socket",
+        "side_1",
+        "side_2",
+        "side_3",
+        "side_4"
+      ],
+      "required_tools": [],
+      "preconditions": [
+        "object is held or tool is mounted"
+      ],
+      "result": "tcp above the destination at transfer height",
+      "targets_by_object_kind": {
+        "tool": [
+          "work",
+          "vacuum_socket",
+          "magnetic_tool_socket",
+          "sealant_tool_socket",
+          "torque_tool_socket"
+        ],
+        "hatch": [
+          "work",
+          "hatch_seat"
+        ],
+        "screw": [
+          "work",
+          "hole_1",
+          "hole_2",
+          "hole_3",
+          "hole_4"
+        ]
+      }
+    },
+    "align": {
+      "object_types": [
+        "body",
+        "fixture",
+        "hatch",
+        "screw",
+        "tray",
+        "tool"
+      ],
+      "target_types": [
+        "contour",
+        "hole",
+        "seat",
+        "tool_socket",
+        "workspace"
+      ],
+      "objects": [
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [
+        "work",
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4",
+        "vacuum_socket",
+        "magnetic_tool_socket",
+        "sealant_tool_socket",
+        "torque_tool_socket",
+        "side_1",
+        "side_2",
+        "side_3",
+        "side_4"
+      ],
+      "required_tools": [],
+      "preconditions": [
+        "a part is held or a tool is mounted"
+      ],
+      "result": "orientation aligned above the target"
+    },
+    "release": {
+      "object_types": [
+        "hatch",
+        "screw",
+        "tool"
+      ],
+      "target_types": [
+        "seat",
+        "hole",
+        "tool_socket"
+      ],
+      "objects": [
+        "cap",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4",
+        "vacuum_socket",
+        "magnetic_tool_socket",
+        "sealant_tool_socket",
+        "torque_tool_socket"
+      ],
+      "required_tools": [],
+      "preconditions": [
+        "release(tool) requires the matching <tool>_socket",
+        "an explicit transfer to the socket precedes dock_tool"
+      ],
+      "result": "screw handed to the virtual operator at a hole; no insertion or tightening"
+    },
+    "retreat": {
+      "object_types": [
+        "body",
+        "fixture",
+        "hatch",
+        "screw",
+        "tray",
+        "tool"
+      ],
+      "target_types": [
+        "contour",
+        "hole",
+        "seat",
+        "tool_socket",
+        "workspace",
+        "component",
+        "tool"
+      ],
+      "objects": [
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [
+        "work",
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4",
+        "vacuum_socket",
+        "magnetic_tool_socket",
+        "sealant_tool_socket",
+        "torque_tool_socket",
+        "side_1",
+        "side_2",
+        "side_3",
+        "side_4",
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "tcp at work after an axial withdrawal"
+    },
+    "capture": {
+      "object_types": [
+        "camera"
+      ],
+      "target_types": [],
+      "objects": [
+        "top",
+        "hand"
+      ],
+      "targets": [],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "a fresh frame is available"
+    },
+    "verify": {
+      "object_types": [
+        "hatch",
+        "screw"
+      ],
+      "target_types": [
+        "seat",
+        "hole"
+      ],
+      "objects": [
+        "cap",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10"
+      ],
+      "targets": [
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4"
+      ],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "measured object state matches the expected target"
+    },
+    "stop": {
+      "object_types": [
+        "service_object"
+      ],
+      "target_types": [],
+      "objects": [
+        "robot"
+      ],
+      "targets": [],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "motion stopped, grasp preserved"
+    },
+    "wait_scene_clear": {
+      "object_types": [
+        "service_object"
+      ],
+      "target_types": [],
+      "objects": [
+        "workspace"
+      ],
+      "targets": [],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "continue only after a bounded clear condition"
+    },
+    "inspect_state": {
+      "object_types": [
+        "body",
+        "fixture",
+        "hatch",
+        "screw",
+        "tray",
+        "tool"
+      ],
+      "target_types": [],
+      "objects": [
+        "fixture",
+        "body",
+        "cap",
+        "tray",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "empty, holding, placed or unknown ownership"
+    },
+    "notify_operator": {
+      "object_types": [
+        "service_object"
+      ],
+      "target_types": [],
+      "objects": [
+        "operator"
+      ],
+      "targets": [],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "operator notified; no motion"
+    },
+    "dispense": {
+      "object_types": [
+        "tool"
+      ],
+      "target_types": [
+        "contour"
+      ],
+      "objects": [
+        "sealant_tool"
+      ],
+      "targets": [
+        "side_1",
+        "side_2",
+        "side_3",
+        "side_4"
+      ],
+      "required_tools": [
+        "sealant_tool"
+      ],
+      "preconditions": [
+        "sealant_tool is mounted",
+        "target is an existing contour side_i"
+      ],
+      "result": "continuous LIN segment along the named contour side"
+    },
+    "dock_tool": {
+      "object_types": [
+        "tool"
+      ],
+      "target_types": [
+        "tool_socket"
+      ],
+      "objects": [
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [
+        "vacuum_socket",
+        "magnetic_tool_socket",
+        "sealant_tool_socket",
+        "torque_tool_socket"
+      ],
+      "required_tools": [],
+      "preconditions": [
+        "the named tool is mounted",
+        "transfer(<tool>, <tool>_socket) precedes dock_tool",
+        "target is that tool's own socket"
+      ],
+      "result": "tool returned to its own socket"
+    },
+    "handoff_screw": {
+      "object_types": [
+        "screw"
+      ],
+      "target_types": [
+        "hole"
+      ],
+      "objects": [
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10"
+      ],
+      "targets": [
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4"
+      ],
+      "required_tools": [
+        "magnetic_tool"
+      ],
+      "preconditions": [
+        "the screw is held by the magnetic tool"
+      ],
+      "result": "screw handed to the virtual operator at the hole; the hole stays empty, no insertion or tightening"
+    },
+    "pick": {
+      "object_types": [
+        "hatch",
+        "screw",
+        "tool"
+      ],
+      "target_types": [],
+      "objects": [
+        "cap",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10",
+        "vacuum",
+        "magnetic_tool",
+        "sealant_tool",
+        "torque_tool"
+      ],
+      "targets": [],
+      "required_tools": [],
+      "preconditions": [
+        "tool socket is free for a tool",
+        "gripper is empty"
+      ],
+      "result": "alias of grab",
+      "required_tool_by_kind": {
+        "hatch": "vacuum",
+        "screw": "magnetic_tool"
+      }
+    },
+    "move_to_storage": {
+      "object_types": [
+        "hatch",
+        "screw"
+      ],
+      "target_types": [
+        "workspace",
+        "seat",
+        "hole"
+      ],
+      "objects": [
+        "cap",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10"
+      ],
+      "targets": [
+        "work",
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4"
+      ],
+      "required_tools": [],
+      "preconditions": [
+        "a hatch or screw is held",
+        "this alias is not valid for a tool"
+      ],
+      "result": "held part lowered at work, hatch_seat or a hole",
+      "forbidden_targets": [
+        "hatch_seat"
+      ]
+    },
+    "inspect": {
+      "object_types": [
+        "hatch",
+        "screw"
+      ],
+      "target_types": [
+        "seat",
+        "hole"
+      ],
+      "objects": [
+        "cap",
+        "screw_1",
+        "screw_2",
+        "screw_3",
+        "screw_4",
+        "screw_5",
+        "screw_6",
+        "screw_7",
+        "screw_8",
+        "screw_9",
+        "screw_10"
+      ],
+      "targets": [
+        "hatch_seat",
+        "hole_1",
+        "hole_2",
+        "hole_3",
+        "hole_4"
+      ],
+      "required_tools": [],
+      "preconditions": [],
+      "result": "alias of verify"
+    }
+  },
+  "service_objects": {
+    "robot": "робот",
+    "workspace": "рабочая зона",
+    "camera": "камера",
+    "operator": "виртуальный оператор"
+  },
+  "recovery_attempts_per_component": 1
+}

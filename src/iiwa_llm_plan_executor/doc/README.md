@@ -1,5 +1,23 @@
 # Executing external Qwen3 graphs in Webots
 
+## Краткая инструкция (русский)
+
+```bash
+source /opt/ros/jazzy/setup.bash
+colcon build --base-paths src --symlink-install
+source install/setup.bash
+ros2 launch iiwa_llm_plan_executor planner.launch.py experiment_id:=20
+```
+
+Дождитесь готовности сцены, прочитайте `/planner/scene` или
+`/iiwa_scene_context/get_scene`, передайте `scene_json` и инструкцию Qwen3
+снаружи, затем отправьте готовый граф в
+`/iiwa_llm_plan_executor/submit_plan` (`iiwa_msgs/SubmitPlan`) или через
+`POST /planner/runs` с телом `{"run_id": "...", "response": {...}}`.
+`scene_revision` не передаётся и не возвращается. Отклонённый запрос не
+регистрируется, поэтому тот же `run_id` можно использовать после исправления
+графа. Подробности: `docs/interfaces.md`.
+
 This package accepts a **ready-made** JSON graph.  It does not call Qwen3, does
 not evaluate the model and does not compare runs with a reference sequence.
 The experiment number selects only the initial Webots scene.
@@ -35,16 +53,21 @@ ros2 topic echo /iiwa_scene_context/scene_json --qos-durability transient_local
 ```
 
 Give `scene_json` and your instruction to Qwen3 outside this project.  Submit
-the answer, the `scene_revision` from the same snapshot and a client-chosen
-`run_id`:
+the answer and a client-chosen `run_id`; the executor obtains and validates its
+own fresh scene snapshot, so no scene revision travels through the API:
 
 ```bash
-ros2 service call /iiwa_llm_plan_executor/submit webots_ros2_msgs/srv/SetString \
-  "{value: '{\"run_id\":\"demo-1\",\"scene_revision\":1,\"response\":{\"status\":\"ready\",\"entry\":\"detect\",\"plan\":[...]}}'}"
+ros2 service call /iiwa_llm_plan_executor/submit_plan iiwa_msgs/srv/SubmitPlan \
+  "{run_id: 'demo-1', response: '{\"status\":\"ready\",\"entry\":\"detect\",\"plan\":[...]}'}"
 
 ros2 topic echo /iiwa_llm_plan_executor/plan --qos-durability transient_local
 ros2 topic echo /iiwa_llm_plan_executor/status
 ```
+
+The legacy `/iiwa_llm_plan_executor/submit` (`webots_ros2_msgs/SetString`) still
+routes into the same admission path.  Rejections return `code` and `reason`
+from `SubmitPlan`; a rejected `run_id` is not registered and can be reused with
+a corrected graph.
 
 The accepted graph is published **unchanged** in
 `/iiwa_llm_plan_executor/plan` before the first movement.  A rejected graph
@@ -64,7 +87,7 @@ HTTP (existing `iiwa_web` server; default port 8007):
 curl http://localhost:8007/planner/scene
 curl -X POST http://localhost:8007/planner/runs \
   -H 'Content-Type: application/json' \
-  -d '{"run_id":"demo-1","scene_revision":1,"response":"<Qwen JSON string>"}'
+  -d '{"run_id":"demo-1","response":"<Qwen JSON string>"}'
 curl http://localhost:8007/planner/runs/demo-1
 curl -X POST http://localhost:8007/planner/runs/demo-1/cancel
 ```
@@ -75,12 +98,14 @@ The same four operations are MCP tools built from the same router
 
 ## Nodes and terminals
 
-Only one graph is active per robot.  Repeating the same `run_id` is
-idempotent; a different `run_id` while active is rejected (`busy`).
+Only one graph is active per robot.  Repeating an identical accepted graph is
+idempotent (`duplicate`); another graph with the same accepted `run_id` is a
+`conflict`; a different `run_id` while a run is active is rejected (`busy`).
+Accepted run ids stay bound after every terminal state.
 
 Status events contain the run id, node id, skill, result event, the chosen
-next node, the scene revision, the mounted tool, the held object and, at the
-end, the terminal.  Terminals:
+next node, the mounted tool, the held object and, at the end, the terminal.
+The internal scene revision is never exposed.  Terminals:
 
 * `completed` — the submitted graph and its checked postconditions finished.
 * `replan_required` — the graph stopped and a fresh snapshot was emitted; the

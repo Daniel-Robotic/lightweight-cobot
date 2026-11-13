@@ -1,0 +1,12 @@
+# Submit a ready-made plan graph without a user-supplied scene revision.
+string run_id
+# The untouched graph as a JSON string (object or string form).
+string response
+---
+bool accepted
+# accepted | duplicate | invalid | rejected | not_ready | busy | conflict
+string code
+# Human-readable reason for the admission decision.
+string reason
+# JSON status of an accepted or duplicate run; empty when nothing was registered.
+string status_json

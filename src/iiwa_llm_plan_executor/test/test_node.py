@@ -16,7 +16,7 @@ from iiwa_llm_plan_executor.node import (
     _safe_name,
     plan_qos,
 )
-from iiwa_msgs.srv import GetRunStatus
+from iiwa_msgs.srv import GetRunStatus, SubmitPlan
 
 
 PACKAGE = Path(__file__).resolve().parents[1]
@@ -39,14 +39,14 @@ class FakeEngine:
         self.submitted = []
         self.cancelled = []
 
-    def submit(self, run_id, graph, revision):
-        self.submitted.append((run_id, graph, revision))
+    def submit(self, run_id, graph):
+        self.submitted.append((run_id, graph))
         return self.admission
 
     def get_status(self, run_id):
         return self.status or RunStatus(
             True, run_id, 'completed', 'done', 'a', 'stop', 'success',
-            'completed', 1, 'completed', 'vacuum', None, (),
+            'completed', 'completed', 'vacuum', None, (),
         )
 
     def cancel(self, run_id):
@@ -102,18 +102,19 @@ def test_safe_name_and_run_log_are_machine_readable(tmp_path):
 
 def test_plan_is_published_once_and_kept_for_late_subscribers():
     node = fake_node()
-    payload = {'run_id': 'r1', 'scene_revision': 2, 'response': '{}'}
+    payload = {'run_id': 'r1', 'response': '{}'}
     PlannerExecutorNode._publish_plan(node, payload)
     PlannerExecutorNode._publish_plan(node, payload)
     assert len(node._plan_publisher.messages) == 2
     assert node._last_plan == payload
     assert json.loads(node._plan_publisher.messages[-1])['run_id'] == 'r1'
+    assert 'scene_revision' not in json.loads(
+        node._plan_publisher.messages[-1]
+    )
 
 
 def test_submit_parses_json_and_forwards_the_untouched_response():
     node = fake_node()
-    published = []
-    node._publish_status = lambda payload: published.append(payload)
     request = SimpleNamespace(value=json.dumps({
         'run_id': 'r1',
         'scene_revision': 3,
@@ -126,34 +127,65 @@ def test_submit_parses_json_and_forwards_the_untouched_response():
     assert node.engine.submitted[0][1] == {
         'status': 'ready', 'entry': 'a', 'plan': [],
     }
-    assert node.engine.submitted[0][2] == 3
+    assert len(node.engine.submitted[0]) == 2
 
 
-def test_rejected_submit_returns_false_and_publishes_the_reason():
+def test_submit_plan_service_returns_code_and_reason_without_registration():
+    node = fake_node(engine=FakeEngine(
+        admission=AdmissionResult(False, 'not_ready', 'waiting for scene', 'r1'),
+    ))
+    response = SubmitPlan.Response()
+    PlannerExecutorNode._handle_submit_plan(
+        node,
+        SimpleNamespace(run_id='r1', response='{"status":"blocked","entry":"","plan":[]}'),
+        response,
+    )
+    assert response.accepted is False
+    assert response.code == 'not_ready'
+    assert response.reason == 'waiting for scene'
+    assert response.status_json == ''
+    assert len(node.engine.submitted) == 1
+
+
+def test_submit_plan_service_returns_the_status_of_an_accepted_run():
+    node = fake_node()
+    response = SubmitPlan.Response()
+    PlannerExecutorNode._handle_submit_plan(
+        node,
+        SimpleNamespace(run_id='r1', response='{"status":"ready","entry":"a","plan":[]}'),
+        response,
+    )
+    assert response.accepted is True
+    assert response.code == 'accepted'
+    status = json.loads(response.status_json)
+    assert status['run_id'] == 'r1'
+    assert 'scene_revision' not in status
+
+
+def test_rejected_submit_returns_false_without_registering_or_publishing():
     node = fake_node(engine=FakeEngine(
         admission=AdmissionResult(False, 'replan_required', 'need vacuum', 'r1'),
     ))
     published = []
     node._publish_status = lambda payload: published.append(payload)
     request = SimpleNamespace(value=json.dumps({
-        'run_id': 'r1', 'scene_revision': 1,
+        'run_id': 'r1',
         'response': {'status': 'blocked', 'entry': '', 'plan': []},
     }))
     response = SimpleNamespace(success=True)
     PlannerExecutorNode._handle_submit(node, request, response)
     assert response.success is False
-    assert published[-1]['state'] == 'rejected'
-    assert 'replan_required' in published[-1]['reason']
+    assert published == []
 
 
 def test_replan_scene_status_keeps_the_run_id():
     node = fake_node()
     node._last_status = {'run_id': 'run-42', 'state': 'running'}
-    envelope = {'scene_revision': 7, 'scene_json': {'components': []}}
+    envelope = {'state_version': 7, 'scene_json': {'components': []}}
     PlannerExecutorNode._on_replan(node, envelope)
     payload = json.loads(node._status_publisher.messages[-1])
     assert payload['run_id'] == 'run-42'
-    assert payload['scene_revision'] == 7
+    assert 'scene_revision' not in payload
     assert payload['scene'] == envelope
 
 
@@ -197,7 +229,7 @@ def test_scene_provider_enforces_freshness():
     node._now = lambda: 10.0
     node.scene_max_age = 2.0
     node._latest_scene = {
-        'timestamp': 9.0, 'scene_revision': 1, 'scene_json': {},
+        'timestamp': 9.0, 'state_version': 1, 'scene_json': {},
     }
     assert PlannerExecutorNode._scene_provider(node) is not None
     node._latest_scene['timestamp'] = 7.0
@@ -213,7 +245,7 @@ def test_context_factory_sets_sources_and_inspection_configuration():
     node._frame_provider = lambda name: 1.0
     node._notify_operator = lambda reason, details: True
     context = PlannerExecutorNode._context_factory(
-        node, {'scene_revision': 4}, {},
+        node, {'state_version': 4}, {},
     )
     assert context.scene_revision == 4
     assert context.scene_adapter == 'adapter'
@@ -229,10 +261,10 @@ def test_future_scene_timestamps_cannot_delay_the_start_gate():
     node._scene_ready_at = None
     node._latest_scene = None
     message = String()
-    message.data = json.dumps({'timestamp': 500.0, 'scene_revision': 1})
+    message.data = json.dumps({'timestamp': 500.0, 'state_version': 1})
     PlannerExecutorNode._on_scene(node, message)
     assert node._scene_ready_at == 10.0
-    message.data = json.dumps({'timestamp': 5.0, 'scene_revision': 1})
+    message.data = json.dumps({'timestamp': 5.0, 'state_version': 1})
     PlannerExecutorNode._on_scene(node, message)
     assert node._scene_ready_at == 5.0
 

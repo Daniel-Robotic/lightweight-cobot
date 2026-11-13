@@ -87,10 +87,11 @@ def envelope(*, mounted: str | None = None):
             'holes': {},
         },
         DEFAULT_CATALOG,
+        GEOMETRY,
+        stamp=5.0,
     )
     return build_envelope(
         scene,
-        scene_revision=1,
         state_version=1,
         stamp=5.0,
         experiment_id=20,
@@ -108,7 +109,7 @@ def make_engine(*, mounted: str | None = None):
         context = SkillContext(
             spec=SPEC,
             geometry=GEOMETRY,
-            scene_revision=int(env['scene_revision']),
+            scene_revision=int(env['state_version']),
         )
         context.frame_provider = lambda name: 5.0
         context.notifier = lambda reason, details: True
@@ -128,15 +129,10 @@ def make_engine(*, mounted: str | None = None):
 
 def test_full_qwen_graph_empty_patron_follows_actual_failure_path():
     engine, motion, supervisor, scene_envelope = make_engine(mounted=None)
-    result = validate_graph(
-        FULL_GRAPH,
-        scene_envelope,
-        DEFAULT_CATALOG,
-        expected_scene_revision=1,
-    )
+    result = validate_graph(FULL_GRAPH, scene_envelope, DEFAULT_CATALOG)
     assert result.ok is True, result.reason
 
-    accepted = engine.submit('full-empty', FULL_GRAPH.as_dict(), 1)
+    accepted = engine.submit('full-empty', FULL_GRAPH.as_dict())
     assert accepted.accepted is True
     engine.run_accepted('full-empty')
     status = engine.get_status('full-empty')
@@ -205,7 +201,6 @@ def test_full_qwen_graph_with_vacuum_has_a_success_cycle_without_completed():
         FULL_GRAPH,
         envelope(mounted='vacuum'),
         DEFAULT_CATALOG,
-        expected_scene_revision=1,
     )
     assert result.ok is False
     assert 'a_retry_pick' in result.reason

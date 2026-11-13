@@ -13,13 +13,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from std_srvs.srv import Trigger
 import webots_ros2_msgs.srv
-from iiwa_msgs.srv import GetRunStatus
+from iiwa_msgs.srv import GetRunStatus, SubmitPlan
 
 from .ros_node import get_bridge
 
 
 SCENE_SERVICE = '/iiwa_scene_context/get_scene'
-SUBMIT_SERVICE = '/iiwa_llm_plan_executor/submit'
+SUBMIT_SERVICE = '/iiwa_llm_plan_executor/submit_plan'
+LEGACY_SUBMIT_SERVICE = '/iiwa_llm_plan_executor/submit'
 CANCEL_SERVICE = '/iiwa_llm_plan_executor/cancel'
 STATUS_SERVICE = '/iiwa_llm_plan_executor/get_status'
 
@@ -30,7 +31,6 @@ _active_run_id: str | None = None
 
 class RunRequest(BaseModel):
     run_id: str = Field(..., min_length=1, max_length=128)
-    scene_revision: int = Field(..., ge=0)
     response: dict[str, Any] | str = Field(
         ..., description='The untouched Qwen3 graph response',
     )
@@ -54,15 +54,14 @@ def _status(run_id: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _rejection(run_id: str) -> tuple[int, str, dict[str, Any] | None]:
-    status = _status(run_id)
-    reason = '' if status is None else str(status.get('reason', ''))
-    lowered = reason.lower()
-    if 'busy' in lowered:
-        return 409, reason or 'another graph is already active', status
-    if 'not_ready' in lowered:
-        return 503, reason or 'the executor is not ready yet', status
-    return 422, reason or 'graph was rejected', status
+def _http_status(code: str) -> int:
+    if code in ('busy', 'conflict', 'stale_scene'):
+        return 409
+    if code == 'not_ready':
+        return 503
+    if code == 'invalid':
+        return 422
+    return 422
 
 
 @router.get('/scene', summary='Текущий scene_json для внешнего планировщика')
@@ -87,30 +86,37 @@ def get_scene():
 @router.post('/runs', summary='Передать готовый граф Qwen3 исполнителю')
 def submit_run(request: RunRequest):
     global _active_run_id
-    payload = {
-        'run_id': request.run_id,
-        'scene_revision': int(request.scene_revision),
-        'response': request.response,
-    }
+    graph = (
+        request.response
+        if isinstance(request.response, str)
+        else json.dumps(request.response, ensure_ascii=False)
+    )
     try:
         response = get_bridge().call_service(
-            webots_ros2_msgs.srv.SetString,
+            SubmitPlan,
             SUBMIT_SERVICE,
-            webots_ros2_msgs.srv.SetString.Request(
-                value=json.dumps(payload, ensure_ascii=False),
+            SubmitPlan.Request(
+                run_id=request.run_id,
+                response=graph,
             ),
         )
     except (RuntimeError, TimeoutError) as error:
         raise HTTPException(503, str(error)) from error
-    if not response.success:
-        code, reason, status = _rejection(request.run_id)
-        raise HTTPException(code, detail=reason)
+    if not response.accepted:
+        raise HTTPException(
+            _http_status(response.code),
+            detail={
+                'code': response.code,
+                'reason': response.reason,
+                'run_id': request.run_id,
+            },
+        )
     with _lock:
         _active_run_id = request.run_id
     return {
-        'status': 'accepted',
+        'status': 'duplicate' if response.code == 'duplicate' else 'accepted',
+        'code': response.code,
         'run_id': request.run_id,
-        'scene_revision': request.scene_revision,
     }
 
 
@@ -122,7 +128,7 @@ def get_run(run_id: str):
         raise HTTPException(404, f'run {run_id!r} was not submitted')
     if status.get('state') in (
         'completed', 'replan_required', 'operator_required', 'failed',
-        'canceled', 'rejected',
+        'canceled',
     ):
         with _lock:
             if _active_run_id == run_id:

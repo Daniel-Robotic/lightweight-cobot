@@ -689,8 +689,6 @@ def validate_graph(
     graph: PlanGraph,
     scene: Mapping[str, Any],
     catalog: SkillCatalog,
-    *,
-    expected_scene_revision: int | None = None,
 ) -> ValidationResult:
     """Return an admission decision; never mutates the graph or the scene."""
     if graph.status == 'blocked':
@@ -703,14 +701,6 @@ def validate_graph(
     if len(graph.nodes) > 256:
         return _reject('graph exceeds the 256-node limit')
     facts = _facts(scene)
-    if expected_scene_revision is not None:
-        revision = facts.envelope.get('scene_revision')
-        if revision is not None and int(revision) != int(expected_scene_revision):
-            return _reject(
-                f'graph was built for scene_revision {expected_scene_revision}, '
-                f'current revision is {revision}',
-                code='stale_scene',
-            )
     structural = _structural_checks(graph, facts)
     if structural is not None:
         return structural
@@ -724,7 +714,7 @@ def validate_graph(
         {
             'nodes': len(graph.nodes),
             'entry': graph.entry,
-            'scene_revision': facts.envelope.get('scene_revision'),
+            'state_version': facts.envelope.get('state_version'),
             'available_skills': len(facts.available_skills),
         },
     )
