@@ -180,6 +180,10 @@ The online documentation is hosted on [GitVerse Pages](https://daniel-robotics.g
 
 Java applications for KUKA Sunrise Cabinet live separately under `src/iiwa_sunrise` and are not part of the colcon build.
 
+## Development workflow
+
+Before changing code, read the [repository guidelines](AGENTS.md) for the OpenSpec process, validation, and visible BB-thread handoff to OpenCode.
+
 ## Safety
 
 Before commanding the physical robot, verify the work area, joint limits, active tool, load model, and selected control mode. LWC does not replace KUKA safety functions, a robotic-cell risk assessment, or operator supervision.
