@@ -37,6 +37,24 @@
 | Наблюдение | RViz, Foxglove и состояние системы через веб-интерфейс |
 | Инфраструктура | Локальное окружение или Docker, единый CLI и централизованная конфигурация |
 
+### Планирование graph-v3 внешней моделью
+
+Стек поддерживает внешний цикл планирования: `GET /planner/context` отдаёт
+единый пакет из system prompt, публичной сцены, каталога навыков, JSON Schema
+graph-v3 и `state_version`; ответ модели отправляется в `POST /planner/runs`
+вместе с `context_state_version`. `blocked` и `clarification_required` не
+исполняются, а `completed` выставляется только после подтверждения всех
+целей живым наблюдением. Проверка движения выполняется в Webots; физический
+робот требует отдельной процедуры оператора.
+
+```bash
+ros2 launch iiwa_llm_plan_executor planner.launch.py experiment_id:=20
+curl http://localhost:8007/planner/context
+```
+
+Подробности: [интерфейсы исполнителя](src/iiwa_llm_plan_executor/docs/interfaces.md)
+и [REST API](doc/lwc-doc/docs/getting-started/control/rest-api.md).
+
 ## Совместимость
 
 | Компонент | Поддерживаемая версия |
@@ -156,6 +174,8 @@ cobot doc-setup
 | `iiwa_msgs` | ROS 2 интерфейсы: action-сообщения для движения по суставам и в декартовых координатах, сервисы именованных поз |
 | `iiwa_planning` | Планирование движения: C++ и Python узлы на базе MoveIt 2 (OMPL, Pilz, moveit_py) |
 | `iiwa_utils` | Утилиты системы: загрузка конфигурации, спавн объектов и камер в Webots, конвертация данных |
+| `iiwa_scene_context` | Живой снимок сцены и адаптация контекста graph-v3 для внешней модели |
+| `iiwa_llm_plan_executor` | Проверка и исполнение graph-v3 в Webots с подтверждением целей |
 | `iiwa_web` | REST API, WebSocket и MCP для мониторинга и внешнего управления |
 
 Java-программы для KUKA Sunrise Cabinet находятся отдельно в `src/iiwa_sunrise` и не входят в сборку colcon.

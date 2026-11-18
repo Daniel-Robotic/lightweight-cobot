@@ -1,4 +1,4 @@
-# Executing external Qwen3 graphs in Webots
+# Executing external graph-v3 plans in Webots
 
 ## Краткая инструкция (русский)
 
@@ -9,18 +9,23 @@ source install/setup.bash
 ros2 launch iiwa_llm_plan_executor planner.launch.py experiment_id:=20
 ```
 
-Дождитесь готовности сцены, прочитайте `/planner/scene` или
-`/iiwa_scene_context/get_scene`, передайте `scene_json` и инструкцию Qwen3
-снаружи, затем отправьте готовый граф в
-`/iiwa_llm_plan_executor/submit_plan` (`iiwa_msgs/SubmitPlan`) или через
-`POST /planner/runs` с телом `{"run_id": "...", "response": {...}}`.
-`scene_revision` не передаётся и не возвращается. Отклонённый запрос не
-регистрируется, поэтому тот же `run_id` можно использовать после исправления
-графа. Подробности: `docs/interfaces.md`.
+Дождитесь готовности сцены и запросите `GET /planner/context`. Пакет уже
+содержит system prompt, публичную сцену v1, каталог навыков, JSON Schema
+graph-v3 и `state_version`. Передайте его вместе с задачей оператора во
+внешний клиент модели, затем отправьте ответ в `POST /planner/runs`:
 
-This package accepts a **ready-made** JSON graph.  It does not call Qwen3, does
-not evaluate the model and does not compare runs with a reference sequence.
-The experiment number selects only the initial Webots scene.
+```json
+{"run_id": "...", "context_state_version": "...", "response": {...}}
+```
+
+`response` — нетрансформированный graph-v3. Старый формат без
+`schema_version: 3` отклоняется. Отклонённый запрос не регистрируется,
+поэтому тот же `run_id` можно использовать после исправления графа.
+Подробности: `docs/interfaces.md`.
+
+This package accepts a **ready-made graph-v3** response.  It does not call the
+model, does not evaluate its quality and does not compare runs with a reference
+sequence.  The experiment number selects only the initial Webots scene.
 
 ## Start
 
@@ -40,34 +45,39 @@ settings before launch.
 Useful arguments: `rviz:=true`, `config:=/path/planner.yaml`.
 `simulate` must remain `true`; the physical FRI robot is not connected.
 
-## Read the scene and submit a graph
+## Read the context and submit graph-v3
 
 Wait until the launch log shows the scene is ready (the snapshot is only
-served after `/iiwa_experement/scene_ready`).
-
-ROS:
+served after `/iiwa_experement/scene_ready`).  Build one model-input package
+from the live snapshot through the HTTP API:
 
 ```bash
-ros2 service call /iiwa_scene_context/get_scene std_srvs/srv/Trigger {}
-ros2 topic echo /iiwa_scene_context/scene_json --qos-durability transient_local
+curl http://localhost:8007/planner/context
 ```
 
-Give `scene_json` and your instruction to Qwen3 outside this project.  Submit
-the answer and a client-chosen `run_id`; the executor obtains and validates its
-own fresh scene snapshot, so no scene revision travels through the API:
+The package contains `system_prompt`, `scene`, `catalog`, `response_schema`,
+`schema_version=3`, `contract_version`, `catalog_version` and
+`state_version`.  Combine the prompt, scene, catalog and your task in the
+external model client, call your own model, and submit its graph-v3 answer:
+
+```bash
+curl -X POST http://localhost:8007/planner/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"run_id":"demo-1","context_state_version":"7","response":{...}}'
+```
+
+The ROS service carries the same fields:
 
 ```bash
 ros2 service call /iiwa_llm_plan_executor/submit_plan iiwa_msgs/srv/SubmitPlan \
-  "{run_id: 'demo-1', response: '{\"status\":\"ready\",\"entry\":\"detect\",\"plan\":[...]}'}"
-
-ros2 topic echo /iiwa_llm_plan_executor/plan --qos-durability transient_local
-ros2 topic echo /iiwa_llm_plan_executor/status
+  "{run_id: 'demo-1', context_state_version: '7', response: '<graph-v3 JSON>'}"
 ```
 
-The legacy `/iiwa_llm_plan_executor/submit` (`webots_ros2_msgs/SetString`) still
-routes into the same admission path.  Rejections return `code` and `reason`
-from `SubmitPlan`; a rejected `run_id` is not registered and can be reused with
-a corrected graph.
+`GET /planner/scene` and `/iiwa_scene_context/get_scene` remain diagnostic
+scene-v2 endpoints; they do not contain the model prompt or graph schema.
+Rejections return `code`, `reason` and `details_json`; a rejected `run_id` is
+not registered and can be reused with a corrected graph.  The old executor
+graph format is rejected as `unsupported_contract`.
 
 The accepted graph is published **unchanged** in
 `/iiwa_llm_plan_executor/plan` before the first movement.  A rejected graph
@@ -84,17 +94,18 @@ ros2 service call /iiwa_llm_plan_executor/cancel webots_ros2_msgs/srv/SetString 
 HTTP (existing `iiwa_web` server; default port 8007):
 
 ```bash
-curl http://localhost:8007/planner/scene
+curl http://localhost:8007/planner/context
 curl -X POST http://localhost:8007/planner/runs \
   -H 'Content-Type: application/json' \
-  -d '{"run_id":"demo-1","response":"<Qwen JSON string>"}'
+  -d '{"run_id":"demo-1","context_state_version":"7","response":"<graph-v3 JSON>"}'
 curl http://localhost:8007/planner/runs/demo-1
 curl -X POST http://localhost:8007/planner/runs/demo-1/cancel
 ```
 
-The same four operations are MCP tools built from the same router
-(`get_scene_planner_scene_get`, `submit_run_planner_runs_post`,
-`get_run_planner_runs`, `cancel_run_planner_runs`).
+The same operations are MCP tools built from the router
+(`get_context_planner_context_get`, `get_scene_planner_scene_get`,
+`submit_run_planner_runs_post`, `get_run_planner_runs`,
+`cancel_run_planner_runs`).
 
 ## Nodes and terminals
 
@@ -107,9 +118,9 @@ Status events contain the run id, node id, skill, result event, the chosen
 next node, the mounted tool, the held object and, at the end, the terminal.
 The internal scene revision is never exposed.  Terminals:
 
-* `completed` — the submitted graph and its checked postconditions finished.
+* `completed` — the graph reached the terminal only after every `goals` predicate was confirmed by a live observation.
 * `replan_required` — the graph stopped and a fresh snapshot was emitted; the
-  external client decides whether to call Qwen3 again.
+  external client decides whether to call its model again.
 * `operator_required` — a human decision is needed; the robot is stopped.
 * `failed` / `canceled` — safety stop (stale state, limits, collision, cancel,
   step limit); the grasp state is preserved in the status.
@@ -129,4 +140,4 @@ preceded by an axial LIN retreat.  The only logged orientation exception is
 the initial empty-gripper reorientation from home to the downward `work`
 posture.  The executor never falls back to an unconstrained `MoveToPose` goal.
 This is a Webots verification, not a physical-robot validation and not a
-Qwen3 quality evaluation.
+model quality evaluation.

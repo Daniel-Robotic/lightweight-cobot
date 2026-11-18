@@ -79,6 +79,10 @@ web:
 | POST | /sequences/start | Запуск последовательности из JSON-файла |
 | GET | /sequences/status | Статус запущенной последовательности |
 | GET | /sequences/logs | Вывод процесса последовательности |
+| GET | /planner/context | Контекст graph-v3 для внешней модели |
+| POST | /planner/runs | Приём ответа graph-v3 |
+| GET | /planner/runs/{run_id} | Статус graph-v3 запуска |
+| POST | /planner/runs/{run_id}/cancel | Отмена активного запуска |
 | POST | /stop | Остановка команд API и планировщика |
 
 ## Получение состояния
@@ -603,6 +607,43 @@ POST **/sequences/start** запускает отдельный процесс m
 - **finished** — процесс завершён; в ответе будет код **returncode**.
 
 Одновременно может работать только одна последовательность. Повторный POST **/sequences/start** во время её выполнения вернёт 409. Для остановки используйте **POST /stop**: отдельного **/sequences/stop** нет.
+
+## Планировщик graph-v3
+
+Маршруты `/planner/*` не вызывают модель. Они выдают согласованный контекст и
+принимают готовый ответ graph-v3.
+
+```bash
+curl http://localhost:8007/planner/context
+```
+
+Ответ содержит `system_prompt`, публичную `scene` (schema v1), `catalog`,
+`response_schema`, `schema_version=3`, `contract_version`, `catalog_version`
+и `state_version`. Если сцена не готова или её контракт не поддерживается,
+возвращается HTTP 409 с кодом `scene_not_ready` или `unsupported_contract`.
+
+Передача ответа:
+
+```bash
+curl -X POST http://localhost:8007/planner/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"run_id":"demo-1","context_state_version":"7","response":{...}}'
+```
+
+`response` — нетрансформированный graph-v3; `context_state_version` обязателен
+и должен совпадать с `state_version` использованного контекста. Старый формат
+графа отклоняется с HTTP 422 `unsupported_contract`. Статусы `blocked` и
+`clarification_required` возвращают HTTP 422 `not_executable` и не создают
+запуск. `completed` выставляется только после подтверждения всех `goals`;
+иначе запуск завершается `operator_required` с `goals_remaining`.
+
+| Код | HTTP | Значение |
+|---|---|---|
+| `accepted` | 200 | Запуск принят и зарегистрирован |
+| `duplicate` | 200 | Идентичный граф уже принят; второго движения нет |
+| `busy` / `conflict` / `stale_scene` | 409 | Активный запуск, занятый `run_id` или устаревший снимок |
+| `not_executable` / `invalid` / `unsupported_contract` | 422 | Статус без движения или неверный graph-v3 |
+| `not_ready` | 503 | Сцена, MoveIt или контроллер не готовы |
 
 ## Общая остановка
 

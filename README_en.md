@@ -37,6 +37,24 @@
 | Monitoring | RViz, Foxglove, and system state through the web interface |
 | Infrastructure | Native or Docker environment, a unified CLI, and centralized configuration |
 
+### External graph-v3 planning
+
+The stack supports an external planning loop: `GET /planner/context` returns one
+package with the system prompt, public scene, skill catalog, graph-v3 JSON
+Schema, and `state_version`; the model answer is submitted to
+`POST /planner/runs` together with `context_state_version`. `blocked` and
+`clarification_required` are never executed, and `completed` is reported only
+after every goal is confirmed by live observation. Motion validation runs in
+Webots; the physical robot needs a separate operator procedure.
+
+```bash
+ros2 launch iiwa_llm_plan_executor planner.launch.py experiment_id:=20
+curl http://localhost:8007/planner/context
+```
+
+See the [executor interfaces](src/iiwa_llm_plan_executor/docs/interfaces.md)
+and the [REST API](doc/lwc-doc/docs/getting-started/control/rest-api.en.md).
+
 ## Compatibility
 
 | Component | Supported version |
@@ -156,6 +174,8 @@ The online documentation is hosted on [GitVerse Pages](https://daniel-robotics.g
 | `iiwa_msgs` | ROS 2 actions and services for joint, Cartesian, and named-pose motions |
 | `iiwa_planning` | C++ and Python motion nodes based on MoveIt 2, OMPL, Pilz, and `moveit_py` |
 | `iiwa_utils` | Configuration loading, data conversion, and Webots object/camera utilities |
+| `iiwa_scene_context` | Live scene snapshot and graph-v3 context adaptation for an external model |
+| `iiwa_llm_plan_executor` | Graph-v3 validation and execution in Webots with goal confirmation |
 | `iiwa_web` | REST API, WebSocket, and MCP interfaces for monitoring and external control |
 
 Java applications for KUKA Sunrise Cabinet live separately under `src/iiwa_sunrise` and are not part of the colcon build.

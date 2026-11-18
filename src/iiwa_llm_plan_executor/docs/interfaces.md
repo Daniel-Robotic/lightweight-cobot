@@ -1,39 +1,75 @@
 # Интерфейсы `iiwa_llm_plan_executor`
 
-Версия контракта графа: **2** (совпадает с `iiwa_scene_context` 2).
-Исполнитель не вызывает Qwen3 и не переписывает граф модели. Система
-принимает готовый JSON-граф.
+Версия контракта графа: **3**. Исполнитель принимает только graph-v3,
+не вызывает модель и не переписывает ответ. Контекст, сцена, каталог и
+JSON Schema выдаются через `GET /planner/context` (`iiwa_web`).
 
-## Ответ графа
+## Ответ graph-v3
 
 ```json
 {
+  "schema_version": 3,
   "status": "ready",
-  "entry": "p1_find",
+  "entry": "detect_cap",
+  "goals": [
+    {"id": "g1", "predicate": "installed",
+     "args": {"part": "cap", "destination": "hatch_seat"}}
+  ],
   "plan": [
     {
-      "id": "p1_find",
+      "id": "detect_cap",
+      "kind": "skill",
       "skill": "detect",
       "object": "cap",
       "target": "",
-      "params": {},
-      "transitions": [
-        {"event": "found", "next": "p1_grab"},
-        {"event": "not_found", "next": "replan_required"},
-        {"event": "failed", "next": "replan_required"}
-      ]
+      "next": "grab_cap",
+      "on": {"object_unavailable": "replan_required"}
+    },
+    {
+      "id": "check_installed",
+      "kind": "observe",
+      "predicate": {"name": "installed",
+                    "args": {"part": "cap", "destination": "hatch_seat"}},
+      "on": {"true": "completed", "false": "replan_required",
+             "unknown": "operator_required"}
     }
   ]
 }
 ```
 
-* `status` — `ready` или `blocked`; `blocked` никогда не исполняется.
-* `plan` — не более 256 узлов. Отклоняются неизвестные ключи, дубли `id`,
-  зарезервированные терминалы, отсутствующий `entry`, пропущенные события,
-  неизвестные `next`, недостижимые узлы и узлы без пути к терминалу.
+* `status` — `ready`, `blocked` или `clarification_required`. Только `ready`
+  может быть принят; два других статуса возвращают `not_executable` и не
+  создают `RunRecord`.
+* `goals` — проверяемые предикаты. Исполнитель подтверждает `installed`,
+  `handoff`, `tool_docked`, `held`, `tool_mounted`, `at` и `visible`;
+  неподдерживаемая цель (`dispensed`, `placed`, `inspected`, `defective`)
+  отклоняет весь граф до движения.
+* `plan` — не более 256 узлов `kind="skill"` или `kind="observe"`.
+  Отклоняются неизвестные ключи, дубли `id`, зарезервированные терминалы,
+  отсутствующий `entry`, неизвестные `next`, недостижимые узлы, цикл без
+  `max_retries` и `observe.on.unknown`, ведущий не в терминал.
 * Терминалы: `completed`, `replan_required`, `operator_required`.
-* `params` пока поддерживает только `dispense.start_fraction` /
-  `dispense.end_fraction` в диапазоне `0..1`.
+* `on` у skill допускает только нормализованные события и только при точном
+  runtime-соответствии: `object_unavailable`/`target_unavailable` для
+  `detect`, `object_unavailable` для `grab`/`pick`, `target_unavailable`
+  для `transfer`/`move_to_storage`/`release`. Остальные ветви отклоняются.
+* Неперечисленные сырые исходы навыка завершаются безопасно:
+  `collision`, `grasp_failed`, `human_in_scene`, `not_ok`, `timeout`,
+  `unknown` → `operator_required`; `failed`, `not_found` →
+  `replan_required`.
+* `observe` вычисляется по живому состоянию supervisor. Ветка `true`
+  продолжает план, `false` идёт по явному переходу, `unknown` обязан вести
+  в `operator_required` или `replan_required`.
+* `completed` выставляется только после подтверждения всех `goals`.
+  Если цель не подтверждена, запуск завершается `operator_required` и
+  публикует `goals_confirmed`/`goals_remaining`.
+* `max_retries` ограничивает повторные посещения узла; исчерпание бюджета
+  завершает запуск `operator_required`.
+
+Старый формат без `schema_version: 3` отклоняется с `unsupported_contract`.
+JSON Schema graph-v3 хранится в
+`iiwa_scene_context/iiwa_scene_context/graph_contract.py`; runtime не зависит
+от каталога датасета.
 
 ## Навыки
 
@@ -72,8 +108,9 @@
 `GET /planner/runs/{run_id}`, в `/iiwa_llm_plan_executor/plan` и в JSONL-журнале
 запусков. API возвращает конкретные `code`/`reason`.
 
-Коды отклонения: `invalid`, `rejected`, `blocked`, `replan_required`,
-`not_ready`, `stale_scene`, `busy`, `conflict`.
+Коды отклонения: `invalid`, `unsupported_contract`, `not_executable`,
+`rejected`, `not_ready`, `stale_scene`, `busy`, `conflict`, `unknown_id`,
+`unsupported_goal`, `unsupported_predicate`, `unsafe_unknown`.
 
 Правила `run_id`:
 
@@ -95,8 +132,8 @@
 
 | Направление | Имя | Тип | Payload |
 | --- | --- | --- | --- |
-| сервис | `/iiwa_llm_plan_executor/submit_plan` | `iiwa_msgs/SubmitPlan` | request `run_id`, `response` (JSON-строка графа). Ответ: `accepted`, `code`, `reason`, `status_json`. |
-| сервис | `/iiwa_llm_plan_executor/submit` | `webots_ros2_msgs/SetString` | Устаревший совместимый вход `{"run_id","response"}`; направляется в тот же механизм приёма. Поле `scene_revision` игнорируется. |
+| сервис | `/iiwa_llm_plan_executor/submit_plan` | `iiwa_msgs/SubmitPlan` | request `run_id`, `context_state_version`, `response` (JSON-строка graph-v3). Ответ: `accepted`, `code`, `reason`, `status_json`, `details_json`. |
+| сервис | `/iiwa_llm_plan_executor/submit` | `webots_ros2_msgs/SetString` | Совместимый вход `{"run_id","context_state_version","response"}`; направляется в тот же graph-v3 механизм приёма. |
 | топик | `/iiwa_llm_plan_executor/plan` | `std_msgs/String` | `{"run_id","response"}` для принятого графа; transient-local, depth 1. Отклонённые графы сюда не попадают. |
 | топик | `/iiwa_llm_plan_executor/status` | `std_msgs/String` | События и терминал: `run_id`, `state`, `reason`, `node_id`, `skill`, `event`, `next`, `terminal`, `mounted_tool`, `held_object`, `timestamp`, `event_detail`/`timing`. Поля `scene_revision` нет. |
 | сервис | `/iiwa_llm_plan_executor/get_status` | `iiwa_msgs/GetRunStatus` | request `string run_id`; response `bool found`, `string status_json`. |
@@ -124,8 +161,8 @@
 
 ## Терминалы и журнал
 
-`completed` — граф и его проверенные постусловия завершены.
-`replan_required` — нужен новый снимок и, возможно, новый вызов Qwen3.
+`completed` — все `goals` подтверждены живым наблюдением, граф дошёл до терминала.
+`replan_required` — нужен новый снимок и, возможно, новый вызов внешней модели.
 `operator_required` — нужно решение человека; робот остановлен.
 `failed` / `canceled` — безопасная остановка (устаревшее состояние, лимиты,
 столкновение, отмена, лимит шагов); состояние захвата сохраняется.
@@ -140,4 +177,4 @@
 неограниченному `MoveToPose`.
 
 Это проверка в Webots, а не валидация физического робота и не оценка
-качества Qwen3.
+качества внешней модели.

@@ -113,3 +113,54 @@
 Сгенерированный пример для эксперимента 20:
 `docs/scene_json_experiment_20.json`. Он создаётся тем же `build_scene`, а не
 заменяет динамическую генерацию; тест сверяет пример с генератором.
+
+## Внешний контекст graph-v3
+
+`GET /planner/context` (`iiwa_web`) собирает из одного свежего конверта пакет
+для внешней модели:
+
+```json
+{
+  "schema_version": 3,
+  "contract_version": 3,
+  "catalog_version": 2,
+  "state_version": 7,
+  "scene_schema_version": 1,
+  "external_catalog_version": 1,
+  "system_prompt": "...",
+  "scene": {
+    "schema_version": 1,
+    "frame_id": "world",
+    "objects": [],
+    "locations": [],
+    "tools": [],
+    "initial_facts": [],
+    "available_skills": []
+  },
+  "catalog": {
+    "schema_version": 1,
+    "name": "grant-runtime",
+    "skills": {},
+    "predicates": {},
+    "observations": {}
+  },
+  "response_schema": {}
+}
+```
+
+* `scene` — публичное представление живого `scene_json` v2: `objects`
+  (детали и компоненты), `locations` (места, отверстия, гнёзда и контуры),
+  `tools` (только присутствующие инструменты с гнёздами) и `initial_facts`.
+* `catalog` — только те навыки, предикаты и события, которые исполнитель
+  действительно умеет проверять. `dispensed`, `inspected`, `defective` и
+  `placed` не рекламируются, потому что runtime не подтверждает их
+  наблюдением.
+* `response_schema` — JSON Schema graph-v3 из
+  `iiwa_scene_context/graph_contract.py`. Копия схемы хранится в ROS-проекте;
+  runtime не читает файлы датасета.
+* `state_version` — версия снимка, которую клиент обязан вернуть в
+  `POST /planner/runs` как `context_state_version`.
+
+Если живая сцена или каталог имеют неподдерживаемую версию, endpoint
+возвращает HTTP 409 `unsupported_contract`; несвежий снимок — 409
+`scene_not_ready`. Такой контекст нельзя использовать для планирования.

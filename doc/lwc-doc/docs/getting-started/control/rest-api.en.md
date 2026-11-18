@@ -79,6 +79,10 @@ MATLAB uses the built-in `webwrite` function for JSON requests. Uploading CSV an
 | POST | /sequences/start | Start a sequence from a JSON file |
 | GET | /sequences/status | Running sequence status |
 | GET | /sequences/logs | Sequence process output |
+| GET | /planner/context | Graph-v3 context for an external model |
+| POST | /planner/runs | Submit a graph-v3 response |
+| GET | /planner/runs/{run_id} | Graph-v3 run status |
+| POST | /planner/runs/{run_id}/cancel | Cancel an active run |
 | POST | /stop | Stop API commands and the planner |
 
 ## Reading robot state
@@ -603,6 +607,44 @@ Statuses:
 - **finished** — the process has exited; the response includes **returncode**.
 
 Only one sequence can run at a time. A second POST to **/sequences/start** while one is running returns 409. Use **POST /stop** to stop it; there is no separate **/sequences/stop** endpoint.
+
+## Graph-v3 planner
+
+The `/planner/*` routes do not call a model. They return one consistent context
+and accept a ready graph-v3 answer.
+
+```bash
+curl http://localhost:8007/planner/context
+```
+
+The response contains `system_prompt`, the public `scene` (schema v1),
+`catalog`, `response_schema`, `schema_version=3`, `contract_version`,
+`catalog_version`, and `state_version`. If the scene is not ready or its
+contract is unsupported, the API returns HTTP 409 with `scene_not_ready` or
+`unsupported_contract`.
+
+Submit an answer:
+
+```bash
+curl -X POST http://localhost:8007/planner/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"run_id":"demo-1","context_state_version":"7","response":{...}}'
+```
+
+`response` is the untouched graph-v3 object; `context_state_version` is
+required and must match the `state_version` of the context snapshot. The old
+graph format is rejected with HTTP 422 `unsupported_contract`. `blocked` and
+`clarification_required` return HTTP 422 `not_executable` and never create a
+run. `completed` is reported only after every `goals` predicate is confirmed;
+otherwise the run ends `operator_required` with `goals_remaining`.
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `accepted` | 200 | The run was validated and registered |
+| `duplicate` | 200 | The identical graph is already accepted; no second motion |
+| `busy` / `conflict` / `stale_scene` | 409 | Active run, bound `run_id`, or stale snapshot |
+| `not_executable` / `invalid` / `unsupported_contract` | 422 | Non-executable status or invalid graph-v3 |
+| `not_ready` | 503 | Scene, MoveIt, or controller is not ready |
 
 ## Common stop command
 

@@ -3,6 +3,33 @@
 Scope: Webots only (`simulate:=true`).  No physical FRI robot was connected and
 no Qwen3 quality/score system was built or called.
 
+## 2026-11-18 graph-v3 smoke test
+
+The implemented contract is graph-v3 only.  The executor was launched in
+Webots with experiment 20 and exercised through the HTTP API:
+
+```bash
+ros2 launch iiwa_llm_plan_executor planner.launch.py experiment_id:=20
+curl http://localhost:8007/planner/context
+```
+
+Observed results:
+
+| Check | Result |
+| --- | --- |
+| `GET /planner/context` | 200; `schema_version=3`, `contract_version=3`, `catalog_version=2`, `state_version=0`, scene schema 1, 20 advertised skills, 14 objects |
+| `stop(robot)` with goal `visible(fixture)` | accepted; `completed`; `goals_confirmed=["visible(object=fixture)"]`, `goals_remaining=[]` |
+| `detect(cap)` with goal `visible(cap)` | accepted; one Webots motion; `completed` on `found`, goal confirmed |
+| `blocked` response | HTTP 422 `not_executable`, original `status=blocked`; no run record |
+| old format without `schema_version: 3` | HTTP 422 `unsupported_contract`; no run record |
+| stale `context_state_version=99` | HTTP 409 `stale_scene`; no run record |
+| identical accepted graph repeated | HTTP 200 `duplicate`; no second motion |
+
+The stop-only and detect graphs are the verified graph-v3 scenarios in this
+environment.  Wider cap/tool/handoff graphs remain covered by package tests and
+were not re-run in this session.  No physical-robot command was issued.
+
+
 ## Build and package tests
 
 Commands:
@@ -17,12 +44,12 @@ colcon test --base-paths src --packages-select \
 colcon test-result --verbose
 ```
 
-Result: the five affected packages build successfully; `colcon test` reports
-`402 tests, 0 errors, 0 failures, 0 skipped` for `iiwa_msgs`,
-`iiwa_experement`, `iiwa_scene_context`, `iiwa_llm_plan_executor` and
-`iiwa_web`.  Four pre-existing `test_body_hatch_worlds.py` cases in other
-packages still fail because their `.wbt`/`.proto` files are absent from this
-checkout; they are unrelated to this change.
+Result: the workspace builds successfully.  The graph-v3 profile tests pass:
+`41` in `iiwa_scene_context`, `118` in `iiwa_llm_plan_executor`, and `27` in
+`iiwa_web`.  A full `colcon test --base-paths src` reports only four
+pre-existing `iiwa_utils.test.test_body_hatch_worlds` failures because their
+`.wbt`/`.proto` files are absent from this checkout; they are unrelated to this
+change.
 
 `git diff --check` is clean.
 
