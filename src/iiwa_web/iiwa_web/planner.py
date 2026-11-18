@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from std_srvs.srv import Trigger
 import webots_ros2_msgs.srv
 from iiwa_msgs.srv import GetRunStatus, SubmitPlan
+from iiwa_scene_context.external import ContextError, build_planner_context
 
 from .ros_node import get_bridge
 
@@ -31,8 +32,14 @@ _active_run_id: str | None = None
 
 class RunRequest(BaseModel):
     run_id: str = Field(..., min_length=1, max_length=128)
+    context_state_version: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description='state_version from GET /planner/context',
+    )
     response: dict[str, Any] | str = Field(
-        ..., description='The untouched Qwen3 graph response',
+        ..., description='The untouched graph-v3 model response',
     )
 
 
@@ -55,35 +62,69 @@ def _status(run_id: str) -> dict[str, Any] | None:
 
 
 def _http_status(code: str) -> int:
-    if code in ('busy', 'conflict', 'stale_scene'):
+    if code in ('busy', 'conflict', 'stale_scene', 'scene_not_ready'):
         return 409
-    if code == 'not_ready':
+    if code in ('not_ready', 'ros_unavailable'):
         return 503
-    if code == 'invalid':
+    if code == 'invalid_scene':
+        return 502
+    if code in ('invalid', 'unsupported_contract', 'not_executable', 'rejected'):
         return 422
     return 422
 
 
-@router.get('/scene', summary='Текущий scene_json для внешнего планировщика')
-def get_scene():
+def _scene_envelope() -> dict[str, Any]:
     try:
         response = get_bridge().call_service(
             Trigger, SCENE_SERVICE, Trigger.Request(),
         )
     except (RuntimeError, TimeoutError) as error:
-        raise HTTPException(503, str(error)) from error
+        raise HTTPException(
+            503,
+            detail={'code': 'ros_unavailable', 'reason': str(error)},
+        ) from error
     if not response.success:
-        raise HTTPException(409, response.message or 'scene is not ready')
+        raise HTTPException(
+            409,
+            detail={
+                'code': 'scene_not_ready',
+                'reason': response.message or 'scene is not ready',
+            },
+        )
     try:
         payload = json.loads(response.message)
     except json.JSONDecodeError as error:
-        raise HTTPException(502, f'invalid scene JSON: {error}') from error
+        raise HTTPException(
+            502,
+            detail={'code': 'invalid_scene', 'reason': f'invalid scene JSON: {error}'},
+        ) from error
     if not isinstance(payload, dict):
-        raise HTTPException(502, 'scene envelope must be a JSON object')
+        raise HTTPException(
+            502,
+            detail={'code': 'invalid_scene', 'reason': 'scene envelope must be an object'},
+        )
     return payload
 
 
-@router.post('/runs', summary='Передать готовый граф Qwen3 исполнителю')
+@router.get('/context', summary='Пакет контекста graph-v3 для внешней модели')
+def get_context():
+    envelope = _scene_envelope()
+    try:
+        return build_planner_context(envelope)
+    except ContextError as error:
+        raise HTTPException(
+            409 if error.code in ('unsupported_contract', 'scene_not_ready')
+            else _http_status(error.code),
+            detail={'code': error.code, 'reason': error.message},
+        ) from error
+
+
+@router.get('/scene', summary='Текущий scene_json для внешнего планировщика')
+def get_scene():
+    return _scene_envelope()
+
+
+@router.post('/runs', summary='Передать готовый graph-v3 исполнителю')
 def submit_run(request: RunRequest):
     global _active_run_id
     graph = (
@@ -97,18 +138,32 @@ def submit_run(request: RunRequest):
             SUBMIT_SERVICE,
             SubmitPlan.Request(
                 run_id=request.run_id,
+                context_state_version=request.context_state_version,
                 response=graph,
             ),
         )
     except (RuntimeError, TimeoutError) as error:
-        raise HTTPException(503, str(error)) from error
+        raise HTTPException(
+            503,
+            detail={'code': 'ros_unavailable', 'reason': str(error)},
+        ) from error
     if not response.accepted:
+        details: dict[str, Any] = {}
+        raw_details = getattr(response, 'details_json', '') or ''
+        if raw_details:
+            try:
+                parsed = json.loads(raw_details)
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                details = parsed
         raise HTTPException(
             _http_status(response.code),
             detail={
                 'code': response.code,
                 'reason': response.reason,
                 'run_id': request.run_id,
+                **details,
             },
         )
     with _lock:
