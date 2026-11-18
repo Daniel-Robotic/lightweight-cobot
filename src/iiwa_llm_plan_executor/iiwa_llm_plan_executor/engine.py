@@ -9,7 +9,7 @@ from typing import Any, Callable, Mapping
 
 from iiwa_scene_context.catalog import DEFAULT_CATALOG, SkillCatalog
 
-from .schema import TERMINALS, PlanGraph, PlanSchemaError, parse_response
+from .schema import GRAPH_TERMINALS, Goal, PlanGraph, PlanSchemaError, parse_response
 from .validator import ValidationResult, validate_graph
 
 
@@ -29,6 +29,7 @@ class AdmissionResult:
     code: str
     message: str
     run_id: str
+    details: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -36,6 +37,7 @@ class AdmissionResult:
             'code': self.code,
             'message': self.message,
             'run_id': self.run_id,
+            'details': dict(self.details),
         }
 
 
@@ -54,6 +56,9 @@ class RunRecord:
     mounted_tool: str | None = None
     held_object: str | None = None
     terminal: str | None = None
+    goals: tuple[Goal, ...] = ()
+    goals_confirmed: list[str] = field(default_factory=list)
+    goals_remaining: list[str] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     context: Any = None
     cancel_requested: bool = False
@@ -76,6 +81,8 @@ class RunStatus:
     mounted_tool: str | None
     held_object: str | None
     events: tuple[dict[str, Any], ...] = ()
+    goals_confirmed: tuple[str, ...] = ()
+    goals_remaining: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -91,6 +98,8 @@ class RunStatus:
             'mounted_tool': self.mounted_tool,
             'held_object': self.held_object,
             'events': list(self.events),
+            'goals_confirmed': list(self.goals_confirmed),
+            'goals_remaining': list(self.goals_remaining),
         }
 
     def to_json(self) -> str:
@@ -125,6 +134,9 @@ class GraphEngine:
         on_replan: Callable[[dict[str, Any] | None], None] | None = None,
         on_stop: Callable[[str], None] | None = None,
         robot_fresh: Callable[[], tuple[bool, str]] | None = None,
+        goal_evaluator: Callable[
+            [tuple[Goal, ...], Mapping[str, Any]], tuple[list[str], list[str]]
+        ] | None = None,
         threaded: bool = True,
         min_start_delay_sec: float = DEFAULT_MIN_START_DELAY_SEC,
         scene_max_age_sec: float = DEFAULT_SCENE_MAX_AGE_SEC,
@@ -140,6 +152,7 @@ class GraphEngine:
         self.on_replan = on_replan
         self.on_stop = on_stop
         self.robot_fresh = robot_fresh
+        self.goal_evaluator = goal_evaluator
         self.threaded = bool(threaded)
         self.min_start_delay_sec = float(min_start_delay_sec)
         self.scene_max_age_sec = float(scene_max_age_sec)
@@ -187,16 +200,25 @@ class GraphEngine:
         self,
         run_id: str,
         response_json: str | Mapping[str, Any],
+        context_state_version: str | int | None = None,
     ) -> AdmissionResult:
-        """Admit one graph against a fresh scene snapshot.
+        """Admit one graph-v3 response against a fresh scene snapshot.
 
-        Nothing is registered until the format, readiness, freshness and
-        ownership checks have all passed and the accepted graph has been
+        Nothing is registered until the format, freshness, contract version
+        and ownership checks have all passed and the accepted graph has been
         published.  A rejected request therefore never occupies its run_id.
         """
         run_id = str(run_id).strip()
         if not run_id:
             return AdmissionResult(False, 'invalid', 'run_id must not be empty', '')
+        version_text = str(context_state_version).strip() if context_state_version is not None else ''
+        if not version_text:
+            return AdmissionResult(
+                False,
+                'invalid',
+                'context_state_version is required',
+                run_id,
+            )
         raw_response = (
             response_json
             if isinstance(response_json, str)
@@ -205,7 +227,26 @@ class GraphEngine:
         try:
             graph = parse_response(raw_response)
         except PlanSchemaError as error:
-            return AdmissionResult(False, 'invalid', str(error), run_id)
+            return AdmissionResult(
+                False,
+                error.code,
+                str(error),
+                run_id,
+                error.details,
+            )
+        if graph.status in ('blocked', 'clarification_required'):
+            details = {'status': graph.status, **graph.status_details}
+            reason = graph.status_details.get(
+                'question',
+                graph.status_details.get('reason', f'status={graph.status}'),
+            )
+            return AdmissionResult(
+                False,
+                'not_executable',
+                f'the model reported status={graph.status}: {reason}',
+                run_id,
+                details,
+            )
         canonical = _canonical(graph)
 
         with self._lock:
@@ -242,6 +283,19 @@ class GraphEngine:
             stale = self._scene_age(envelope, now)
             if stale is not None:
                 return AdmissionResult(False, 'stale_scene', stale, run_id)
+            current_version = str(int(envelope.get('state_version', -1)))
+            if version_text != current_version:
+                return AdmissionResult(
+                    False,
+                    'stale_scene',
+                    'context_state_version does not match the live scene '
+                    f'({version_text} != {current_version})',
+                    run_id,
+                    {
+                        'context_state_version': version_text,
+                        'state_version': int(envelope.get('state_version', -1)),
+                    },
+                )
             validation: ValidationResult = validate_graph(
                 graph,
                 envelope,
@@ -249,7 +303,11 @@ class GraphEngine:
             )
             if not validation.ok:
                 return AdmissionResult(
-                    False, validation.code, validation.reason, run_id,
+                    False,
+                    validation.code,
+                    validation.reason,
+                    run_id,
+                    validation.details,
                 )
             try:
                 if self.on_plan is not None:
@@ -268,6 +326,7 @@ class GraphEngine:
                 response=canonical,
                 canonical_response=canonical,
                 state_version=int(envelope.get('state_version', 0)),
+                goals=graph.goals,
             )
             self._runs[run_id] = record
             if self.threaded:
@@ -316,6 +375,86 @@ class GraphEngine:
             )
         return None
 
+    def _default_goal_evaluator(
+        self,
+        goals: tuple[Goal, ...],
+        envelope: Mapping[str, Any],
+    ) -> tuple[list[str], list[str]]:
+        scene = envelope.get('scene_json') or {}
+        initial = scene.get('initial_state') or {}
+        components = initial.get('components') or {}
+        tools = initial.get('tools') or {}
+        holes = initial.get('holes') or {}
+        screws = (initial.get('screws') or {})
+        state = {
+            'mounted_tool': initial.get('tool_mounted'),
+            'held_object': initial.get('held_object'),
+            'cap': {'state': components.get('cap')},
+            'tools': {name: {'state': status} for name, status in tools.items()},
+            'screws': {
+                name: {
+                    'state': (entry or {}).get('state') if isinstance(entry, dict) else entry,
+                    'hole': (entry or {}).get('hole') if isinstance(entry, dict) else None,
+                }
+                for name, entry in screws.items()
+            },
+            'holes': holes,
+        }
+        confirmed: list[str] = []
+        remaining: list[str] = []
+        for goal in goals:
+            ok = False
+            if goal.predicate == 'installed':
+                ok = (
+                    goal.args.get('part') == 'cap'
+                    and goal.args.get('destination') == 'hatch_seat'
+                    and components.get('cap') == 'installed'
+                )
+            elif goal.predicate == 'handoff':
+                hole = holes.get(goal.args.get('hole', '')) or {}
+                ok = (
+                    hole.get('screw') == goal.args.get('screw')
+                    or state['screws'].get(goal.args.get('screw', ''), {}).get(
+                        'hole',
+                    ) == goal.args.get('hole')
+                )
+            elif goal.predicate == 'tool_docked':
+                ok = tools.get(goal.args.get('tool', '')) == 'docked'
+            elif goal.predicate == 'held':
+                ok = state['held_object'] == goal.args.get('object')
+            elif goal.predicate == 'tool_mounted':
+                ok = state['mounted_tool'] == goal.args.get('tool')
+            elif goal.predicate == 'at':
+                obj = goal.args.get('object', '')
+                destination = goal.args.get('destination', '')
+                if obj == 'cap' and destination == 'hatch_seat':
+                    ok = components.get('cap') == 'installed'
+                else:
+                    hole = holes.get(destination) or {}
+                    ok = hole.get('screw') == obj
+            elif goal.predicate == 'visible':
+                ok = goal.args.get('object') in components or goal.args.get('object') in tools
+            (confirmed if ok else remaining).append(goal.canonical())
+        return confirmed, remaining
+
+    def _refresh_goals(
+        self,
+        run: RunRecord,
+        envelope: Mapping[str, Any],
+    ) -> bool:
+        if not run.goals:
+            run.goals_confirmed = []
+            run.goals_remaining = []
+            return True
+        evaluator = self.goal_evaluator or self._default_goal_evaluator
+        try:
+            confirmed, remaining = evaluator(run.goals, envelope)
+        except Exception:
+            confirmed, remaining = [], [goal.canonical() for goal in run.goals]
+        run.goals_confirmed = list(confirmed)
+        run.goals_remaining = list(remaining)
+        return not remaining
+
     def _context(self, run: RunRecord, envelope: Mapping[str, Any]) -> Any:
         context = self.context_factory(envelope, envelope['scene_json'])
         initial = (envelope.get('scene_json') or {}).get('initial_state') or {}
@@ -347,6 +486,8 @@ class GraphEngine:
             'terminal': run.terminal,
             'mounted_tool': run.mounted_tool,
             'held_object': run.held_object,
+            'goals_confirmed': list(run.goals_confirmed),
+            'goals_remaining': list(run.goals_remaining),
             'timestamp': self._clock(),
         }
         payload.update(extra)
@@ -405,7 +546,7 @@ class GraphEngine:
         run.state = state
         run.reason = reason
         run.terminal = state
-        if state in ('failed', 'canceled'):
+        if state in ('failed', 'canceled', 'operator_required'):
             self._stop_motion(reason)
         self._emit_status(run, terminal_reason=reason)
         run.done.set()
@@ -463,6 +604,7 @@ class GraphEngine:
             envelope = current
             node_id = graph.entry
             steps = 0
+            visits: dict[str, int] = {}
             while True:
                 step_started = time.monotonic()
                 if run.cancel_requested:
@@ -516,6 +658,17 @@ class GraphEngine:
                     envelope = current
                 scene_check_sec = time.monotonic() - scene_started
                 node = graph.node(node_id)
+                if node.max_retries is not None:
+                    visits[node_id] = visits.get(node_id, 0) + 1
+                    if visits[node_id] > node.max_retries + 1:
+                        self._refresh_goals(run, envelope)
+                        self._terminal(
+                            run,
+                            'operator_required',
+                            f'retry limit of {node.max_retries} reached at '
+                            f'node {node.id!r}',
+                        )
+                        return
                 skill_started = time.monotonic()
                 outcome = self.skills.execute(node, context)
                 skill_sec = time.monotonic() - skill_started
@@ -552,7 +705,18 @@ class GraphEngine:
                 if run.cancel_requested:
                     self._terminal(run, 'canceled', 'cancel requested')
                     return
-                if next_id in TERMINALS:
+                if next_id in GRAPH_TERMINALS:
+                    if next_id == 'completed':
+                        if not self._refresh_goals(run, envelope):
+                            self._terminal(
+                                run,
+                                'operator_required',
+                                'completed was requested but goals are not '
+                                f'confirmed: {run.goals_remaining}',
+                            )
+                            return
+                    else:
+                        self._refresh_goals(run, envelope)
                     if next_id == 'replan_required':
                         fresh_scene = self._envelope()
                         if self.on_replan is not None:
@@ -577,6 +741,7 @@ class GraphEngine:
                 return RunStatus(
                     False, run_id, 'unknown', 'run_id was not submitted',
                     None, None, None, None, None, None, None, (),
+                    (), (),
                 )
             return RunStatus(
                 True,
@@ -591,6 +756,8 @@ class GraphEngine:
                 run.mounted_tool,
                 run.held_object,
                 tuple(run.events),
+                tuple(run.goals_confirmed),
+                tuple(run.goals_remaining),
             )
 
     def cancel(self, run_id: str) -> CancelResult:

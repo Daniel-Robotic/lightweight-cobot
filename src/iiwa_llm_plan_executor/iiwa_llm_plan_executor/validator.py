@@ -6,12 +6,17 @@ from typing import Any, Iterable, Mapping
 
 from iiwa_scene_context.catalog import ALLOWED_PARAMS, SkillCatalog
 
-from .schema import TERMINALS, PlanGraph, PlanNode
+from iiwa_scene_context.external import (
+    SUPPORTED_EVENTS,
+    SUPPORTED_OBSERVATIONS,
+)
+
+from .schema import GRAPH_TERMINALS, PlanGraph, PlanNode
 
 
 SAFE_COLLISION_SKILLS = {'stop', 'notify_operator'}
 SAFE_GRASP_FAILURE_SKILLS = {'inspect_state', 'stop'}
-SAFE_FAILURE_TERMINALS = {'replan_required', 'operator_required'}
+SAFE_FAILURE_TERMINALS = set(GRAPH_TERMINALS) - {'completed'}
 PROGRESS_EVENTS = {
     'success', 'ok', 'found', 'clear', 'empty', 'holding', 'placed',
 }
@@ -131,9 +136,135 @@ def _replan(reason: str, **details) -> ValidationResult:
 
 
 def _node_or_terminal(graph: PlanGraph, node_id: str) -> PlanNode | None:
-    if node_id in TERMINALS:
+    if node_id in GRAPH_TERMINALS:
         return None
     return graph.node(node_id)
+
+
+_GOAL_ARGS = {
+    'installed': ('part', 'destination'),
+    'handoff': ('screw', 'hole'),
+    'tool_docked': ('tool', 'socket'),
+    'held': ('object',),
+    'tool_mounted': ('tool',),
+    'at': ('object', 'destination'),
+    'visible': ('object',),
+}
+
+
+def _object_known(object_id: str, facts: _Facts) -> bool:
+    return (
+        object_id in facts.components
+        or object_id in facts.tools
+        or object_id in facts.cameras
+        or object_id in facts.service_objects
+    )
+
+
+def _goal_supported(
+    predicate: str,
+    args: Mapping[str, str],
+    facts: _Facts,
+) -> str | None:
+    required = _GOAL_ARGS.get(predicate)
+    if required is None:
+        return f'unsupported goal predicate {predicate!r}'
+    if set(args) != set(required):
+        return (
+            f'goal {predicate!r} requires args {list(required)}, '
+            f'got {sorted(args)}'
+        )
+    if predicate == 'installed':
+        part, destination = args['part'], args['destination']
+        if facts.components.get(part) != 'hatch':
+            return f'installed({part!r}) is not a hatch-like part'
+        if facts.destinations.get(destination) != 'seat':
+            return f'installed target {destination!r} is not a seat'
+        if part != 'cap':
+            return f'installed({part!r}) is not confirmable by this executor'
+        return None
+    if predicate == 'handoff':
+        screw, hole = args['screw'], args['hole']
+        if facts.components.get(screw) != 'screw':
+            return f'handoff({screw!r}) is not a present screw'
+        if facts.destinations.get(hole) != 'hole':
+            return f'handoff target {hole!r} is not a hole'
+        return None
+    if predicate == 'tool_docked':
+        tool, socket = args['tool'], args['socket']
+        if tool not in facts.tools:
+            return f'unknown tool {tool!r}'
+        if socket != f'{tool}_socket':
+            return f'tool_docked({tool!r}) must name its own socket'
+        return None
+    if predicate == 'held':
+        if not _object_known(args['object'], facts):
+            return f'unknown object {args["object"]!r}'
+        return None
+    if predicate == 'tool_mounted':
+        if args['tool'] not in facts.tools:
+            return f'unknown tool {args["tool"]!r}'
+        return None
+    if predicate == 'at':
+        obj, destination = args['object'], args['destination']
+        if not _object_known(obj, facts):
+            return f'unknown object {obj!r}'
+        kind = facts.destinations.get(destination)
+        if kind == 'seat' and facts.components.get(obj) == 'hatch' and obj == 'cap':
+            return None
+        if kind == 'hole' and facts.components.get(obj) == 'screw':
+            return None
+        return f'at({obj!r},{destination!r}) is not confirmable'
+    if predicate == 'visible':
+        if not _object_known(args['object'], facts):
+            return f'unknown object {args["object"]!r}'
+        return None
+    return f'unsupported goal predicate {predicate!r}'
+
+
+def _observe_supported(node: PlanNode, facts: _Facts) -> ValidationResult | None:
+    predicate = node.params.get('predicate') or {}
+    name = str(predicate.get('name', ''))
+    args = predicate.get('args') or {}
+    if name not in SUPPORTED_OBSERVATIONS:
+        return _reject(
+            f'observe node {node.id!r} uses unsupported predicate {name!r}',
+            code='unsupported_predicate',
+            node_id=node.id,
+            predicate=name,
+        )
+    if name == 'hole_empty':
+        if set(args) != {'hole'}:
+            return _reject(
+                f'observe node {node.id!r}: hole_empty requires args [hole]',
+                code='unsupported_predicate', node_id=node.id,
+            )
+        if facts.destinations.get(str(args.get('hole'))) != 'hole':
+            return _reject(
+                f'observe node {node.id!r}: unknown hole {args.get("hole")!r}',
+                code='unsupported_predicate', node_id=node.id,
+            )
+        return None
+    problem = _goal_supported(name, args, facts)
+    if problem is not None:
+        return _reject(
+            f'observe node {node.id!r}: {problem}',
+            code='unsupported_predicate', node_id=node.id, predicate=name,
+        )
+    return None
+
+
+def _validate_goals(graph: PlanGraph, facts: _Facts) -> ValidationResult | None:
+    for goal in graph.goals:
+        problem = _goal_supported(goal.predicate, goal.args, facts)
+        if problem is not None:
+            return _reject(
+                f'goal {goal.id!r}: {problem}',
+                code='unsupported_goal',
+                goal_id=goal.id,
+                predicate=goal.predicate,
+            )
+    return None
 
 
 def _structural_checks(graph: PlanGraph, facts: _Facts) -> ValidationResult | None:
@@ -141,34 +272,44 @@ def _structural_checks(graph: PlanGraph, facts: _Facts) -> ValidationResult | No
     for node in graph.nodes:
         if not node.transitions:
             return _reject(f'node {node.id!r} has no transitions')
+        if node.kind == 'observe':
+            observed = _observe_supported(node, facts)
+            if observed is not None:
+                return observed
+            for transition in node.transitions:
+                if transition.next == node.id:
+                    return _reject(
+                        f'observe node {node.id!r} must not loop to itself'
+                    )
+            continue
         if node.skill not in facts.available_skills:
             return _reject(
                 f'node {node.id!r} uses unknown or unavailable skill '
                 f'{node.skill!r}'
             )
         if node.object:
-            known = (
+            if not (
                 node.object in facts.components
                 or node.object in facts.tools
                 or node.object in facts.cameras
                 or node.object in facts.service_objects
                 or node.object in facts.destinations
-            )
-            if not known:
+            ):
                 return _reject(
                     f'node {node.id!r} references unknown object '
-                    f'{node.object!r}'
+                    f'{node.object!r}',
+                    code='unknown_id', node_id=node.id,
                 )
         if node.target:
-            known = (
+            if not (
                 node.target in facts.destinations
                 or node.target in facts.components
                 or node.target in facts.tools
-            )
-            if not known:
+            ):
                 return _reject(
                     f'node {node.id!r} references unknown target '
-                    f'{node.target!r}'
+                    f'{node.target!r}',
+                    code='unknown_id', node_id=node.id,
                 )
         if node.params:
             allowed_params = set(ALLOWED_PARAMS.get(node.skill, ()))
@@ -198,37 +339,50 @@ def _structural_checks(graph: PlanGraph, facts: _Facts) -> ValidationResult | No
                         f'node {node.id!r} dispense start_fraction exceeds '
                         'end_fraction'
                     )
+        if node.tool:
+            if node.tool not in facts.tools:
+                return _reject(
+                    f'node {node.id!r} references unknown tool {node.tool!r}',
+                    code='unknown_id', node_id=node.id,
+                )
+            required = None
+            if node.skill in ('grab', 'pick'):
+                if node.object == 'cap':
+                    required = 'vacuum'
+                elif facts.components.get(node.object) == 'screw':
+                    required = 'magnetic_tool'
+            if required is not None and node.tool != required:
+                return _reject(
+                    f'node {node.id!r} declares tool {node.tool!r} but '
+                    f'{node.object!r} requires {required!r}'
+                )
         allowed_events = set(facts.envelope.get('skill_contracts', {}).get(
             node.skill, {},
         ).get('outcomes', {}))
         if not allowed_events:
-            # The server catalog remains authoritative even if the envelope
-            # was produced by an older snapshot.
             from iiwa_scene_context.catalog import SKILL_OUTCOMES
             allowed_events = set(SKILL_OUTCOMES.get(node.skill, {}))
         events = {transition.event for transition in node.transitions}
         missing = allowed_events - events
-        extra = events - allowed_events
         if missing:
             return _reject(
-                f'node {node.id!r} misses required transitions {sorted(missing)}'
+                f'node {node.id!r} misses runtime outcomes {sorted(missing)}'
             )
+        extra = events - allowed_events
         if extra:
             return _reject(
                 f'node {node.id!r} has unknown events {sorted(extra)}'
             )
         for transition in node.transitions:
-            if transition.next not in ids and transition.next not in TERMINALS:
+            if transition.next not in ids and transition.next not in GRAPH_TERMINALS:
                 return _reject(
                     f'node {node.id!r} points to unknown node '
                     f'{transition.next!r}'
                 )
-            if transition.next == node.id:
-                # A self-loop that does not inspect state would spin forever.
-                if node.skill not in ('inspect_state', 'wait_scene_clear'):
-                    return _reject(
-                        f'node {node.id!r} has a direct self-loop'
-                    )
+            if transition.next == node.id and node.max_retries is None:
+                return _reject(
+                    f'node {node.id!r} has an unbounded direct self-loop'
+                )
     if graph.entry not in ids:
         return _reject(f'entry {graph.entry!r} is not a plan node')
 
@@ -244,12 +398,7 @@ def _structural_checks(graph: PlanGraph, facts: _Facts) -> ValidationResult | No
     if unreachable:
         return _reject(f'unreachable nodes {sorted(unreachable)}')
 
-    reverse: dict[str, set[str]] = {node_id: set() for node_id in ids}
-    for node in graph.nodes:
-        for transition in node.transitions:
-            if transition.next in ids:
-                reverse[transition.next].add(node.id)
-    can_finish = set(TERMINALS)
+    can_finish = set(GRAPH_TERMINALS)
     changed = True
     while changed:
         changed = False
@@ -281,7 +430,10 @@ def _structural_checks(graph: PlanGraph, facts: _Facts) -> ValidationResult | No
                     return _reject(
                         f'grasp_failed in {node.id!r} must not continue blindly'
                     )
-                if target is not None and target.skill not in SAFE_GRASP_FAILURE_SKILLS:
+                if (
+                    target is not None
+                    and target.skill not in SAFE_GRASP_FAILURE_SKILLS
+                ):
                     return _reject(
                         f'grasp_failed in {node.id!r} must reach inspect_state '
                         f'or stop, got {target.skill!r}'
@@ -304,6 +456,8 @@ def _precondition(
     state: _State,
     facts: _Facts,
 ) -> ValidationResult | None:
+    if node.kind == 'observe':
+        return None
     skill = node.skill
     obj = node.object
     target = node.target
@@ -662,6 +816,11 @@ def _ownership_checks(graph: PlanGraph, facts: _Facts) -> ValidationResult | Non
             })
             return failure
         visited_states[node.id].add(state)
+        if node.kind == 'observe':
+            for transition in node.transitions:
+                if transition.next in graph.ids:
+                    queue.append((transition.next, state))
+            continue
         for transition in node.transitions:
             if transition.next not in graph.ids:
                 continue
@@ -691,16 +850,22 @@ def validate_graph(
     catalog: SkillCatalog,
 ) -> ValidationResult:
     """Return an admission decision; never mutates the graph or the scene."""
-    if graph.status == 'blocked':
+    if graph.status in ('blocked', 'clarification_required'):
+        details = {'status': graph.status, **graph.status_details}
         return ValidationResult(
-            False, 'blocked', 'the model reported status=blocked; no motion',
-            {'status': graph.status},
+            False,
+            'not_executable',
+            f'the model reported status={graph.status}; no motion',
+            details,
         )
     if graph.status != 'ready':
         return _reject(f'unsupported graph status {graph.status!r}')
     if len(graph.nodes) > 256:
         return _reject('graph exceeds the 256-node limit')
     facts = _facts(scene)
+    goals = _validate_goals(graph, facts)
+    if goals is not None:
+        return goals
     structural = _structural_checks(graph, facts)
     if structural is not None:
         return structural
@@ -716,5 +881,6 @@ def validate_graph(
             'entry': graph.entry,
             'state_version': facts.envelope.get('state_version'),
             'available_skills': len(facts.available_skills),
+            'goals': [goal.canonical() for goal in graph.goals],
         },
     )

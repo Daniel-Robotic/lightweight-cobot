@@ -1,12 +1,17 @@
-# Submit a ready-made plan graph without a user-supplied scene revision.
+# Submit a ready-made graph-v3 response against a context snapshot version.
 string run_id
-# The untouched graph as a JSON string (object or string form).
+# state_version from GET /planner/context; required.
+string context_state_version
+# The untouched graph-v3 response as a JSON string.
 string response
 ---
 bool accepted
-# accepted | duplicate | invalid | rejected | not_ready | busy | conflict
+# accepted | duplicate | invalid | unsupported_contract | not_executable | rejected | not_ready | stale_scene | busy | conflict
 string code
 # Human-readable reason for the admission decision.
 string reason
 # JSON status of an accepted or duplicate run; empty when nothing was registered.
 string status_json
+# Machine-readable rejection details (status/question/missing/goal/node).
+string details_json
+string run_id

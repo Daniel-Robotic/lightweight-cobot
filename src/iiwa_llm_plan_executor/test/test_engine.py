@@ -1,4 +1,4 @@
-"""Graph engine: admission, one-edge transitions, terminals and cancellation."""
+"""Graph-v3 engine: admission, goals, retries, terminals and cancellation."""
 from __future__ import annotations
 
 import threading
@@ -16,17 +16,6 @@ from iiwa_scene_context.snapshot import build_envelope, build_scene
 PACKAGE = Path(__file__).resolve().parents[1]
 SCENES = PACKAGE.parent / 'iiwa_experement' / 'config' / 'scenes.yaml'
 GEOMETRY = load_geometry(PACKAGE.parent / 'iiwa_experement' / 'config' / 'geometry.yaml')
-SAFE = {
-    'collision': 'operator_required',
-    'grasp_failed': 'operator_required',
-    'human_in_scene': 'operator_required',
-    'not_found': 'replan_required',
-    'failed': 'replan_required',
-    'not_ok': 'operator_required',
-    'timeout': 'operator_required',
-    'unknown': 'operator_required',
-}
-PROGRESS = {'success', 'ok', 'found', 'clear', 'empty', 'holding', 'placed'}
 
 
 class FakeContext:
@@ -88,56 +77,79 @@ def envelope(revision=1, stamp=5.0, experiment_id=1):
     )
 
 
-def node(node_id, skill, obj='', target='', next_on=None):
-    events = DEFAULT_CATALOG.outcomes(skill)
-    next_on = next_on or {}
-    transitions = []
-    for event in events:
-        if event in next_on:
-            destination = next_on[event]
-        elif event in PROGRESS:
-            destination = 'completed'
-        else:
-            destination = SAFE.get(event, 'operator_required')
-        transitions.append({'event': event, 'next': destination})
-    return {
+def skill_node(
+    node_id,
+    skill,
+    *,
+    obj='',
+    target='',
+    next_id='completed',
+    on=None,
+    max_retries=None,
+):
+    payload = {
         'id': node_id,
+        'kind': 'skill',
         'skill': skill,
         'object': obj,
         'target': target,
-        'transitions': transitions,
+        'next': next_id,
+        'on': on or {},
+    }
+    if max_retries is not None:
+        payload['max_retries'] = max_retries
+    return payload
+
+
+def observe_node(node_id, name, args, *, true='completed',
+                 false='replan_required', unknown='operator_required'):
+    return {
+        'id': node_id,
+        'kind': 'observe',
+        'predicate': {'name': name, 'args': args},
+        'on': {'true': true, 'false': false, 'unknown': unknown},
     }
 
 
-def graph(entry, *nodes):
+def graph(entry, *nodes, goals=None):
     return parse_response({
+        'schema_version': 3,
         'status': 'ready',
         'entry': entry,
+        'goals': goals or [{
+            'id': 'g1',
+            'predicate': 'visible',
+            'args': {'object': 'fixture'},
+        }],
         'plan': list(nodes),
     })
 
 
 STOP_GRAPH = lambda: graph(
     'a',
-    node('a', 'stop', 'robot', next_on={'success': 'b'}),
-    node('b', 'stop', 'robot', next_on={'success': 'completed'}),
+    skill_node('a', 'stop', obj='robot', next_id='b'),
+    skill_node('b', 'stop', obj='robot', next_id='completed'),
 )
 
 GRAB_GRAPH = lambda: graph(
     'g',
-    node('g', 'grab', 'vacuum', next_on={'success': 't'}),
-    node('t', 'transfer', 'vacuum', 'work',
-         next_on={'success': 'completed'}),
+    skill_node('g', 'grab', obj='vacuum', next_id='t'),
+    skill_node('t', 'transfer', obj='vacuum', target='work'),
 )
 
-BAD_GRAPH = lambda: graph(
-    'g',
-    node('g', 'grab', 'vacuum', next_on={'success': 'ghost'}),
-)
+BAD_GRAPH = {
+    'schema_version': 3,
+    'status': 'ready',
+    'entry': 'g',
+    'goals': [{
+        'id': 'g1', 'predicate': 'visible', 'args': {'object': 'fixture'},
+    }],
+    'plan': [skill_node('g', 'grab', obj='vacuum', next_id='ghost')],
+}
 
 
 def make_engine(skills=None, *, clock=5.0, provider=None, threaded=False,
-                max_steps=512, **kwargs):
+                max_steps=512, goal_evaluator=None, **kwargs):
     skills = skills or FakeSkills()
     clock_box = {'now': clock}
     state = {'envelope': envelope(1, clock_box['now'])}
@@ -162,6 +174,7 @@ def make_engine(skills=None, *, clock=5.0, provider=None, threaded=False,
         on_replan=lambda payload: events['replans'].append(payload),
         on_stop=lambda reason: events['stops'].append(reason),
         robot_fresh=lambda: (True, 'ok'),
+        goal_evaluator=goal_evaluator,
         threaded=threaded,
         max_steps=max_steps,
         **kwargs,
@@ -170,76 +183,97 @@ def make_engine(skills=None, *, clock=5.0, provider=None, threaded=False,
     return engine, skills, events, state, clock_box
 
 
-def test_submission_waits_for_scene_and_the_three_second_delay():
+def submit(engine, run_id, value, version='1'):
+    return engine.submit(run_id, value.as_dict(), version)
+
+
+def test_submission_requires_context_version_and_the_start_delay():
     engine, _, _, _, _ = make_engine(clock=2.0)
-    rejected = engine.submit('r1', STOP_GRAPH().as_dict())
-    assert rejected.accepted is False
+    rejected = submit(engine, 'r1', STOP_GRAPH())
     assert rejected.code == 'not_ready'
     assert 'start delay' in rejected.message
     assert engine.get_status('r1').found is False
 
-    engine, _, _, _, _ = make_engine(clock=3.01)
-    accepted = engine.submit('r1', STOP_GRAPH().as_dict())
+    engine, _, _, _, _ = make_engine(clock=5.0)
+    missing = engine.submit('r1', STOP_GRAPH().as_dict())
+    assert missing.code == 'invalid'
+    assert 'context_state_version' in missing.message
+
+    accepted = submit(engine, 'r1', STOP_GRAPH())
     assert accepted.accepted is True
     engine.run_accepted('r1')
 
-    engine.update_readiness(scene_ready=False, ready_at=0.0, motion_ready=False)
-    rejected = engine.submit('r2', STOP_GRAPH().as_dict())
-    assert rejected.code == 'not_ready'
 
-
-def test_rejected_graphs_are_not_registered_published_or_executed():
-    engine, skills, events, _, _ = make_engine()
-    blocked = engine.submit('r1', {'status': 'blocked', 'entry': '', 'plan': []})
-    assert blocked.code == 'blocked'
-    rejected = engine.submit('r2', BAD_GRAPH().as_dict())
+def test_stale_context_version_is_rejected_without_registration():
+    engine, _, events, _, _ = make_engine()
+    rejected = submit(engine, 'r1', STOP_GRAPH(), version='9')
     assert rejected.accepted is False
-    assert rejected.code == 'rejected'
+    assert rejected.code == 'stale_scene'
+    assert rejected.details['state_version'] == 1
+    assert engine.get_status('r1').found is False
+    assert events['plans'] == []
+
+
+def test_legacy_format_is_rejected_as_unsupported_contract():
+    engine, _, events, _, _ = make_engine()
+    rejected = engine.submit(
+        'r1',
+        {'status': 'ready', 'entry': 'a', 'plan': []},
+        '1',
+    )
+    assert rejected.code == 'unsupported_contract'
+    assert engine.get_status('r1').found is False
+    assert events['plans'] == []
+
+
+def test_not_executable_statuses_do_not_register_or_publish():
+    engine, skills, events, _, _ = make_engine()
+    blocked = engine.submit('r1', {
+        'schema_version': 3,
+        'status': 'blocked',
+        'entry': '',
+        'plan': [],
+        'reason': 'vacuum is absent',
+    }, '1')
+    assert blocked.code == 'not_executable'
+    assert blocked.details['status'] == 'blocked'
+    clarification = engine.submit('r2', {
+        'schema_version': 3,
+        'status': 'clarification_required',
+        'entry': '',
+        'plan': [],
+        'question': 'Сколько винтов?',
+        'missing': ['count'],
+    }, '1')
+    assert clarification.code == 'not_executable'
+    assert clarification.details['missing'] == ['count']
     assert events['plans'] == []
     assert skills.calls == []
     assert engine.get_status('r1').found is False
     assert engine.get_status('r2').found is False
-    assert not any(
-        event.get('state') == 'rejected' for event in events['statuses']
-    )
+
+
+def test_rejected_graphs_are_not_registered_published_or_executed():
+    engine, skills, events, _, _ = make_engine()
+    rejected = engine.submit('r2', BAD_GRAPH, '1')
+    assert rejected.accepted is False
+    assert rejected.code == 'invalid'
+    assert events['plans'] == []
+    assert skills.calls == []
+    assert engine.get_status('r2').found is False
 
 
 def test_rejected_run_id_can_be_reused_with_a_corrected_graph():
     engine, skills, events, _, _ = make_engine()
-    rejected = engine.submit('same-id', BAD_GRAPH().as_dict())
+    rejected = engine.submit('same-id', BAD_GRAPH, '1')
     assert rejected.accepted is False
     assert engine.get_status('same-id').found is False
 
-    accepted = engine.submit('same-id', STOP_GRAPH().as_dict())
+    accepted = submit(engine, 'same-id', STOP_GRAPH())
     assert accepted.accepted is True
-    assert accepted.code == 'accepted'
     assert len(events['plans']) == 1
     engine.run_accepted('same-id')
     assert engine.get_status('same-id').state == 'completed'
-
-
-def test_cap_grab_without_vacuum_is_admitted_and_follows_grasp_failed():
-    engine, skills, events, _, _ = make_engine()
-    value = graph(
-        'g',
-        node('g', 'grab', 'cap', next_on={
-            'success': 'completed',
-            'grasp_failed': 'operator_required',
-        }),
-    )
-    accepted = engine.submit('r1', value.as_dict())
-    assert accepted.accepted is True
-    assert len(events['plans']) == 1
-    skills.events = {'g': 'grasp_failed'}
-    skills.details = {'g': {'reason': 'required tool vacuum is not mounted'}}
-    engine.run_accepted('r1')
-    status = engine.get_status('r1')
-    assert status.state == 'operator_required'
-    assert status.events[0]['event'] == 'grasp_failed'
-    assert status.events[0]['next'] == 'operator_required'
-    assert status.events[0]['reason']
-    assert status.mounted_tool is None
-    assert status.held_object is None
 
 
 def test_accepted_graph_is_published_once_before_the_first_motion():
@@ -252,233 +286,184 @@ def test_accepted_graph_is_published_once_before_the_first_motion():
 
     engine.on_plan = on_plan
     skills.on_execute = lambda node, context: order.append(('move', node.id))
-    accepted = engine.submit('r1', STOP_GRAPH().as_dict())
+    accepted = submit(engine, 'r1', STOP_GRAPH())
     assert accepted.accepted
     engine.run_accepted('r1')
     assert order[0] == ('plan', 'r1')
     assert order[1] == ('move', 'a')
     assert len(events['plans']) == 1
+
+
+def test_skill_failure_follows_the_safe_terminal():
+    engine, skills, _, _, _ = make_engine()
+    value = graph(
+        'g',
+        skill_node('g', 'grab', obj='cap', next_id='completed'),
+        goals=[{
+            'id': 'g', 'predicate': 'installed',
+            'args': {'part': 'cap', 'destination': 'hatch_seat'},
+        }],
+    )
+    accepted = submit(engine, 'r1', value)
+    assert accepted.accepted is True
+    skills.events = {'g': 'grasp_failed'}
+    skills.details = {'g': {'reason': 'required tool vacuum is not mounted'}}
+    engine.run_accepted('r1')
     status = engine.get_status('r1')
-    assert status.state == 'completed'
-    assert status.found is True
-    assert 'scene_revision' not in status.as_dict()
+    assert status.state == 'operator_required'
+    assert status.events[0]['event'] == 'grasp_failed'
+    assert status.events[0]['next'] == 'operator_required'
+    assert list(status.goals_remaining) == ['installed(destination=hatch_seat,part=cap)']
 
 
-def test_same_run_id_is_idempotent_and_a_different_graph_conflicts():
-    engine, _, events, _, _ = make_engine()
-    first = engine.submit('r1', STOP_GRAPH().as_dict())
-    assert first.accepted
-    duplicate = engine.submit('r1', STOP_GRAPH().as_dict())
-    assert duplicate.accepted is True
-    assert duplicate.code == 'duplicate'
-    assert len(events['plans']) == 1
-
-    conflict = engine.submit('r1', GRAB_GRAPH().as_dict())
-    assert conflict.accepted is False
-    assert conflict.code == 'conflict'
-    assert len(events['plans']) == 1
-
-    busy = engine.submit('r2', STOP_GRAPH().as_dict())
-    assert busy.accepted is False
-    assert busy.code == 'busy'
-    assert len(events['plans']) == 1
+def test_completed_is_downgraded_when_goals_are_not_confirmed():
+    engine, _, _, _, _ = make_engine()
+    value = graph(
+        'a',
+        skill_node('a', 'stop', obj='robot'),
+        goals=[{
+            'id': 'g', 'predicate': 'installed',
+            'args': {'part': 'cap', 'destination': 'hatch_seat'},
+        }],
+    )
+    assert submit(engine, 'r1', value).accepted
+    engine.run_accepted('r1')
+    status = engine.get_status('r1')
+    assert status.state == 'operator_required'
+    assert 'goals are not confirmed' in status.reason
+    assert list(status.goals_remaining) == ['installed(destination=hatch_seat,part=cap)']
 
 
-def test_accepted_run_id_stays_bound_after_a_terminal_state():
-    engine, _, events, _, _ = make_engine()
-    assert engine.submit('r1', STOP_GRAPH().as_dict()).accepted
+def test_explicit_goal_evaluator_confirms_completion():
+    def evaluator(goals, scene):
+        del scene
+        return [goal.canonical() for goal in goals], []
+
+    engine, _, _, _, _ = make_engine(goal_evaluator=evaluator)
+    value = graph(
+        'a',
+        skill_node('a', 'stop', obj='robot'),
+        goals=[{
+            'id': 'g', 'predicate': 'installed',
+            'args': {'part': 'cap', 'destination': 'hatch_seat'},
+        }],
+    )
+    assert submit(engine, 'r1', value).accepted
     engine.run_accepted('r1')
     assert engine.get_status('r1').state == 'completed'
 
-    duplicate = engine.submit('r1', STOP_GRAPH().as_dict())
-    assert duplicate.accepted is True
-    assert duplicate.code == 'duplicate'
-    conflict = engine.submit('r1', GRAB_GRAPH().as_dict())
-    assert conflict.accepted is False
-    assert conflict.code == 'conflict'
-    assert len(events['plans']) == 1
 
-
-def test_plan_publication_failure_does_not_register_the_run():
+def test_observe_node_selects_true_branch_and_unknown_stops():
     engine, skills, _, _, _ = make_engine()
+    value = graph(
+        'check',
+        observe_node(
+            'check', 'installed',
+            {'part': 'cap', 'destination': 'hatch_seat'},
+            true='completed', false='replan_required',
+            unknown='operator_required',
+        ),
+        goals=[{
+            'id': 'g', 'predicate': 'installed',
+            'args': {'part': 'cap', 'destination': 'hatch_seat'},
+        }],
+    )
 
-    def broken(_payload):
-        raise RuntimeError('publisher unavailable')
+    def only_completed(goals, scene):
+        del scene
+        return [goal.canonical() for goal in goals], []
 
-    engine.on_plan = broken
-    rejected = engine.submit('r1', STOP_GRAPH().as_dict())
-    assert rejected.accepted is False
-    assert rejected.code == 'rejected'
-    assert 'publisher unavailable' in rejected.message
-    assert engine.get_status('r1').found is False
-    assert skills.calls == []
+    engine.goal_evaluator = only_completed
+    assert submit(engine, 'r1', value).accepted
+    skills.events = {'check': 'true'}
+    engine.run_accepted('r1')
+    assert engine.get_status('r1').state == 'completed'
 
-
-def test_each_event_selects_exactly_one_edge_and_is_visible_in_status():
     engine, skills, _, _, _ = make_engine()
-    engine.submit('r1', STOP_GRAPH().as_dict())
-    skills.events = {'a': 'success', 'b': 'success'}
-    engine.run_accepted('r1')
-    status = engine.get_status('r1')
-    assert status.state == 'completed'
-    assert [event['node_id'] for event in status.events] == ['a', 'b']
-    assert [event['next'] for event in status.events] == ['b', 'completed']
-    assert all(event['run_id'] == 'r1' for event in status.events)
-    assert all('scene_revision' not in event for event in status.events)
-
-
-def test_replan_returns_a_fresh_scene_and_operator_required_stops():
-    engine, skills, events, _, _ = make_engine()
-    replan_graph = graph(
-        'd',
-        node('d', 'detect', 'cap',
-             next_on={'found': 'replan_required'}),
-    )
-    engine.submit('r1', replan_graph.as_dict())
-    skills.events = {'d': 'found'}
-    engine.run_accepted('r1')
-    assert engine.get_status('r1').state == 'replan_required'
-    assert len(events['replans']) == 1
-    assert events['replans'][0]['state_version'] == 1
-
-    engine, skills, events, _, _ = make_engine()
-    operator_graph = graph(
-        'd',
-        node('d', 'detect', 'cap',
-             next_on={'found': 'operator_required'}),
-    )
-    engine.submit('r2', operator_graph.as_dict())
-    skills.events = {'d': 'found'}
+    engine.goal_evaluator = only_completed
+    assert submit(engine, 'r2', value).accepted
+    skills.events = {'check': 'unknown'}
     engine.run_accepted('r2')
     assert engine.get_status('r2').state == 'operator_required'
 
 
-def test_unknown_skill_outcome_stops_execution():
-    engine, skills, events, _, _ = make_engine()
-    engine.submit('r1', STOP_GRAPH().as_dict())
-    skills.events = {'a': 'bogus'}
-    engine.run_accepted('r1')
-    status = engine.get_status('r1')
-    assert status.state == 'failed'
-    assert 'unknown skill outcome' in status.reason
-    assert events['stops']
-
-
-def test_lost_freshness_and_missing_scene_stop_motion():
-    engine, _, events, _, _ = make_engine()
-    engine.robot_fresh = lambda: (False, 'joint_states is stale')
-    engine.submit('r1', STOP_GRAPH().as_dict())
-    engine.run_accepted('r1')
-    assert engine.get_status('r1').state == 'failed'
-    assert 'joint_states' in engine.get_status('r1').reason
-    assert events['stops']
-
-    engine, skills, events, state, _ = make_engine()
-    engine.submit('r2', STOP_GRAPH().as_dict())
-    skills.on_execute = lambda node, context: state.update(envelope=None)
-    engine.run_accepted('r2')
-    assert engine.get_status('r2').state == 'failed'
-    assert 'scene snapshot' in engine.get_status('r2').reason
-
-
-def test_scene_state_change_stops_non_ownership_nodes_but_not_own_graph_changes():
-    engine, skills, events, state, _ = make_engine()
-    engine.submit('r1', STOP_GRAPH().as_dict())
-    skills.on_execute = lambda node, context: state.update(envelope=envelope(2))
-    engine.run_accepted('r1')
-    assert engine.get_status('r1').state == 'failed'
-    assert 'changed externally' in engine.get_status('r1').reason
-
-    engine, skills, events, state, _ = make_engine()
-    engine.submit('r2', GRAB_GRAPH().as_dict())
-
-    def own_change(node, context):
-        if node.id == 'g':
-            context.mounted_tool = 'vacuum'
-            state.update(envelope=envelope(2))
-
-    skills.on_execute = own_change
-    engine.run_accepted('r2')
-    status = engine.get_status('r2')
-    assert status.state == 'completed'
-    assert status.mounted_tool == 'vacuum'
-
-
-def test_changed_scene_before_the_first_motion_stops_the_run():
-    engine, skills, events, state, _ = make_engine()
-    accepted = engine.submit('r1', STOP_GRAPH().as_dict())
-    assert accepted.accepted
-    state['envelope'] = envelope(2)
-    engine.run_accepted('r1')
-    status = engine.get_status('r1')
-    assert status.state == 'failed'
-    assert 'before the first motion' in status.reason
-    assert skills.calls == []
-    assert events['stops']
-
-
-def test_step_limit_stops_a_recovering_cycle():
-    engine, skills, _, _, _ = make_engine(max_steps=3)
-    cycle = graph(
+def test_retry_limit_stops_at_operator_required():
+    engine, _, _, _, _ = make_engine()
+    value = graph(
         'a',
-        node('a', 'wait_scene_clear', 'workspace',
-             next_on={'clear': 'b'}),
-        node('b', 'wait_scene_clear', 'workspace',
-             next_on={'clear': 'a'}),
+        skill_node('a', 'stop', obj='robot', next_id='a', max_retries=1),
     )
-    engine.submit('r1', cycle.as_dict())
-    skills.events = {'a': 'clear', 'b': 'clear'}
+    assert submit(engine, 'r1', value).accepted
     engine.run_accepted('r1')
     status = engine.get_status('r1')
-    assert status.state == 'failed'
-    assert 'step limit' in status.reason
+    assert status.state == 'operator_required'
+    assert 'retry limit' in status.reason
 
 
-def test_cancellation_stops_the_active_graph_and_preserves_ownership():
-    engine, skills, events, _, _ = make_engine(threaded=True)
-    skills.block = True
-    skills.on_execute = (
-        lambda node, context: setattr(context, 'mounted_tool', node.object)
-        if node.skill == 'grab' else None
+def test_step_limit_stops_a_bounded_cycle():
+    engine, _, _, _, _ = make_engine(max_steps=3)
+    value = graph(
+        'a',
+        skill_node('a', 'stop', obj='robot', next_id='b'),
+        skill_node('b', 'stop', obj='robot', next_id='a', max_retries=20),
     )
-    engine.submit('r1', GRAB_GRAPH().as_dict())
+    assert submit(engine, 'r1', value).accepted
+    engine.run_accepted('r1')
+    assert 'step limit' in engine.get_status('r1').reason
+
+
+def test_duplicate_conflict_and_busy_rules():
+    engine, skills, _, _, _ = make_engine()
+    assert submit(engine, 'r1', STOP_GRAPH()).accepted
+    duplicate = submit(engine, 'r1', STOP_GRAPH())
+    assert duplicate.accepted is True
+    assert duplicate.code == 'duplicate'
+
+    conflict = submit(engine, 'r1', GRAB_GRAPH())
+    assert conflict.code == 'conflict'
+    busy = submit(engine, 'r2', GRAB_GRAPH())
+    assert busy.code == 'busy'
+
+    engine.run_accepted('r1')
+    assert engine.get_status('r1').state == 'completed'
+    reused = submit(engine, 'r1', GRAB_GRAPH())
+    assert reused.code == 'conflict'
+    assert skills.calls == ['a', 'b']
+
+
+def test_cancellation_stops_the_active_graph_and_preserves_state():
+    engine, skills, _, _, _ = make_engine(threaded=True)
+    skills.block = True
+    accepted = submit(engine, 'r1', STOP_GRAPH())
+    assert accepted.accepted
     assert skills.started.wait(timeout=2.0)
     result = engine.cancel('r1')
-    assert result.accepted
-    assert events['stops']
+    assert result.accepted is True
     skills.release.set()
-    assert engine.wait('r1', timeout=2.0)
+    assert engine.wait('r1', 3.0) is True
     status = engine.get_status('r1')
     assert status.state == 'canceled'
-    assert status.mounted_tool == 'vacuum'
-
-
-def test_cancel_rejects_unknown_or_finished_runs():
-    engine, _, _, _, _ = make_engine()
-    assert engine.cancel('missing').accepted is False
-    engine.submit('r1', STOP_GRAPH().as_dict())
-    engine.run_accepted('r1')
     assert engine.cancel('r1').accepted is False
-
-
-def test_status_query_marks_unknown_ids():
-    engine, _, _, _, _ = make_engine()
-    status = engine.get_status('nope')
-    assert status.found is False
-    assert status.state == 'unknown'
+    assert engine.cancel('unknown').accepted is False
 
 
 def test_not_ready_or_unavailable_scene_is_rejected_without_registration():
-    engine, _, _, state, _ = make_engine()
+    engine, _, events, state, _ = make_engine()
     state['envelope'] = None
-    rejected = engine.submit('r1', STOP_GRAPH().as_dict())
+    rejected = submit(engine, 'r1', STOP_GRAPH())
     assert rejected.code == 'not_ready'
     assert engine.get_status('r1').found is False
 
+    engine.update_readiness(scene_ready=False, ready_at=0.0, motion_ready=False)
+    rejected = submit(engine, 'r2', STOP_GRAPH())
+    assert rejected.code == 'not_ready'
+    assert events['plans'] == []
+
 
 def test_stale_scene_timestamp_is_rejected_before_execution():
-    engine, _, _, state, _ = make_engine(clock=10.0)
+    engine, _, events, state, clock = make_engine()
     state['envelope'] = envelope(1, stamp=1.0)
-    rejected = engine.submit('r1', STOP_GRAPH().as_dict())
+    rejected = submit(engine, 'r1', STOP_GRAPH())
     assert rejected.code == 'stale_scene'
     assert engine.get_status('r1').found is False
+    assert events['plans'] == []

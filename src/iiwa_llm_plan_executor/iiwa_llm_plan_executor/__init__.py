@@ -1,7 +1,8 @@
 """Graph validation and execution for externally supplied Qwen3 plans."""
 from .schema import (
     MAX_NODES,
-    TERMINALS,
+    GRAPH_TERMINALS as TERMINALS,
+    Goal,
     PlanGraph,
     PlanNode,
     PlanSchemaError,
@@ -13,6 +14,7 @@ from .validator import ValidationResult, validate_graph
 __all__ = [
     'MAX_NODES',
     'TERMINALS',
+    'Goal',
     'PlanGraph',
     'PlanNode',
     'PlanSchemaError',

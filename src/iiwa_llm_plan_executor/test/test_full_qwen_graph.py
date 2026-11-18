@@ -1,4 +1,4 @@
-"""Integration tests with the complete Qwen graph submitted by the user."""
+"""Integration tests with a complete graph-v3 cap-install response."""
 from __future__ import annotations
 
 import copy
@@ -127,45 +127,33 @@ def make_engine(*, mounted: str | None = None):
     return engine, motion, supervisor, scene_envelope
 
 
-def test_full_qwen_graph_empty_patron_follows_actual_failure_path():
-    engine, motion, supervisor, scene_envelope = make_engine(mounted=None)
+def test_graph_v3_cap_install_is_admitted_and_validated():
+    scene_envelope = envelope(mounted=None)
     result = validate_graph(FULL_GRAPH, scene_envelope, DEFAULT_CATALOG)
     assert result.ok is True, result.reason
+    assert FULL_GRAPH.entry == 'a_detect_cap'
+    assert FULL_GRAPH.goals[0].canonical() == (
+        'installed(destination=hatch_seat,part=cap)'
+    )
+    observe = FULL_GRAPH.node('a_observe_installed')
+    assert observe.kind == 'observe'
+    assert observe.transition('unknown') == 'operator_required'
 
-    accepted = engine.submit('full-empty', FULL_GRAPH.as_dict())
+
+def test_full_graph_without_vacuum_follows_the_runtime_grasp_failure():
+    engine, motion, supervisor, _ = make_engine(mounted=None)
+    accepted = engine.submit('full-empty', FULL_GRAPH.as_dict(), '1')
     assert accepted.accepted is True
     engine.run_accepted('full-empty')
     status = engine.get_status('full-empty')
     assert status.state == 'operator_required'
     assert [event['node_id'] for event in status.events] == [
-        'a_find_part',
-        'a_find_target',
-        'a_approach',
-        'a_pick',
-        'a_stop_recover',
-        'a_state',
-        'a_retry_find_part',
-        'a_retry_approach',
-        'a_retry_pick',
-        'stop_operator',
-        'notify',
+        'a_detect_cap', 'a_grab_cap',
     ]
-    pick_events = [
-        event for event in status.events if event['node_id'] == 'a_pick'
-    ]
-    state_events = [
-        event for event in status.events if event['node_id'] == 'a_state'
-    ]
-    retry_pick = [
-        event for event in status.events if event['node_id'] == 'a_retry_pick'
-    ]
-    assert pick_events[0]['event'] == 'grasp_failed'
-    assert pick_events[0]['reason'] == 'required tool vacuum is not mounted'
-    assert pick_events[0]['next'] == 'a_stop_recover'
-    assert state_events[0]['event'] == 'empty'
-    assert state_events[0]['next'] == 'a_retry_find_part'
-    assert retry_pick[0]['event'] == 'grasp_failed'
-    assert retry_pick[0]['next'] == 'stop_operator'
+    grab = status.events[1]
+    assert grab['event'] == 'grasp_failed'
+    assert grab['reason'] == 'required tool vacuum is not mounted'
+    assert grab['next'] == 'operator_required'
     assert status.mounted_tool is None
     assert status.held_object is None
     assert supervisor.state['cap']['state'] == 'free'
@@ -174,34 +162,10 @@ def test_full_qwen_graph_empty_patron_follows_actual_failure_path():
     assert not any(phase in ('lower', 'contact') for _, phase, _ in motion.calls)
 
 
-def test_full_qwen_graph_with_vacuum_has_a_success_cycle_without_completed():
-    # The nominal successful branch is inspect ok -> state -> placed -> inspect.
-    a_inspect = FULL_GRAPH.node('a_inspect')
-    a_state = FULL_GRAPH.node('a_state')
-    assert {
-        transition.event: transition.next
-        for transition in a_inspect.transitions
-    }['ok'] == 'a_state'
-    assert {
-        transition.event: transition.next
-        for transition in a_state.transitions
-    }['placed'] == 'a_inspect'
-
-    all_nexts = {
-        transition.next
-        for node in FULL_GRAPH.nodes
-        for transition in node.transitions
-    }
-    assert 'completed' not in all_nexts
-
-    # With the vacuum mounted the graph is still not executable as a whole:
-    # the generic grasp_failed branch leads through inspect_state holding to a
-    # retry pick while the hatch is held, which the ownership check rejects.
-    result = validate_graph(
-        FULL_GRAPH,
-        envelope(mounted='vacuum'),
-        DEFAULT_CATALOG,
-    )
-    assert result.ok is False
-    assert 'a_retry_pick' in result.reason
-    assert 'holding' in result.reason
+def test_full_graph_with_vacuum_is_still_goal_checked():
+    scene_envelope = envelope(mounted='vacuum')
+    result = validate_graph(FULL_GRAPH, scene_envelope, DEFAULT_CATALOG)
+    assert result.ok is True, result.reason
+    engine, _, _, _ = make_engine(mounted='vacuum')
+    accepted = engine.submit('full-vacuum', FULL_GRAPH.as_dict(), '1')
+    assert accepted.accepted is True

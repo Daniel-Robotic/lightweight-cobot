@@ -43,6 +43,7 @@ from iiwa_scene_context.catalog import DEFAULT_CATALOG
 from iiwa_scene_context.node import SCENE_TOPIC
 
 from .engine import GraphEngine
+from .goals import evaluate_goals
 from .motion_policy import MotionPolicy, load_limits
 from .moveit_backend import MoveItBackend
 from .skill_context import SkillContext
@@ -499,6 +500,7 @@ class PlannerExecutorNode(Node):
             on_replan=self._on_replan,
             on_stop=self._on_stop,
             robot_fresh=self._robot_fresh,
+            goal_evaluator=self._evaluate_goals,
             threaded=True,
             min_start_delay_sec=float(
                 self.get_parameter('start_delay_sec').value
@@ -621,6 +623,11 @@ class PlannerExecutorNode(Node):
         if age > self.limits.joint_state_max_age_sec:
             return False, f'/joint_states is stale ({age:.2f} s old)'
         return True, 'ok'
+
+    def _evaluate_goals(self, goals, envelope):
+        del envelope
+        state = self.supervisor.latest()
+        return evaluate_goals(goals, state, self.spec)
 
     def _wait_stationary(
         self,
@@ -840,9 +847,9 @@ class PlannerExecutorNode(Node):
         return True
 
     # ------------------------------------------------------------------ services
-    def _submit_payload(self, run_id: str, graph):
+    def _submit_payload(self, run_id: str, graph, context_state_version=''):
         """Shared admission path for both submit services."""
-        result = self.engine.submit(run_id, graph)
+        result = self.engine.submit(run_id, graph, context_state_version)
         if result.accepted:
             self.get_logger().info(
                 f'run {run_id}: {result.code} ({result.message})'
@@ -856,15 +863,18 @@ class PlannerExecutorNode(Node):
     def _handle_submit(self, request, response):
         """Legacy webots_ros2_msgs/SetString submission.
 
-        It is kept for compatibility and routes into the same admission path.
-        A legacy ``scene_revision`` field is ignored: admission always uses the
-        executor's own fresh snapshot.
+        It still routes into the same graph-v3 admission path.  The payload
+        must carry ``context_state_version``; legacy graph formats are
+        rejected by the parser.
         """
         try:
             payload = json.loads(request.value)
             if not isinstance(payload, dict):
                 raise ValueError('submit payload must be a JSON object')
             run_id = str(payload.get('run_id', '')).strip()
+            context_state_version = str(
+                payload.get('context_state_version', ''),
+            ).strip()
             graph = payload.get('response')
             if not isinstance(graph, (str, dict)):
                 raise ValueError('response must be a JSON string or object')
@@ -872,13 +882,18 @@ class PlannerExecutorNode(Node):
             response.success = False
             self.get_logger().error(f'invalid submit request: {error}')
             return response
-        result = self._submit_payload(run_id, graph)
+        result = self._submit_payload(
+            run_id, graph, context_state_version,
+        )
         response.success = bool(result.accepted)
         return response
 
     def _handle_submit_plan(self, request, response):
         try:
             run_id = str(request.run_id or '').strip()
+            context_state_version = str(
+                getattr(request, 'context_state_version', '') or '',
+            ).strip()
             graph = request.response
             if not isinstance(graph, str) or not graph.strip():
                 raise ValueError('response must be a non-empty JSON string')
@@ -887,13 +902,19 @@ class PlannerExecutorNode(Node):
             response.code = 'invalid'
             response.reason = str(error)
             response.status_json = ''
+            response.details_json = ''
             self.get_logger().error(f'invalid submit_plan request: {error}')
             return response
-        result = self._submit_payload(run_id, graph)
+        result = self._submit_payload(
+            run_id, graph, context_state_version,
+        )
         response.accepted = bool(result.accepted)
         response.code = result.code
         response.reason = result.message
         response.status_json = ''
+        response.details_json = json.dumps(
+            result.details, ensure_ascii=False,
+        ) if result.details else ''
         if result.accepted:
             status = self.engine.get_status(run_id)
             if status.found:

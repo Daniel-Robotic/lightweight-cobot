@@ -39,14 +39,14 @@ class FakeEngine:
         self.submitted = []
         self.cancelled = []
 
-    def submit(self, run_id, graph):
-        self.submitted.append((run_id, graph))
+    def submit(self, run_id, graph, context_state_version=''):
+        self.submitted.append((run_id, graph, context_state_version))
         return self.admission
 
     def get_status(self, run_id):
         return self.status or RunStatus(
             True, run_id, 'completed', 'done', 'a', 'stop', 'success',
-            'completed', 'completed', 'vacuum', None, (),
+            'completed', 'completed', 'vacuum', None, (), (), (),
         )
 
     def cancel(self, run_id):
@@ -117,17 +117,18 @@ def test_submit_parses_json_and_forwards_the_untouched_response():
     node = fake_node()
     request = SimpleNamespace(value=json.dumps({
         'run_id': 'r1',
-        'scene_revision': 3,
-        'response': {'status': 'ready', 'entry': 'a', 'plan': []},
+        'context_state_version': '3',
+        'response': {'schema_version': 3, 'status': 'blocked', 'entry': '', 'plan': [], 'reason': 'x'},
     }))
     response = SimpleNamespace(success=False)
     PlannerExecutorNode._handle_submit(node, request, response)
     assert response.success is True
     assert node.engine.submitted[0][0] == 'r1'
     assert node.engine.submitted[0][1] == {
-        'status': 'ready', 'entry': 'a', 'plan': [],
+        'schema_version': 3, 'status': 'blocked', 'entry': '', 'plan': [],
+        'reason': 'x',
     }
-    assert len(node.engine.submitted[0]) == 2
+    assert node.engine.submitted[0][2] == '3'
 
 
 def test_submit_plan_service_returns_code_and_reason_without_registration():
@@ -137,7 +138,7 @@ def test_submit_plan_service_returns_code_and_reason_without_registration():
     response = SubmitPlan.Response()
     PlannerExecutorNode._handle_submit_plan(
         node,
-        SimpleNamespace(run_id='r1', response='{"status":"blocked","entry":"","plan":[]}'),
+        SimpleNamespace(run_id='r1', context_state_version='1', response='{"schema_version":3,"status":"blocked","entry":"","plan":[],"reason":"x"}'),
         response,
     )
     assert response.accepted is False
@@ -152,7 +153,7 @@ def test_submit_plan_service_returns_the_status_of_an_accepted_run():
     response = SubmitPlan.Response()
     PlannerExecutorNode._handle_submit_plan(
         node,
-        SimpleNamespace(run_id='r1', response='{"status":"ready","entry":"a","plan":[]}'),
+        SimpleNamespace(run_id='r1', context_state_version='1', response='{"schema_version":3,"status":"ready","entry":"a","goals":[{"id":"g","predicate":"visible","args":{"object":"fixture"}}],"plan":[{"id":"a","kind":"skill","skill":"stop","object":"robot","next":"completed"}]}'),
         response,
     )
     assert response.accepted is True
@@ -170,7 +171,8 @@ def test_rejected_submit_returns_false_without_registering_or_publishing():
     node._publish_status = lambda payload: published.append(payload)
     request = SimpleNamespace(value=json.dumps({
         'run_id': 'r1',
-        'response': {'status': 'blocked', 'entry': '', 'plan': []},
+        'context_state_version': '1',
+        'response': {'schema_version': 3, 'status': 'blocked', 'entry': '', 'plan': [], 'reason': 'x'},
     }))
     response = SimpleNamespace(success=True)
     PlannerExecutorNode._handle_submit(node, request, response)

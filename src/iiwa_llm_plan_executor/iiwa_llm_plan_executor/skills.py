@@ -18,6 +18,7 @@ from iiwa_scene_context.catalog import DEFAULT_CATALOG, SkillCatalog
 
 from .schema import PlanNode
 from .skill_context import SkillContext
+from .goals import observe_predicate
 
 
 class SkillError(RuntimeError):
@@ -121,6 +122,7 @@ class SkillRegistry:
             'dispense': self._dispense,
             'dock_tool': self._dock_tool,
             'handoff_screw': self._handoff_screw,
+            'observe': self._observe,
         }
 
     # ------------------------------------------------------------------ dispatch
@@ -815,6 +817,18 @@ class SkillRegistry:
         })
 
     # ------------------------------------------------------------------ misc
+    def _observe(self, node: PlanNode, context: SkillContext) -> SkillOutcome:
+        predicate = node.params.get('predicate') or {}
+        name = str(predicate.get('name', ''))
+        args = predicate.get('args') or {}
+        state = self._state()
+        if not state:
+            return SkillOutcome('unknown', {
+                'predicate': name, 'reason': 'supervisor state unavailable',
+            })
+        outcome = observe_predicate(name, args, state, context.spec)
+        return SkillOutcome(outcome, {'predicate': name, 'args': dict(args)})
+
     def _retreat(self, node: PlanNode, context: SkillContext) -> SkillOutcome:
         del node
         if context.phase == 'contact' and context.approach_pose is not None:
